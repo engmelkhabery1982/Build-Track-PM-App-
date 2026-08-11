@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
+import { selectPrimaryContracts } from '@/data';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -84,6 +85,7 @@ export function Dashboard({
   const fProgress = pid === 'all' ? progress : progress.filter((p) => p.project_id === pid);
   const fSchedules = pid === 'all' ? schedules : schedules.filter((s) => s.project_id === pid);
   const fContracts = pid === 'all' ? contracts : contracts.filter((c) => c.project_id === pid);
+  const primaryContracts = selectPrimaryContracts(fContracts);
   const fBOQ = pid === 'all' ? boqItems : boqItems.filter((b) => b.project_id === pid);
   const fCashFlow = pid === 'all' ? cashFlow : cashFlow.filter((c) => c.project_id === pid);
   const fSubInv = pid === 'all' ? subInvoices : subInvoices.filter((s) => s.project_id === pid);
@@ -154,8 +156,8 @@ export function Dashboard({
     const criticalPathCount = fSchedules.filter((s) => s.critical_path).length;
     const delayedSchedules = fSchedules.filter((s) => s.status === 'Delayed').length;
     const completedSchedules = fSchedules.filter((s) => s.status === 'Completed').length;
-    const totalContractValue = fContracts.reduce((s, c) => s + (c.contract_value || 0), 0);
-    const activeContracts = fContracts.filter((c) => c.status === 'Active').length;
+    const totalContractValue = primaryContracts.reduce((s, c) => s + (c.contract_value || 0), 0);
+    const activeContracts = primaryContracts.filter((c) => c.status === 'Active').length;
     const totalBOQAmount = fBOQ.reduce((s, b) => s + (b.amount || 0), 0);
     const totalInflow = fCashFlow.reduce((s, c) => s + (c.inflow || 0), 0);
     const totalOutflow = fCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
@@ -191,7 +193,7 @@ export function Dashboard({
       variationCostImpact, pendingVariations, approvedVariations,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, fContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
+  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
 
   const evm = useMemo(() => {
     const BAC = stats.totalBudget || stats.totalPlannedCosts || 0;
