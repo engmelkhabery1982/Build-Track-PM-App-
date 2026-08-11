@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, Calendar, Upload, Printer, FileText } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { supabase } from '@/lib/supabase';
+import { dataRepository } from '@/data';
 import type { Project, BOQItem } from '@/types';
 
 export interface ColumnDef {
@@ -385,24 +385,32 @@ export function DataTableView({
   async function handleAdd() {
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
-    const { error } = await supabase.from(tableName).insert([coerceTypes(newRow)]);
-    setSaving(false);
-    if (error) { alert(`Error: ${error.message}`); return; }
-    setShowAdd(false);
-    setNewRow({});
-    onChanged();
+    try {
+      await dataRepository.insert(tableName, coerceTypes(newRow));
+      setShowAdd(false);
+      setNewRow({});
+      onChanged();
+    } catch (error: any) {
+      alert(`Error: ${error.message || 'Failed to add the record.'}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleEdit() {
     if (!editingId) return;
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
-    const { error } = await supabase.from(tableName).update(coerceTypes(editRow)).eq('id', editingId);
-    setSaving(false);
-    if (error) { alert(`Error: ${error.message}`); return; }
-    setEditingId(null);
-    setEditRow({});
-    onChanged();
+    try {
+      await dataRepository.update(tableName, editingId, coerceTypes(editRow));
+      setEditingId(null);
+      setEditRow({});
+      onChanged();
+    } catch (error: any) {
+      alert(`Error: ${error.message || 'Failed to update the record.'}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleImportClick() { fileInputRef.current?.click(); }
@@ -439,9 +447,12 @@ export function DataTableView({
       const errors: string[] = [];
       for (let i = 0; i < mapped.length; i += BATCH) {
         const batch = mapped.slice(i, i + BATCH);
-        const { error } = await supabase.from(tableName).insert(batch);
-        if (error) { errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message}`); }
-        else { success += batch.length; }
+        try {
+          await dataRepository.insertMany(tableName, batch);
+          success += batch.length;
+        } catch (error: any) {
+          errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message || 'Failed to import.'}`);
+        }
       }
       setImportResult({ success, failed: mapped.length - success, errors });
       onChanged();
@@ -493,9 +504,12 @@ export function DataTableView({
     }
     setInlineEdit(null);
     setInlineValue(null);
-    const { error } = await supabase.from(tableName).update({ [key]: val }).eq('id', id);
-    if (error) { alert(`Failed to update: ${error.message}`); }
-    else { onChanged(); }
+    try {
+      await dataRepository.update(tableName, id, { [key]: val });
+      onChanged();
+    } catch (error: any) {
+      alert(`Failed to update: ${error.message || 'Unknown error'}`);
+    }
   }
 
   function cancelInlineEdit() { setInlineEdit(null); setInlineValue(null); }
@@ -504,11 +518,15 @@ export function DataTableView({
     if (!deleteId) return;
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
-    const { error } = await supabase.from(tableName).delete().eq('id', deleteId);
-    setSaving(false);
-    if (error) { alert(`Error: ${error.message}`); return; }
-    setDeleteId(null);
-    onChanged();
+    try {
+      await dataRepository.delete(tableName, deleteId);
+      setDeleteId(null);
+      onChanged();
+    } catch (error: any) {
+      alert(`Error: ${error.message || 'Failed to delete the record.'}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function startEdit(row: Record<string, any>) { setEditingId(row.id); setEditRow({ ...row }); }
