@@ -10,6 +10,13 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
+
+# Generated audit, checkpoint, and desktop build artifacts
+_Audit/
+_Audit_Baseline/
+_Checkpoints/
+src-tauri/target/
 
 .vscode/*
 !.vscode/extensions.json
