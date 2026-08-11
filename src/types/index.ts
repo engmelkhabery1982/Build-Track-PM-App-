@@ -75,6 +75,9 @@ export interface CostEntry {
   invoice_number: string;
   payment_order_number: string;
   amount: number;
+  source_type: string | null;
+  source_id: string | null;
+  last_modified: string;
   created_at: string;
 }
 
