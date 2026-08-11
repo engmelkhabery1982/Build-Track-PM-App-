@@ -1,7 +1,14 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, Calendar, Upload, Printer, FileText } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { dataRepository } from '@/data';
+import {
+  assertCodeCanBeLocked,
+  assertCodeUpdateAllowed,
+  createCodeDraft,
+  dataRepository,
+  getCodeControl,
+  prepareCodeControlledInsert,
+} from '@/data';
 import type { Project, BOQItem } from '@/types';
 
 export interface ColumnDef {
@@ -386,7 +393,8 @@ export function DataTableView({
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
     try {
-      await dataRepository.insert(tableName, coerceTypes(newRow));
+      const row = prepareCodeControlledInsert(tableName, newRow, data);
+      await dataRepository.insert(tableName, coerceTypes(row));
       setShowAdd(false);
       setNewRow({});
       onChanged();
@@ -402,7 +410,9 @@ export function DataTableView({
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
     try {
-      await dataRepository.update(tableName, editingId, coerceTypes(editRow));
+      const patch = coerceTypes(editRow);
+      assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
+      await dataRepository.update(tableName, editingId, patch);
       setEditingId(null);
       setEditRow({});
       onChanged();
@@ -505,7 +515,9 @@ export function DataTableView({
     setInlineEdit(null);
     setInlineValue(null);
     try {
-      await dataRepository.update(tableName, id, { [key]: val });
+      const patch = { [key]: val };
+      assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
+      await dataRepository.update(tableName, id, patch);
       onChanged();
     } catch (error: any) {
       alert(`Failed to update: ${error.message || 'Unknown error'}`);
@@ -513,6 +525,23 @@ export function DataTableView({
   }
 
   function cancelInlineEdit() { setInlineEdit(null); setInlineValue(null); }
+
+  async function toggleCodeLock(row: Record<string, any>) {
+    const control = getCodeControl(tableName);
+    if (!control) return;
+    const locked = Boolean(row[control.lockField]);
+    if (!locked) assertCodeCanBeLocked(tableName, row);
+
+    setSaving(true);
+    try {
+      await dataRepository.update(tableName, row.id, { [control.lockField]: !locked });
+      onChanged();
+    } catch (error: any) {
+      alert(`Failed to ${locked ? 'unlock' : 'lock'} code: ${error.message || 'Unknown error'}`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleDelete() {
     if (!deleteId) return;
@@ -558,7 +587,9 @@ export function DataTableView({
   const numericCols = columns.filter((c) => c.type === 'number' || c.type === 'money');
 
   function renderFormField(col: ColumnDef, row: Record<string, any>, setRow: (r: Record<string, any>) => void) {
-    const isReadOnly = col.editable === false && col.key !== 'project_id';
+    const codeControl = getCodeControl(tableName);
+    const isLockedCode = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
+    const isReadOnly = (col.editable === false && col.key !== 'project_id') || isLockedCode;
 
     if (col.type === 'boolean') {
       return (
@@ -707,7 +738,7 @@ export function DataTableView({
             <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print">
               <Download size={15} /> Export
             </button>
-            <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+            <button onClick={() => { setNewRow(createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> Add New
             </button>
           </div>
@@ -837,7 +868,9 @@ export function DataTableView({
                       )}
                       {columns.map((col) => {
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
-                        const canEdit = col.editable !== false && col.key !== 'id' && col.key !== 'created_at';
+                        const codeControl = getCodeControl(tableName);
+                        const codeIsLocked = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
+                        const canEdit = col.editable !== false && col.key !== 'id' && col.key !== 'created_at' && !codeIsLocked;
                         return (
                           <td
                             key={col.key}
@@ -866,6 +899,11 @@ export function DataTableView({
                       <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
+                          {getCodeControl(tableName) && (
+                            <button onClick={() => void toggleCodeLock(row)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors">
+                              {row[getCodeControl(tableName)!.lockField] ? 'Unlock Code' : 'Lock Code'}
+                            </button>
+                          )}
                           <button onClick={() => setDeleteId(row.id)} className="text-xs text-error-600 hover:text-error-700 font-medium px-2 py-1 rounded hover:bg-error-50 transition-colors">Delete</button>
                         </div>
                       </td>

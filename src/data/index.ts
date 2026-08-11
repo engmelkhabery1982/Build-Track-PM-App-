@@ -5,5 +5,12 @@ export type { DataRepository } from "./repository";
 export { DataRepositoryError } from "./repository";
 export { SupabaseRepository } from "./supabaseRepository";
 export { SqliteRepository } from "./sqliteRepository";
+export {
+  assertCodeCanBeLocked,
+  assertCodeUpdateAllowed,
+  createCodeDraft,
+  getCodeControl,
+  prepareCodeControlledInsert,
+} from "./codeControls";
 
 export const dataRepository: DataRepository = supabaseRepository;
