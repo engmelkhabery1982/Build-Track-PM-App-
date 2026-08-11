@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
+  assertValidHierarchyChange,
   createCodeDraft,
   dataRepository,
   getCodeControl,
@@ -28,6 +29,11 @@ export interface FilterDef {
   options: string[];
 }
 
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
 interface DataTableViewProps {
   tableName: string;
   title: string;
@@ -41,6 +47,7 @@ interface DataTableViewProps {
   boqItems?: BOQItem[];
   onChanged: () => void;
   autoFillOptions?: Record<string, string[]>;
+  relationshipOptions?: Record<string, SelectOption[]>;
 }
 
 function statusColor(status: string): string {
@@ -89,7 +96,7 @@ function renderCell(value: any, col: ColumnDef): React.ReactNode {
 }
 
 function InlineCellEditor({
-  col, value, onCommit, onCancel, projects, autoFillOptions,
+  col, value, onCommit, onCancel, projects, autoFillOptions, relationshipOptions,
 }: {
   col: ColumnDef;
   value: any;
@@ -97,13 +104,14 @@ function InlineCellEditor({
   onCancel: () => void;
   projects: Project[];
   autoFillOptions?: string[];
+  relationshipOptions?: SelectOption[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
   const valRef = useRef<any>(value);
 
   useEffect(() => {
-    const isDropdown = col.type === 'select' || col.type === 'status' || col.type === 'boolean' || (autoFillOptions && autoFillOptions.length > 0 && (!col.options || col.options.length === 0));
+    const isDropdown = col.type === 'select' || col.type === 'status' || col.type === 'boolean' || Boolean(relationshipOptions?.length) || (autoFillOptions && autoFillOptions.length > 0 && (!col.options || col.options.length === 0));
     if (isDropdown) {
       selectRef.current?.focus();
     } else {
@@ -120,6 +128,17 @@ function InlineCellEditor({
   function stop(e: React.MouseEvent | React.FocusEvent) { e.stopPropagation(); }
 
   const baseClass = "w-full px-1 py-0.5 text-sm border-0 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500";
+
+  if (relationshipOptions && relationshipOptions.length > 0) {
+    return (
+      <select ref={selectRef} value={valRef.current || ''}
+        onChange={(e) => { valRef.current = e.target.value; onCommit(e.target.value || null); }}
+        onClick={stop} onMouseDown={stop} onKeyDown={handleKeyDown} className={baseClass}>
+        <option value="">None (main record)</option>
+        {relationshipOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    );
+  }
 
   if (col.type === 'select' || col.type === 'status') {
     const opts = col.options && col.options.length > 0
@@ -191,7 +210,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onChanged, autoFillOptions,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onChanged, autoFillOptions, relationshipOptions,
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -412,6 +431,7 @@ export function DataTableView({
     try {
       const patch = coerceTypes(editRow);
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
+      assertValidHierarchyChange(tableName, data, editingId, patch);
       await dataRepository.update(tableName, editingId, patch);
       setEditingId(null);
       setEditRow({});
@@ -517,6 +537,7 @@ export function DataTableView({
     try {
       const patch = { [key]: val };
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
+      assertValidHierarchyChange(tableName, data, id, patch);
       await dataRepository.update(tableName, id, patch);
       onChanged();
     } catch (error: any) {
@@ -601,6 +622,21 @@ export function DataTableView({
           <option value="false">No</option>
           <option value="true">Yes</option>
         </select>
+      );
+    }
+
+    const relationshipSelectOptions = relationshipOptions?.[col.key];
+    if (relationshipSelectOptions && relationshipSelectOptions.length > 0) {
+      return (
+        <div className="relative">
+          <select value={row[col.key] || ''} disabled={isReadOnly}
+            onChange={(e) => setRow({ ...row, [col.key]: e.target.value || null })}
+            className="w-full appearance-none text-sm px-3 py-2 pr-9 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-500">
+            <option value="">None (main record)</option>
+            {relationshipSelectOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+        </div>
       );
     }
 
@@ -889,6 +925,7 @@ export function DataTableView({
                                 onCancel={cancelInlineEdit}
                                 projects={projects}
                                 autoFillOptions={autoFillOptions?.[col.key]}
+                                relationshipOptions={relationshipOptions?.[col.key]}
                               />
                             ) : (
                               renderCell(row[col.key], col)

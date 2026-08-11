@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { Dashboard } from '@/components/Dashboard';
-import { DataTableView, type ColumnDef, type FilterDef } from '@/components/DataTableView';
+import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
@@ -54,6 +54,7 @@ const BOQ_CLASSIFICATIONS = ['Main', 'Subcontractor'];
 
 const PROJECT_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
+  { key: 'parent_main_project_id', label: 'Parent Main Project', type: 'select', editable: true },
   { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'name', label: 'Project Name', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
@@ -173,6 +174,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
 
 const CONTRACT_COLUMNS: ColumnDef[] = [
   { key: 'contract_code', label: 'Contract Code', type: 'text', editable: true },
+  { key: 'parent_main_contract_id', label: 'Parent Main Contract', type: 'select', editable: true },
   { key: 'contract_number', label: 'Contract #', type: 'text', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
@@ -191,6 +193,7 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
 
 const BOQ_HEADER_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
   { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'classification', label: 'Classification', type: 'text', editable: true, options: BOQ_CLASSIFICATIONS },
   { key: 'company_name', label: 'Company Name', type: 'text', editable: true },
@@ -200,6 +203,7 @@ const BOQ_HEADER_COLUMNS: ColumnDef[] = [
 
 const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Header', type: 'select', editable: true },
   { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'item_code', label: 'Item Code', type: 'text', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text', editable: true },
@@ -418,6 +422,31 @@ export default function App() {
     const navItem = NAV_ITEMS.find((n) => n.key === activeView);
 
     const autoFillOptions: Record<string, string[]> = {};
+    const relationshipOptions: Record<string, SelectOption[]> = {};
+    if (activeView === 'projects') {
+      relationshipOptions.parent_main_project_id = data.projects.map((project) => ({
+        value: project.id,
+        label: `${project.project_code || project.id} - ${project.name}`,
+      }));
+    }
+    if (activeView === 'contracts') {
+      relationshipOptions.parent_main_contract_id = data.contracts.map((contract) => ({
+        value: contract.id,
+        label: `${contract.contract_code || contract.contract_number || contract.id} - ${contract.title}`,
+      }));
+    }
+    if (activeView === 'boq') {
+      relationshipOptions.contract_id = data.contracts.map((contract) => ({
+        value: contract.id,
+        label: `${contract.contract_code || contract.contract_number || contract.id} - ${contract.title}`,
+      }));
+    }
+    if (activeView === 'boqItems') {
+      relationshipOptions.boq_header_id = data.boqHeaders.map((header) => ({
+        value: header.id,
+        label: `${header.boq_code || header.id} - ${header.classification || 'BOQ'}`,
+      }));
+    }
     if (activeView === 'subinvoices') {
       autoFillOptions.subcontractor = [...new Set(data.subInvoices.map((r: any) => r.subcontractor).filter(Boolean))];
     }
@@ -447,6 +476,7 @@ export default function App() {
         boqItems={data.boqItems}
         onChanged={data.reload}
         autoFillOptions={autoFillOptions}
+        relationshipOptions={relationshipOptions}
       />
     );
   }
