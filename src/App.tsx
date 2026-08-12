@@ -54,8 +54,6 @@ const BOQ_CLASSIFICATIONS = ['Main', 'Subcontractor'];
 
 const PROJECT_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'parent_main_project_id', label: 'Parent Main Project', type: 'select', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'name', label: 'Project Name', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
   { key: 'location', label: 'Location', type: 'text', editable: true },
@@ -87,9 +85,11 @@ const TASK_COLUMNS: ColumnDef[] = [
 
 const COST_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'item_code', label: 'Item Code', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Company', type: 'text', editable: true },
-  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
   { key: 'category', label: 'Category', type: 'text', editable: true, options: ['Labor', 'Materials', 'Equipment', 'Subcontractor', 'Overhead', 'Other'] },
   { key: 'description', label: 'Description', type: 'text', editable: true },
@@ -101,9 +101,11 @@ const COST_COLUMNS: ColumnDef[] = [
 
 const COST_ENTRY_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Company', type: 'text', editable: true },
-  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'cost_type', label: 'Cost Type', type: 'text', editable: true, options: COST_TYPES },
@@ -137,6 +139,7 @@ const SAFETY_COLUMNS: ColumnDef[] = [
 
 const PROGRESS_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Company', type: 'text', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'area', label: 'Area', type: 'text', editable: true },
@@ -154,8 +157,10 @@ const PROGRESS_COLUMNS: ColumnDef[] = [
 
 const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
-  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
   { key: 'activity', label: 'Activity', type: 'text', editable: true },
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
@@ -192,7 +197,7 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
 
 const BOQ_HEADER_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'classification', label: 'Classification', type: 'text', editable: true, options: BOQ_CLASSIFICATIONS },
   { key: 'company_name', label: 'Company Name', type: 'text', editable: true },
@@ -202,9 +207,8 @@ const BOQ_HEADER_COLUMNS: ColumnDef[] = [
 
 const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'boq_header_id', label: 'BOQ Header', type: 'select', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
-  { key: 'item_code', label: 'Item Code', type: 'text', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'item_code', label: 'BOQ Item Code', type: 'text', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'category', label: 'Category', type: 'text', editable: true, options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] },
@@ -226,9 +230,11 @@ const CASHFLOW_COLUMNS: ColumnDef[] = [
 
 const SUBINV_COLUMNS: ColumnDef[] = [
   { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'subcontractor', label: 'Subcontractor', type: 'text', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
-  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'item_desc', label: 'Item Description', type: 'text' },
   { key: 'unit', label: 'Unit', type: 'text' },
   { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
@@ -243,9 +249,11 @@ const SUBINV_COLUMNS: ColumnDef[] = [
 
 const CLIENTINV_COLUMNS: ColumnDef[] = [
   { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
-  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'boq_item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'item_desc', label: 'Item Description', type: 'text' },
   { key: 'unit', label: 'Unit', type: 'text' },
   { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
@@ -261,6 +269,7 @@ const CLIENTINV_COLUMNS: ColumnDef[] = [
 
 const VARIATION_COLUMNS: ColumnDef[] = [
   { key: 'variation_number', label: 'Variation #', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'type', label: 'Type', type: 'status', editable: true, options: VARIATION_TYPES },
   { key: 'title', label: 'Title', type: 'text', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
@@ -284,8 +293,10 @@ const DOC_COLUMNS: ColumnDef[] = [
 
 const WIR_COLUMNS: ColumnDef[] = [
   { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
-  { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
-  { key: 'item_code', label: 'Item Code', type: 'text', editable: true, autoFillFrom: 'boqItems', autoFillKey: 'item_code' },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'item_code', label: 'BOQ Item Code', type: 'text' },
   { key: 'item_name', label: 'Item Name', type: 'text' },
   { key: 'item_description', label: 'Description', type: 'text' },
   { key: 'company_name', label: 'Company', type: 'text', editable: true },
@@ -422,28 +433,63 @@ export default function App() {
 
     const autoFillOptions: Record<string, string[]> = {};
     const relationshipOptions: Record<string, SelectOption[]> = {};
-    if (activeView === 'projects') {
-      relationshipOptions.parent_main_project_id = data.projects.map((project) => ({
-        value: project.id,
-        label: `${project.project_code || project.id} - ${project.name}`,
-      }));
-    }
+    const projectById = new Map(data.projects.map((project) => [project.id, project]));
+
+    relationshipOptions.project_id = data.projects.map((project) => ({
+      value: project.id,
+      label: `${project.project_code || project.id} - ${project.name}`,
+      data: {
+        project_code: project.project_code,
+        client: project.client,
+        contractor: project.contractor,
+      },
+    }));
+    relationshipOptions.contract_id = data.contracts.map((contract) => ({
+      value: contract.id,
+      label: `${contract.contract_number || contract.id} - ${contract.title}`,
+      data: {
+        project_id: contract.project_id,
+        project_code: projectById.get(contract.project_id)?.project_code,
+        client: contract.client,
+        company_name: contract.company || contract.contractor,
+        contractor: contract.contractor,
+      },
+    }));
+    relationshipOptions.boq_header_id = data.boqHeaders.map((header) => ({
+      value: header.id,
+      label: `${header.boq_code || header.id} - ${header.classification || 'BOQ'}`,
+      data: {
+        project_id: header.project_id,
+        contract_id: header.contract_id,
+        project_code: header.project_code,
+        boq_code: header.boq_code,
+        company_name: header.company_name,
+      },
+    }));
+    relationshipOptions.boq_item_id = data.boqItems.map((item) => ({
+      value: item.id,
+      label: `${item.item_code || item.id} - ${item.item_name || item.description}`,
+      data: {
+        project_id: item.project_id,
+        boq_header_id: item.boq_header_id,
+        project_code: item.project_code,
+        boq_code: item.boq_code,
+        item_code: item.item_code,
+        boq_item_code: item.item_code,
+        item_name: item.item_name,
+        boq_item_name: item.item_name,
+        item_desc: item.item_name || item.description,
+        item_description: item.description,
+        unit: item.unit,
+        unit_rate: item.unit_rate,
+        unit_price: item.unit_rate,
+        quantity: item.quantity,
+      },
+    }));
     if (activeView === 'contracts') {
-      relationshipOptions.parent_main_contract_id = data.contracts.map((contract) => ({
+      relationshipOptions.parent_main_contract_id = data.contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => ({
         value: contract.id,
         label: `${contract.contract_number || contract.id} - ${contract.title}`,
-      }));
-    }
-    if (activeView === 'boq') {
-      relationshipOptions.contract_id = data.contracts.map((contract) => ({
-        value: contract.id,
-        label: `${contract.contract_number || contract.id} - ${contract.title}`,
-      }));
-    }
-    if (activeView === 'boqItems') {
-      relationshipOptions.boq_header_id = data.boqHeaders.map((header) => ({
-        value: header.id,
-        label: `${header.boq_code || header.id} - ${header.classification || 'BOQ'}`,
       }));
     }
     if (activeView === 'subinvoices') {

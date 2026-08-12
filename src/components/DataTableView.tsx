@@ -33,6 +33,7 @@ export interface FilterDef {
 export interface SelectOption {
   value: string;
   label: string;
+  data?: Record<string, any>;
 }
 
 interface DataTableViewProps {
@@ -73,8 +74,10 @@ function fmtMoney(n: number): string {
   return `${n < 0 ? '-' : ''}$${v.toFixed(0)}`;
 }
 
-function renderCell(value: any, col: ColumnDef): React.ReactNode {
+function renderCell(value: any, col: ColumnDef, relationshipOptions?: SelectOption[]): React.ReactNode {
   if (value === null || value === undefined || value === '') return <span className="text-neutral-300">—</span>;
+  const relationshipLabel = relationshipOptions?.find((option) => option.value === String(value))?.label;
+  if (relationshipLabel) return <span className="text-neutral-700 text-sm">{relationshipLabel}</span>;
   switch (col.type) {
     case 'money': return <span className="font-medium text-neutral-700">{fmtMoney(Number(value))}</span>;
     case 'number': return <span className="text-neutral-600">{Number(value).toLocaleString()}</span>;
@@ -409,12 +412,45 @@ export function DataTableView({
     setRow(updates);
   }
 
+  function applyRelationshipSelection(row: Record<string, any>, changedKey: string, selectedValue: string | null): Record<string, any> {
+    const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
+    const allowedFields = new Set([...columns.map((column) => column.key), 'project_id']);
+    const relatedData = Object.fromEntries(
+      Object.entries(selected?.data || {}).filter(([key]) => allowedFields.has(key)),
+    );
+    return { ...row, ...relatedData, [changedKey]: selectedValue };
+  }
+
+  function assertRelationshipScope(record: Record<string, any>): void {
+    const selectedContract = relationshipOptions?.contract_id?.find((option) => option.value === record.contract_id);
+    const selectedHeader = relationshipOptions?.boq_header_id?.find((option) => option.value === record.boq_header_id);
+    const selectedItem = relationshipOptions?.boq_item_id?.find((option) => option.value === record.boq_item_id);
+
+    if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
+      throw new Error('The selected contract belongs to a different project.');
+    }
+    if (selectedHeader?.data?.project_id && record.project_id && selectedHeader.data.project_id !== record.project_id) {
+      throw new Error('The selected BOQ belongs to a different project.');
+    }
+    if (selectedHeader?.data?.contract_id && record.contract_id && selectedHeader.data.contract_id !== record.contract_id) {
+      throw new Error('The selected BOQ belongs to a different contract.');
+    }
+    if (selectedItem?.data?.project_id && record.project_id && selectedItem.data.project_id !== record.project_id) {
+      throw new Error('The selected BOQ item belongs to a different project.');
+    }
+    if (selectedItem?.data?.boq_header_id && record.boq_header_id && selectedItem.data.boq_header_id !== record.boq_header_id) {
+      throw new Error('The selected BOQ item belongs to a different BOQ.');
+    }
+  }
+
   async function handleAdd() {
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
     try {
       const row = prepareCodeControlledInsert(tableName, newRow, data);
-      const inserted = await dataRepository.insert<Record<string, any>>(tableName, coerceTypes(row));
+      const prepared = coerceTypes(row);
+      assertRelationshipScope(prepared);
+      const inserted = await dataRepository.insert<Record<string, any>>(tableName, prepared);
       setShowAdd(false);
       setNewRow({});
       onMutated({ type: 'insert', row: inserted });
@@ -433,6 +469,7 @@ export function DataTableView({
       const patch = coerceTypes(editRow);
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
       assertValidHierarchyChange(tableName, data, editingId, patch);
+      assertRelationshipScope({ ...data.find((row) => row.id === editingId), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
       setEditingId(null);
       setEditRow({});
@@ -541,6 +578,7 @@ export function DataTableView({
       const patch = { [key]: val };
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
       assertValidHierarchyChange(tableName, data, id, patch);
+      assertRelationshipScope({ ...data.find((row) => row.id === id), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, id, patch);
       onMutated({ type: 'update', row: updated });
     } catch (error: any) {
@@ -628,12 +666,19 @@ export function DataTableView({
       );
     }
 
-    const relationshipSelectOptions = relationshipOptions?.[col.key];
+    const relationshipSelectOptions = relationshipOptions?.[col.key]?.filter((option) => {
+      if (col.key === 'contract_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'boq_header_id' && row.contract_id) return option.data?.contract_id === row.contract_id;
+      if (col.key === 'boq_header_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'boq_item_id' && row.boq_header_id) return option.data?.boq_header_id === row.boq_header_id;
+      if (col.key === 'boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
+      return true;
+    });
     if (relationshipSelectOptions && relationshipSelectOptions.length > 0) {
       return (
         <div className="relative">
           <select value={row[col.key] || ''} disabled={isReadOnly}
-            onChange={(e) => setRow({ ...row, [col.key]: e.target.value || null })}
+            onChange={(e) => setRow(applyRelationshipSelection(row, col.key, e.target.value || null))}
             className="w-full appearance-none text-sm px-3 py-2 pr-9 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-500">
             <option value="">None (main record)</option>
             {relationshipSelectOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -931,7 +976,7 @@ export function DataTableView({
                                 relationshipOptions={relationshipOptions?.[col.key]}
                               />
                             ) : (
-                              renderCell(row[col.key], col)
+                              renderCell(row[col.key], col, relationshipOptions?.[col.key])
                             )}
                           </td>
                         );
