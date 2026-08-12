@@ -424,7 +424,11 @@ export function DataTableView({
 
   function applyRelationshipSelection(row: Record<string, any>, changedKey: string, selectedValue: string | null): Record<string, any> {
     const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
-    const allowedFields = new Set([...columns.map((column) => column.key), 'project_id', ...(relationshipAutoFillFields || [])]);
+    const allowedFields = new Set([
+      ...columns.map((column) => column.key),
+      'project_id', 'contract_id', 'boq_header_id', 'boq_item_id',
+      ...(relationshipAutoFillFields || []),
+    ]);
     const relatedData = Object.fromEntries(
       Object.entries(selected?.data || {}).filter(([key]) => allowedFields.has(key)),
     );
@@ -453,8 +457,8 @@ export function DataTableView({
     }
 
     const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);
-    if ((tableName === 'client_invoices' || tableName === 'variations') && selectedContractRow?.parent_main_contract_id) {
-      throw new Error('Client invoices and variations must be assigned to the main contract.');
+    if (tableName === 'client_invoices' && selectedContractRow?.parent_main_contract_id) {
+      throw new Error('Client invoices must be assigned to the main contract.');
     }
     if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
       throw new Error('A subcontractor invoice must be assigned to a subcontract.');
