@@ -8,6 +8,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_one_main_contract_per_project
 
 -- Contract and BOQ-item relationships for dependent operational records.
 ALTER TABLE variations ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS project_name text DEFAULT '';
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS boq_header_id uuid;
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS boq_item_id uuid;

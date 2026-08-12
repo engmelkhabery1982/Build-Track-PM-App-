@@ -170,6 +170,7 @@ export interface Contract {
   contract_number: string;
   contract_number_locked: boolean;
   title: string;
+  project_name: string;
   contractor: string;
   contract_type: string;
   contract_value: number;

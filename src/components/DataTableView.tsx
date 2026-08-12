@@ -45,12 +45,14 @@ interface DataTableViewProps {
   filters?: FilterDef[];
   projects: Project[];
   showProjectFilter?: boolean;
+  projectPickerInForm?: boolean;
   dateRangeColumn?: string;
   boqItems?: BOQItem[];
   onMutated: (mutation: LocalDataMutation) => void;
   autoFillOptions?: Record<string, string[]>;
   relationshipOptions?: Record<string, SelectOption[]>;
   relationshipAutoFillFields?: string[];
+  onInsert?: (row: Record<string, any>) => Promise<Record<string, any>>;
 }
 
 function statusColor(status: string): string {
@@ -215,7 +217,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert,
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -451,7 +453,9 @@ export function DataTableView({
       const row = prepareCodeControlledInsert(tableName, newRow, data);
       const prepared = coerceTypes(row);
       assertRelationshipScope(prepared);
-      const inserted = await dataRepository.insert<Record<string, any>>(tableName, prepared);
+      const inserted = onInsert
+        ? await onInsert(prepared)
+        : await dataRepository.insert<Record<string, any>>(tableName, prepared);
       setShowAdd(false);
       setNewRow({});
       onMutated({ type: 'insert', row: inserted });
@@ -642,7 +646,7 @@ export function DataTableView({
   }
 
   const formCols = columns.filter((c) => c.editable !== false);
-  const allColsForForm = showProjectFilter
+  const allColsForForm = showProjectFilter && projectPickerInForm !== false
     ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...formCols]
     : formCols;
 

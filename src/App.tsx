@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck } from 'lucide-react';
 import { useData } from '@/hooks/useData';
+import { dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
@@ -179,6 +180,7 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
   { key: 'contract_number', label: 'Contract Code', type: 'text', editable: true },
   { key: 'parent_main_contract_id', label: 'Parent Main Contract', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
+  { key: 'project_name', label: 'Project Name', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
   { key: 'company', label: 'Company', type: 'text', editable: true },
   { key: 'contractor', label: 'Contractor', type: 'text', editable: true },
@@ -502,6 +504,12 @@ export default function App() {
       relationshipOptions.parent_main_contract_id = data.contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => ({
         value: contract.id,
         label: `${contract.contract_number || contract.id} - ${contract.title}`,
+        data: {
+          project_id: contract.project_id,
+          client: contract.client,
+          company: contract.company,
+          contractor: contract.contractor,
+        },
       }));
     }
     if (activeView === 'subinvoices') {
@@ -529,6 +537,7 @@ export default function App() {
         filters={config.filters}
         projects={data.projects as Project[]}
         showProjectFilter={config.showProjectFilter}
+        projectPickerInForm={tableName !== 'contracts'}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
         onMutated={(mutation) => {
@@ -539,6 +548,36 @@ export default function App() {
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
+        onInsert={tableName === 'contracts' ? async (contractRow) => {
+          if (contractRow.parent_main_contract_id) {
+            return dataRepository.insert<Record<string, any>>('contracts', contractRow);
+          }
+          const projectName = String(contractRow.project_name || '').trim();
+          if (!projectName) throw new Error('Project Name is required when creating a main contract.');
+
+          const projectDraft = prepareCodeControlledInsert('projects', {
+            name: projectName,
+            client: contractRow.client || '',
+            contractor: contractRow.contractor || contractRow.company || '',
+            status: contractRow.status || 'Planning',
+            start_date: contractRow.start_date || null,
+            end_date: contractRow.end_date || null,
+            client_contract_type: contractRow.client_contract_type || '',
+            company_contract_type: contractRow.company_contract_type || '',
+          }, data.projects as Record<string, any>[]);
+          const project = await dataRepository.insert<Record<string, any>>('projects', projectDraft);
+          try {
+            const contract = await dataRepository.insert<Record<string, any>>('contracts', {
+              ...contractRow,
+              project_id: project.id,
+            });
+            data.applyLocalMutation('projects', { type: 'insert', row: project });
+            return contract;
+          } catch (error) {
+            await dataRepository.delete('projects', project.id);
+            throw error;
+          }
+        } : undefined}
       />
     );
   }
