@@ -20,6 +20,8 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Financial' },
   { key: 'subinvoices', label: 'Sub Invoices', icon: Receipt, group: 'Financial' },
   { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Financial' },
+  { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Financial' },
+  { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Financial' },
   { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Financial' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Operations' },
   { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Operations' },
@@ -267,6 +269,17 @@ const CLIENTINV_COLUMNS: ColumnDef[] = [
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
+const INVOICE_TRACKING_COLUMNS: ColumnDef[] = [
+  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: false },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
+  { key: 'invoice_date', label: 'Invoice Date', type: 'date', editable: false },
+  { key: 'due_date', label: 'Due Date', type: 'date', editable: true },
+  { key: 'status', label: 'Invoice Status', type: 'status', editable: true, options: INVOICE_STATUSES },
+  { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
+  { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
 const VARIATION_COLUMNS: ColumnDef[] = [
   { key: 'variation_number', label: 'Variation #', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
@@ -366,6 +379,8 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   cashflow: { columns: CASHFLOW_COLUMNS, showProjectFilter: true, dateRangeColumn: 'date' },
   subinvoices: { columns: SUBINV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   clientinvoices: { columns: CLIENTINV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
+  clientInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
+  subcontractorInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'status', label: 'Status', options: VARIATION_STATUSES }, { key: 'type', label: 'Type', options: VARIATION_TYPES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
   wir: { columns: WIR_COLUMNS, filters: [{ key: 'status', label: 'Status', options: WIR_STATUSES }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
@@ -379,6 +394,7 @@ const TABLE_NAMES: Record<string, string> = {
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
+  clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', documents: 'documents', wir: 'wir_entries',
   laborDuty: 'labor_duty', equipment: 'equipment', tracking: 'tracking_sheet',
 };
@@ -388,6 +404,7 @@ const VIEW_TITLES: Record<string, string> = {
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
+  clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', documents: 'Documents', wir: 'Work Inspection Reports',
   laborDuty: 'Labor Duty', equipment: 'Equipment', tracking: 'Tracking Sheet',
 };
@@ -519,7 +536,11 @@ export default function App() {
         showProjectFilter={config.showProjectFilter}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
-        onMutated={(mutation) => data.applyLocalMutation(tableName, mutation)}
+        onMutated={(mutation) => {
+          data.applyLocalMutation(tableName, mutation);
+          if (tableName === 'client_invoices') void data.reloadInvoiceTracking('client_invoice_tracking');
+          if (tableName === 'subcontractor_invoices') void data.reloadInvoiceTracking('subcontractor_invoice_tracking');
+        }}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
       />

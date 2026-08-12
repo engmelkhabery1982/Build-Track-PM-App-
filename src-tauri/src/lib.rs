@@ -48,6 +48,93 @@ pub fn run() {
       CREATE TABLE IF NOT EXISTS subcontractor_invoice_tracking (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL, FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT, FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT, FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT, FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT);
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 2,
+    description: "sync_local_invoice_tracking",
+    sql: r#"
+      CREATE TRIGGER IF NOT EXISTS sync_client_invoice_tracking_insert
+      AFTER INSERT ON client_invoices
+      BEGIN
+        INSERT INTO client_invoice_tracking (
+          id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id,
+          boq_header_id, boq_item_id, payload
+        ) VALUES (
+          NEW.id, NEW.created_at, NEW.project_id, NEW.contract_id, NULL, NULL, NEW.boq_header_id, NEW.boq_item_id,
+          json_object(
+            'id', NEW.id, 'invoice_id', NEW.id, 'project_id', NEW.project_id, 'contract_id', NEW.contract_id,
+            'invoice_number', json_extract(NEW.payload, '$.invoice_number'),
+            'invoice_date', json_extract(NEW.payload, '$.invoice_date'),
+            'due_date', json_extract(NEW.payload, '$.due_date'),
+            'status', json_extract(NEW.payload, '$.status'),
+            'payment_status', json_extract(NEW.payload, '$.payment_status'),
+            'payment_date', json_extract(NEW.payload, '$.payment_date'),
+            'notes', json_extract(NEW.payload, '$.notes'), 'created_at', NEW.created_at
+          )
+        );
+      END;
+      CREATE TRIGGER IF NOT EXISTS sync_client_invoice_tracking_update
+      AFTER UPDATE ON client_invoices
+      BEGIN
+        UPDATE client_invoice_tracking SET
+          project_id = NEW.project_id, contract_id = NEW.contract_id, boq_header_id = NEW.boq_header_id,
+          boq_item_id = NEW.boq_item_id,
+          payload = json_object(
+            'id', NEW.id, 'invoice_id', NEW.id, 'project_id', NEW.project_id, 'contract_id', NEW.contract_id,
+            'invoice_number', json_extract(NEW.payload, '$.invoice_number'),
+            'invoice_date', json_extract(NEW.payload, '$.invoice_date'),
+            'due_date', json_extract(NEW.payload, '$.due_date'),
+            'status', json_extract(NEW.payload, '$.status'),
+            'payment_status', json_extract(NEW.payload, '$.payment_status'),
+            'payment_date', json_extract(NEW.payload, '$.payment_date'),
+            'notes', json_extract(NEW.payload, '$.notes'), 'created_at', NEW.created_at
+          )
+        WHERE id = NEW.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS sync_client_invoice_tracking_delete
+      AFTER DELETE ON client_invoices
+      BEGIN DELETE FROM client_invoice_tracking WHERE id = OLD.id; END;
+
+      CREATE TRIGGER IF NOT EXISTS sync_subcontractor_invoice_tracking_insert
+      AFTER INSERT ON subcontractor_invoices
+      BEGIN
+        INSERT INTO subcontractor_invoice_tracking (
+          id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id,
+          boq_header_id, boq_item_id, payload
+        ) VALUES (
+          NEW.id, NEW.created_at, NEW.project_id, NEW.contract_id, NULL, NULL, NEW.boq_header_id, NEW.boq_item_id,
+          json_object(
+            'id', NEW.id, 'invoice_id', NEW.id, 'project_id', NEW.project_id, 'contract_id', NEW.contract_id,
+            'invoice_number', json_extract(NEW.payload, '$.invoice_number'),
+            'invoice_date', json_extract(NEW.payload, '$.invoice_date'),
+            'due_date', NULL, 'status', json_extract(NEW.payload, '$.status'),
+            'payment_status', json_extract(NEW.payload, '$.payment_status'),
+            'payment_date', json_extract(NEW.payload, '$.payment_date'),
+            'notes', json_extract(NEW.payload, '$.notes'), 'created_at', NEW.created_at
+          )
+        );
+      END;
+      CREATE TRIGGER IF NOT EXISTS sync_subcontractor_invoice_tracking_update
+      AFTER UPDATE ON subcontractor_invoices
+      BEGIN
+        UPDATE subcontractor_invoice_tracking SET
+          project_id = NEW.project_id, contract_id = NEW.contract_id, boq_header_id = NEW.boq_header_id,
+          boq_item_id = NEW.boq_item_id,
+          payload = json_object(
+            'id', NEW.id, 'invoice_id', NEW.id, 'project_id', NEW.project_id, 'contract_id', NEW.contract_id,
+            'invoice_number', json_extract(NEW.payload, '$.invoice_number'),
+            'invoice_date', json_extract(NEW.payload, '$.invoice_date'),
+            'due_date', NULL, 'status', json_extract(NEW.payload, '$.status'),
+            'payment_status', json_extract(NEW.payload, '$.payment_status'),
+            'payment_date', json_extract(NEW.payload, '$.payment_date'),
+            'notes', json_extract(NEW.payload, '$.notes'), 'created_at', NEW.created_at
+          )
+        WHERE id = NEW.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS sync_subcontractor_invoice_tracking_delete
+      AFTER DELETE ON subcontractor_invoices
+      BEGIN DELETE FROM subcontractor_invoice_tracking WHERE id = OLD.id; END;
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

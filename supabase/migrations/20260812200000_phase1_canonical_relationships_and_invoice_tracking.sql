@@ -77,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_subcontractor_invoices_contract_id ON subcontract
 -- hold each invoice's separate status/payment tracking record.
 CREATE TABLE IF NOT EXISTS client_invoice_tracking (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id uuid UNIQUE REFERENCES client_invoices(id) ON DELETE CASCADE,
   project_id uuid REFERENCES projects(id) ON DELETE SET NULL,
   contract_id uuid REFERENCES contracts(id) ON DELETE SET NULL,
   invoice_number text NOT NULL,
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS client_invoice_tracking (
 
 CREATE TABLE IF NOT EXISTS subcontractor_invoice_tracking (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id uuid UNIQUE REFERENCES subcontractor_invoices(id) ON DELETE CASCADE,
   project_id uuid REFERENCES projects(id) ON DELETE SET NULL,
   contract_id uuid REFERENCES contracts(id) ON DELETE SET NULL,
   invoice_number text NOT NULL,
@@ -122,3 +124,69 @@ BEGIN
     EXECUTE format('CREATE POLICY %I ON %I FOR DELETE TO anon, authenticated USING (true)', 'anon_delete_' || t, t);
   END LOOP;
 END $$;
+
+-- Keep the separate tracking record synchronized with its invoice.
+CREATE OR REPLACE FUNCTION sync_client_invoice_tracking_phase1()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM client_invoice_tracking WHERE invoice_id = OLD.id;
+    RETURN OLD;
+  END IF;
+
+  INSERT INTO client_invoice_tracking (
+    invoice_id, project_id, contract_id, invoice_number, invoice_date, due_date,
+    status, payment_status, payment_date, notes
+  ) VALUES (
+    NEW.id, NEW.project_id, NEW.contract_id, NEW.invoice_number, NEW.invoice_date, NEW.due_date,
+    NEW.status, NEW.payment_status, NEW.payment_date, NEW.notes
+  ) ON CONFLICT (invoice_id) DO UPDATE SET
+    project_id = EXCLUDED.project_id,
+    contract_id = EXCLUDED.contract_id,
+    invoice_number = EXCLUDED.invoice_number,
+    invoice_date = EXCLUDED.invoice_date,
+    due_date = EXCLUDED.due_date,
+    status = EXCLUDED.status,
+    payment_status = EXCLUDED.payment_status,
+    payment_date = EXCLUDED.payment_date,
+    notes = EXCLUDED.notes;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION sync_subcontractor_invoice_tracking_phase1()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM subcontractor_invoice_tracking WHERE invoice_id = OLD.id;
+    RETURN OLD;
+  END IF;
+
+  INSERT INTO subcontractor_invoice_tracking (
+    invoice_id, project_id, contract_id, invoice_number, invoice_date,
+    status, payment_status, payment_date, notes
+  ) VALUES (
+    NEW.id, NEW.project_id, NEW.contract_id, NEW.invoice_number, NEW.invoice_date,
+    NEW.status, NEW.payment_status, NEW.payment_date, NEW.notes
+  ) ON CONFLICT (invoice_id) DO UPDATE SET
+    project_id = EXCLUDED.project_id,
+    contract_id = EXCLUDED.contract_id,
+    invoice_number = EXCLUDED.invoice_number,
+    invoice_date = EXCLUDED.invoice_date,
+    status = EXCLUDED.status,
+    payment_status = EXCLUDED.payment_status,
+    payment_date = EXCLUDED.payment_date,
+    notes = EXCLUDED.notes;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS phase1_client_invoice_tracking_sync ON client_invoices;
+CREATE TRIGGER phase1_client_invoice_tracking_sync
+AFTER INSERT OR UPDATE OR DELETE ON client_invoices
+FOR EACH ROW EXECUTE FUNCTION sync_client_invoice_tracking_phase1();
+
+DROP TRIGGER IF EXISTS phase1_subcontractor_invoice_tracking_sync ON subcontractor_invoices;
+CREATE TRIGGER phase1_subcontractor_invoice_tracking_sync
+AFTER INSERT OR UPDATE OR DELETE ON subcontractor_invoices
+FOR EACH ROW EXECUTE FUNCTION sync_subcontractor_invoice_tracking_phase1();

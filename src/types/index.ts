@@ -336,6 +336,7 @@ export interface TrackingSheet {
 
 export interface InvoiceTracking {
   id: string;
+  invoice_id: string | null;
   project_id: string | null;
   contract_id: string | null;
   invoice_number: string;
@@ -413,4 +414,5 @@ export type ViewKey =
   | 'dashboard' | 'projects' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
+  | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking';

@@ -4,6 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
+  InvoiceTracking,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -27,6 +28,8 @@ export function useData() {
   const [cashFlow, setCashFlow] = useState<CashFlowEntry[]>([]);
   const [subInvoices, setSubInvoices] = useState<SubcontractorInvoice[]>([]);
   const [clientInvoices, setClientInvoices] = useState<ClientInvoice[]>([]);
+  const [clientInvoiceTracking, setClientInvoiceTracking] = useState<InvoiceTracking[]>([]);
+  const [subcontractorInvoiceTracking, setSubcontractorInvoiceTracking] = useState<InvoiceTracking[]>([]);
   const [variations, setVariations] = useState<Variation[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [wirEntries, setWirEntries] = useState<WIREntry[]>([]);
@@ -35,12 +38,22 @@ export function useData() {
   const [tracking, setTracking] = useState<TrackingSheet[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const listOptional = useCallback(async <T,>(tableName: string): Promise<T[]> => {
+    try {
+      return await dataRepository.list<T & object>(tableName);
+    } catch {
+      // The cloud database can be one migration behind the desktop schema.
+      // Optional Phase 1 tables remain empty until their migration is applied.
+      return [];
+    }
+  }, []);
+
   const loadAll = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, ct, bh, bq, cf, si, ci, va, dc, wr, ld, eq, tr,
+        p, t, c, ce, pr, s, pg, sc, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -56,6 +69,8 @@ export function useData() {
         dataRepository.list<CashFlowEntry>('cash_flow'),
         dataRepository.list<SubcontractorInvoice>('subcontractor_invoices'),
         dataRepository.list<ClientInvoice>('client_invoices'),
+        listOptional<InvoiceTracking>('client_invoice_tracking'),
+        listOptional<InvoiceTracking>('subcontractor_invoice_tracking'),
         dataRepository.list<Variation>('variations'),
         dataRepository.list<DocumentEntry>('documents'),
         dataRepository.list<WIREntry>('wir_entries'),
@@ -78,6 +93,8 @@ export function useData() {
       setCashFlow(cf);
       setSubInvoices(si);
       setClientInvoices(ci);
+      setClientInvoiceTracking(cit);
+      setSubcontractorInvoiceTracking(sit);
       setVariations(va);
       setDocuments(dc);
       setWirEntries(wr);
@@ -87,7 +104,7 @@ export function useData() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [listOptional]);
 
   useEffect(() => {
     void loadAll(true);
@@ -124,6 +141,8 @@ export function useData() {
       case 'cash_flow': apply(setCashFlow); break;
       case 'subcontractor_invoices': apply(setSubInvoices); break;
       case 'client_invoices': apply(setClientInvoices); break;
+      case 'client_invoice_tracking': apply(setClientInvoiceTracking); break;
+      case 'subcontractor_invoice_tracking': apply(setSubcontractorInvoiceTracking); break;
       case 'variations': apply(setVariations); break;
       case 'documents': apply(setDocuments); break;
       case 'wir_entries': apply(setWirEntries); break;
@@ -133,10 +152,17 @@ export function useData() {
     }
   }, []);
 
+  const reloadInvoiceTracking = useCallback(async (tableName: 'client_invoice_tracking' | 'subcontractor_invoice_tracking') => {
+    const rows = await listOptional<InvoiceTracking>(tableName);
+    if (tableName === 'client_invoice_tracking') setClientInvoiceTracking(rows);
+    else setSubcontractorInvoiceTracking(rows);
+  }, [listOptional]);
+
   return {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules,
-    contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations,
+    contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
+    clientInvoiceTracking, subcontractorInvoiceTracking, variations,
     documents, wirEntries, laborDuty, equipment, tracking, loading,
-    reload: loadAll, applyLocalMutation,
+    reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }
