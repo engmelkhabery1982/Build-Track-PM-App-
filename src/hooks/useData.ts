@@ -29,8 +29,8 @@ export function useData() {
   const [tracking, setTracking] = useState<TrackingSheet[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  const loadAll = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
 
     try {
       const [
@@ -79,12 +79,12 @@ export function useData() {
       setEquipment(eq);
       setTracking(tr);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadAll();
+    void loadAll(true);
   }, [loadAll]);
 
   return {
