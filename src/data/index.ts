@@ -1,5 +1,6 @@
 import type { DataRepository } from "./repository";
 import { supabaseRepository } from "./supabaseRepository";
+import { SqliteRepository } from "./sqliteRepository";
 
 export type { DataRepository } from "./repository";
 export { DataRepositoryError } from "./repository";
@@ -15,4 +16,10 @@ export {
   prepareCodeControlledInsert,
 } from "./codeControls";
 
-export const dataRepository: DataRepository = supabaseRepository;
+const isTauriDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+// The browser build continues to use Supabase. The desktop build uses the
+// same repository contract backed by its local SQLite file.
+export const dataRepository: DataRepository = isTauriDesktop
+  ? new SqliteRepository()
+  : supabaseRepository;
