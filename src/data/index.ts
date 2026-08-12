@@ -7,6 +7,7 @@ export { DataRepositoryError } from "./repository";
 export { SupabaseRepository } from "./supabaseRepository";
 export { SqliteRepository } from "./sqliteRepository";
 export { selectPrimaryContracts } from "./contractRules";
+export { getMainContractId } from "./contractScope";
 export { assertValidHierarchyChange } from "./hierarchyRules";
 export {
   assertCodeCanBeLocked,

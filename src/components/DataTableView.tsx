@@ -9,6 +9,7 @@ import {
   dataRepository,
   getCodeControl,
   prepareCodeControlledInsert,
+  getMainContractId,
 } from '@/data';
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
@@ -52,7 +53,9 @@ interface DataTableViewProps {
   autoFillOptions?: Record<string, string[]>;
   relationshipOptions?: Record<string, SelectOption[]>;
   relationshipAutoFillFields?: string[];
+  contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null }[];
   onInsert?: (row: Record<string, any>) => Promise<Record<string, any>>;
+  canAdd?: boolean;
 }
 
 function statusColor(status: string): string {
@@ -217,7 +220,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, canAdd = true,
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -372,6 +375,10 @@ export function DataTableView({
       const qty = Number(out.quantity) || 0;
       const ur = Number(out.unit_rate) || 0;
       if (qty && ur) out.amount = Math.round(qty * ur * 100) / 100;
+    }
+    if (contracts && (tableName === 'subcontractor_invoices' || tableName === 'cost_entries' || tableName === 'costs' || tableName === 'progress_entries' || tableName === 'wir_entries')) {
+      const mainContractId = getMainContractId(out.contract_id, contracts);
+      if (mainContractId && mainContractId !== out.contract_id) out.main_contract_id = mainContractId;
     }
     return out;
   }
@@ -827,9 +834,9 @@ export function DataTableView({
             <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print">
               <Download size={15} /> Export
             </button>
-            <button onClick={() => { setNewRow(createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+            {canAdd && <button onClick={() => { setNewRow(createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> Add New
-            </button>
+            </button>}
           </div>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} className="hidden" />
         </div>
@@ -946,7 +953,7 @@ export function DataTableView({
                 {sortedData.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length + (showProjectFilter ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
-                      No records found. {data.length === 0 ? 'Click "Add New" to create the first record.' : 'Try adjusting your filters.'}
+                      No records found. {data.length === 0 ? (canAdd ? 'Click "Add New" to create the first record.' : 'Create a main contract to create the first project.') : 'Try adjusting your filters.'}
                     </td>
                   </tr>
                 ) : (

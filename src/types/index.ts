@@ -50,6 +50,7 @@ export interface Cost {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  main_contract_id: string | null;
   project_code: string;
   item_code: string;
   company_name: string;
@@ -71,6 +72,7 @@ export interface CostEntry {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  main_contract_id: string | null;
   project_code: string;
   boq_code: string;
   company_name: string;
@@ -121,6 +123,7 @@ export interface ProgressEntry {
   id: string;
   project_id: string;
   contract_id: string | null;
+  main_contract_id: string | null;
   project_code: string;
   company_name: string;
   date: string | null;
@@ -244,6 +247,7 @@ export interface SubcontractorInvoice {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  main_contract_id: string | null;
   invoice_number: string;
   subcontractor: string;
   boq_reference: string;
@@ -388,6 +392,7 @@ export interface WIREntry {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  main_contract_id: string | null;
   project_code: string;
   boq_code: string;
   item_code: string;

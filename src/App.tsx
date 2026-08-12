@@ -409,6 +409,47 @@ export default function App() {
 
   const groups = ['Overview', 'Planning', 'Financial', 'Operations'];
 
+  async function syncSubcontractInvoiceCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
+    const existing = data.costEntries.find((entry: any) => entry.source_type === 'subcontractor_invoice' && entry.source_id === (mutation.row?.id || mutation.id));
+    if (mutation.type === 'delete') {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
+      }
+      return;
+    }
+
+    const invoice = mutation.row;
+    if (!invoice) return;
+    const mainContractId = invoice.main_contract_id || invoice.contract_id;
+    const project = data.projects.find((item) => item.id === invoice.project_id);
+    const entry = {
+      project_id: invoice.project_id,
+      project_code: project?.project_code || '',
+      contract_id: mainContractId,
+      main_contract_id: mainContractId,
+      boq_header_id: invoice.boq_header_id || null,
+      boq_item_id: invoice.boq_item_id || null,
+      company_name: invoice.subcontractor || '',
+      boq_item_code: invoice.boq_item_code || '',
+      boq_item_name: invoice.item_desc || '',
+      date: invoice.invoice_date || null,
+      cost_type: 'Subcontractor Invoice',
+      invoice_number: invoice.invoice_number || '',
+      payment_order_number: '',
+      amount: Number(invoice.amount) || 0,
+      source_type: 'subcontractor_invoice',
+      source_id: invoice.id,
+    };
+    if (existing) {
+      const updated = await dataRepository.update<Record<string, any>>('cost_entries', existing.id, entry);
+      data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
+    } else {
+      const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', entry);
+      data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
+    }
+  }
+
   function renderView() {
     if (activeView === 'dashboard') {
       return (
@@ -469,6 +510,18 @@ export default function App() {
         contractor: contract.contractor,
       },
     }));
+    if (activeView === 'clientinvoices' || activeView === 'variations') {
+      relationshipOptions.contract_id = relationshipOptions.contract_id.filter((option) => {
+        const contract = data.contracts.find((item) => item.id === option.value);
+        return contract && !contract.parent_main_contract_id;
+      });
+    }
+    if (activeView === 'subinvoices') {
+      relationshipOptions.contract_id = relationshipOptions.contract_id.filter((option) => {
+        const contract = data.contracts.find((item) => item.id === option.value);
+        return contract && Boolean(contract.parent_main_contract_id);
+      });
+    }
     relationshipOptions.boq_header_id = data.boqHeaders.map((header) => ({
       value: header.id,
       label: `${header.boq_code || header.id} - ${header.classification || 'BOQ'}`,
@@ -540,14 +593,19 @@ export default function App() {
         projectPickerInForm={tableName !== 'contracts'}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
+        contracts={data.contracts}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);
           if (tableName === 'client_invoices') void data.reloadInvoiceTracking('client_invoice_tracking');
-          if (tableName === 'subcontractor_invoices') void data.reloadInvoiceTracking('subcontractor_invoice_tracking');
+          if (tableName === 'subcontractor_invoices') {
+            void data.reloadInvoiceTracking('subcontractor_invoice_tracking');
+            void syncSubcontractInvoiceCost(mutation).catch((error) => alert(`Failed to sync subcontractor cost: ${error.message || 'Unknown error'}`));
+          }
         }}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
+        canAdd={tableName !== 'projects'}
         onInsert={tableName === 'contracts' ? async (contractRow) => {
           if (contractRow.parent_main_contract_id) {
             return dataRepository.insert<Record<string, any>>('contracts', contractRow);

@@ -22,12 +22,17 @@ ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS boq_header_id uuid;
 ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS boq_item_id uuid;
 ALTER TABLE progress_entries ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE progress_entries ADD COLUMN IF NOT EXISTS main_contract_id uuid;
+ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS main_contract_id uuid;
 ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS boq_header_id uuid;
 ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS boq_item_id uuid;
 ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS boq_header_id uuid;
 ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS boq_item_id uuid;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS main_contract_id uuid;
+ALTER TABLE costs ADD COLUMN IF NOT EXISTS main_contract_id uuid;
+ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS main_contract_id uuid;
 
 DO $$
 DECLARE t text;
@@ -46,9 +51,14 @@ BEGIN
       EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL', t, t || '_boq_item_id_fkey');
     END IF;
   END LOOP;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'progress_entries_contract_id_fkey') THEN
-    ALTER TABLE progress_entries ADD CONSTRAINT progress_entries_contract_id_fkey FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL;
-  END IF;
+  FOREACH t IN ARRAY ARRAY['progress_entries','wir_entries'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_contract_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_contract_id_fkey');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_main_contract_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (main_contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_main_contract_id_fkey');
+    END IF;
+  END LOOP;
   FOREACH t IN ARRAY ARRAY['client_invoices','subcontractor_invoices'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_contract_id_fkey') THEN
       EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_contract_id_fkey');
@@ -58,6 +68,11 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_boq_item_id_fkey') THEN
       EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL', t, t || '_boq_item_id_fkey');
+    END IF;
+  END LOOP;
+  FOREACH t IN ARRAY ARRAY['subcontractor_invoices','costs','cost_entries'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_main_contract_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (main_contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_main_contract_id_fkey');
     END IF;
   END LOOP;
 END $$;
@@ -71,8 +86,11 @@ CREATE INDEX IF NOT EXISTS idx_costs_contract_id ON costs(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cost_entries_contract_id ON cost_entries(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cost_entries_boq_item_id ON cost_entries(boq_item_id);
 CREATE INDEX IF NOT EXISTS idx_progress_entries_contract_id ON progress_entries(contract_id);
+CREATE INDEX IF NOT EXISTS idx_progress_entries_main_contract_id ON progress_entries(main_contract_id);
 CREATE INDEX IF NOT EXISTS idx_client_invoices_contract_id ON client_invoices(contract_id);
 CREATE INDEX IF NOT EXISTS idx_subcontractor_invoices_contract_id ON subcontractor_invoices(contract_id);
+CREATE INDEX IF NOT EXISTS idx_subcontractor_invoices_main_contract_id ON subcontractor_invoices(main_contract_id);
+CREATE INDEX IF NOT EXISTS idx_cost_entries_main_contract_id ON cost_entries(main_contract_id);
 
 -- Invoice rows remain in the existing client/subcontractor tables. The new tables
 -- hold each invoice's separate status/payment tracking record.
