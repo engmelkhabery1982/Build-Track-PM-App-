@@ -6,6 +6,12 @@ import type {
   ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
 } from '@/types';
 
+export type LocalDataMutation =
+  | { type: 'insert'; row: Record<string, any> }
+  | { type: 'insertMany'; rows: Record<string, any>[] }
+  | { type: 'update'; row: Record<string, any> }
+  | { type: 'delete'; id: string };
+
 export function useData() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -87,9 +93,50 @@ export function useData() {
     void loadAll(true);
   }, [loadAll]);
 
+  const applyLocalMutation = useCallback((tableName: string, mutation: LocalDataMutation) => {
+    const apply = (setRows: any) => {
+      setRows((previous: Record<string, any>[]) => {
+        switch (mutation.type) {
+          case 'insert':
+            return [mutation.row, ...previous];
+          case 'insertMany':
+            return [...mutation.rows, ...previous];
+          case 'update':
+            return previous.map((row: Record<string, any>) => row.id === mutation.row.id ? mutation.row : row);
+          case 'delete':
+            return previous.filter((row: Record<string, any>) => row.id !== mutation.id);
+        }
+      });
+    };
+
+    switch (tableName) {
+      case 'projects': apply(setProjects); break;
+      case 'tasks': apply(setTasks); break;
+      case 'costs': apply(setCosts); break;
+      case 'cost_entries': apply(setCostEntries); break;
+      case 'procurement': apply(setProcurement); break;
+      case 'safety': apply(setSafety); break;
+      case 'progress_entries': apply(setProgress); break;
+      case 'schedules': apply(setSchedules); break;
+      case 'contracts': apply(setContracts); break;
+      case 'boq_headers': apply(setBoqHeaders); break;
+      case 'boq_items': apply(setBoqItems); break;
+      case 'cash_flow': apply(setCashFlow); break;
+      case 'subcontractor_invoices': apply(setSubInvoices); break;
+      case 'client_invoices': apply(setClientInvoices); break;
+      case 'variations': apply(setVariations); break;
+      case 'documents': apply(setDocuments); break;
+      case 'wir_entries': apply(setWirEntries); break;
+      case 'labor_duty': apply(setLaborDuty); break;
+      case 'equipment': apply(setEquipment); break;
+      case 'tracking_sheet': apply(setTracking); break;
+    }
+  }, []);
+
   return {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations,
-    documents, wirEntries, laborDuty, equipment, tracking, loading, reload: loadAll,
+    documents, wirEntries, laborDuty, equipment, tracking, loading,
+    reload: loadAll, applyLocalMutation,
   };
 }

@@ -11,6 +11,7 @@ import {
   prepareCodeControlledInsert,
 } from '@/data';
 import type { Project, BOQItem } from '@/types';
+import type { LocalDataMutation } from '@/hooks/useData';
 
 export interface ColumnDef {
   key: string;
@@ -45,7 +46,7 @@ interface DataTableViewProps {
   showProjectFilter?: boolean;
   dateRangeColumn?: string;
   boqItems?: BOQItem[];
-  onChanged: () => void;
+  onMutated: (mutation: LocalDataMutation) => void;
   autoFillOptions?: Record<string, string[]>;
   relationshipOptions?: Record<string, SelectOption[]>;
 }
@@ -210,7 +211,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onChanged, autoFillOptions, relationshipOptions,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions,
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -413,10 +414,10 @@ export function DataTableView({
     savedScroll.current = scrollRef.current?.scrollTop || 0;
     try {
       const row = prepareCodeControlledInsert(tableName, newRow, data);
-      await dataRepository.insert(tableName, coerceTypes(row));
+      const inserted = await dataRepository.insert<Record<string, any>>(tableName, coerceTypes(row));
       setShowAdd(false);
       setNewRow({});
-      onChanged();
+      onMutated({ type: 'insert', row: inserted });
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to add the record.'}`);
     } finally {
@@ -432,10 +433,10 @@ export function DataTableView({
       const patch = coerceTypes(editRow);
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
       assertValidHierarchyChange(tableName, data, editingId, patch);
-      await dataRepository.update(tableName, editingId, patch);
+      const updated = await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
       setEditingId(null);
       setEditRow({});
-      onChanged();
+      onMutated({ type: 'update', row: updated });
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to update the record.'}`);
     } finally {
@@ -474,18 +475,20 @@ export function DataTableView({
       });
       const BATCH = 500;
       let success = 0;
+      const insertedRows: Record<string, any>[] = [];
       const errors: string[] = [];
       for (let i = 0; i < mapped.length; i += BATCH) {
         const batch = mapped.slice(i, i + BATCH);
         try {
-          await dataRepository.insertMany(tableName, batch);
-          success += batch.length;
+          const inserted = await dataRepository.insertMany<Record<string, any>>(tableName, batch);
+          success += inserted.length;
+          insertedRows.push(...inserted);
         } catch (error: any) {
           errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message || 'Failed to import.'}`);
         }
       }
       setImportResult({ success, failed: mapped.length - success, errors });
-      onChanged();
+      if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
     } catch (err: any) {
       setImportResult({ success: 0, failed: 0, errors: [err.message || 'Failed to read the Excel file.'] });
     }
@@ -538,8 +541,8 @@ export function DataTableView({
       const patch = { [key]: val };
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
       assertValidHierarchyChange(tableName, data, id, patch);
-      await dataRepository.update(tableName, id, patch);
-      onChanged();
+      const updated = await dataRepository.update<Record<string, any>>(tableName, id, patch);
+      onMutated({ type: 'update', row: updated });
     } catch (error: any) {
       alert(`Failed to update: ${error.message || 'Unknown error'}`);
     }
@@ -555,8 +558,8 @@ export function DataTableView({
 
     setSaving(true);
     try {
-      await dataRepository.update(tableName, row.id, { [control.lockField]: !locked });
-      onChanged();
+      const updated = await dataRepository.update<Record<string, any>>(tableName, row.id, { [control.lockField]: !locked });
+      onMutated({ type: 'update', row: updated });
     } catch (error: any) {
       alert(`Failed to ${locked ? 'unlock' : 'lock'} code: ${error.message || 'Unknown error'}`);
     } finally {
@@ -571,7 +574,7 @@ export function DataTableView({
     try {
       await dataRepository.delete(tableName, deleteId);
       setDeleteId(null);
-      onChanged();
+      onMutated({ type: 'delete', id: deleteId });
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to delete the record.'}`);
     } finally {

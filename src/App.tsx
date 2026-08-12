@@ -473,7 +473,7 @@ export default function App() {
         showProjectFilter={config.showProjectFilter}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
-        onChanged={data.reload}
+        onMutated={(mutation) => data.applyLocalMutation(tableName, mutation)}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
       />
