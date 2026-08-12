@@ -47,6 +47,9 @@ export interface Task {
 export interface Cost {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   project_code: string;
   item_code: string;
   company_name: string;
@@ -65,6 +68,9 @@ export interface Cost {
 export interface CostEntry {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   project_code: string;
   boq_code: string;
   company_name: string;
@@ -114,6 +120,7 @@ export interface Safety {
 export interface ProgressEntry {
   id: string;
   project_id: string;
+  contract_id: string | null;
   project_code: string;
   company_name: string;
   date: string | null;
@@ -134,6 +141,9 @@ export interface ProgressEntry {
 export interface Schedule {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   project_code: string;
   boq_code: string;
   boq_item_code: string;
@@ -230,6 +240,9 @@ export interface CashFlowEntry {
 export interface SubcontractorInvoice {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   invoice_number: string;
   subcontractor: string;
   boq_reference: string;
@@ -253,6 +266,9 @@ export interface SubcontractorInvoice {
 export interface ClientInvoice {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   invoice_number: string;
   client: string;
   boq_code: string;
@@ -318,9 +334,24 @@ export interface TrackingSheet {
   created_at: string;
 }
 
+export interface InvoiceTracking {
+  id: string;
+  project_id: string | null;
+  contract_id: string | null;
+  invoice_number: string;
+  invoice_date: string | null;
+  due_date: string | null;
+  status: string;
+  payment_status: string;
+  payment_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
 export interface Variation {
   id: string;
   project_id: string;
+  contract_id: string | null;
   variation_number: string;
   type: string;
   title: string;
@@ -352,6 +383,9 @@ export interface DocumentEntry {
 export interface WIREntry {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   project_code: string;
   boq_code: string;
   item_code: string;
