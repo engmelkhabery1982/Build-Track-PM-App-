@@ -451,6 +451,14 @@ export function DataTableView({
     if (selectedItem?.data?.boq_header_id && record.boq_header_id && selectedItem.data.boq_header_id !== record.boq_header_id) {
       throw new Error('The selected BOQ item belongs to a different BOQ.');
     }
+
+    const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);
+    if ((tableName === 'client_invoices' || tableName === 'variations') && selectedContractRow?.parent_main_contract_id) {
+      throw new Error('Client invoices and variations must be assigned to the main contract.');
+    }
+    if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
+      throw new Error('A subcontractor invoice must be assigned to a subcontract.');
+    }
   }
 
   async function handleAdd() {

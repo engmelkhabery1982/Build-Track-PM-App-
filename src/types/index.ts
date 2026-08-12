@@ -31,6 +31,7 @@ export interface ProjectWithStats extends Project {
 export interface Task {
   id: string;
   project_id: string;
+  contract_id: string | null;
   name: string;
   assignee: string;
   category: string;
@@ -92,6 +93,9 @@ export interface CostEntry {
 export interface Procurement {
   id: string;
   project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
   item: string;
   supplier: string;
   quantity: number;
@@ -108,6 +112,7 @@ export interface Procurement {
 export interface Safety {
   id: string;
   project_id: string;
+  contract_id: string | null;
   type: string;
   severity: string;
   date: string | null;
@@ -230,6 +235,7 @@ export interface BOQItem {
 export interface CashFlowEntry {
   id: string;
   project_id: string;
+  contract_id: string | null;
   date: string | null;
   description: string;
   inflow: number;
@@ -297,6 +303,7 @@ export interface ClientInvoice {
 export interface LaborDuty {
   id: string;
   project_id: string;
+  contract_id: string | null;
   project_code: string;
   date: string | null;
   worker_name: string;
@@ -314,6 +321,7 @@ export interface LaborDuty {
 export interface Equipment {
   id: string;
   project_id: string;
+  contract_id: string | null;
   project_code: string;
   date: string | null;
   equipment_name: string;
@@ -374,6 +382,7 @@ export interface Variation {
 export interface DocumentEntry {
   id: string;
   project_id: string;
+  contract_id: string | null;
   document_name: string;
   document_type: string;
   category: string;

@@ -75,6 +75,7 @@ const PROJECT_COLUMNS: ColumnDef[] = [
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'name', label: 'Task Name', type: 'text', editable: true },
   { key: 'assignee', label: 'Assignee', type: 'text', editable: true },
   { key: 'category', label: 'Category', type: 'text', editable: true },
@@ -116,6 +117,9 @@ const COST_ENTRY_COLUMNS: ColumnDef[] = [
 ];
 
 const PROCUREMENT_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'item', label: 'Item', type: 'text', editable: true },
   { key: 'supplier', label: 'Supplier', type: 'text', editable: true },
   { key: 'quantity', label: 'Qty', type: 'number', editable: true },
@@ -128,6 +132,7 @@ const PROCUREMENT_COLUMNS: ColumnDef[] = [
 ];
 
 const SAFETY_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'type', label: 'Type', type: 'status', editable: true, options: SAFETY_TYPES },
   { key: 'severity', label: 'Severity', type: 'status', editable: true, options: SAFETY_SEVERITIES },
   { key: 'description', label: 'Description', type: 'text', editable: true },
@@ -217,6 +222,7 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
 ];
 
 const CASHFLOW_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'category', label: 'Category', type: 'text', editable: true },
@@ -290,6 +296,7 @@ const VARIATION_COLUMNS: ColumnDef[] = [
 ];
 
 const DOC_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'document_name', label: 'Name', type: 'text', editable: true },
   { key: 'document_type', label: 'Type', type: 'status', editable: true, options: DOC_TYPES },
   { key: 'category', label: 'Category', type: 'text', editable: true },
@@ -324,6 +331,7 @@ const WIR_COLUMNS: ColumnDef[] = [
 ];
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'worker_name', label: 'Worker Name', type: 'text', editable: true },
   { key: 'role', label: 'Role', type: 'text', editable: true, options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] },
@@ -337,6 +345,7 @@ const LABOR_DUTY_COLUMNS: ColumnDef[] = [
 ];
 
 const EQUIPMENT_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'equipment_name', label: 'Equipment Name', type: 'text', editable: true },
   { key: 'equipment_type', label: 'Type', type: 'text', editable: true, options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] },

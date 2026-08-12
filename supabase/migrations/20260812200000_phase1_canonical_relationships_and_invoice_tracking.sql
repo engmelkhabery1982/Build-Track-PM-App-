@@ -9,6 +9,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_one_main_contract_per_project
 -- Contract and BOQ-item relationships for dependent operational records.
 ALTER TABLE variations ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS project_name text DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE procurement ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE procurement ADD COLUMN IF NOT EXISTS boq_header_id uuid;
+ALTER TABLE procurement ADD COLUMN IF NOT EXISTS boq_item_id uuid;
+ALTER TABLE safety ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE cash_flow ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE labor_duty ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS contract_id uuid;
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS boq_header_id uuid;
 ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS boq_item_id uuid;
@@ -51,6 +60,19 @@ BEGIN
       EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL', t, t || '_boq_item_id_fkey');
     END IF;
   END LOOP;
+  FOREACH t IN ARRAY ARRAY['tasks','procurement','safety','cash_flow','documents','labor_duty','equipment'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_contract_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_contract_id_fkey');
+    END IF;
+  END LOOP;
+  FOREACH t IN ARRAY ARRAY['procurement'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_boq_header_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE SET NULL', t, t || '_boq_header_id_fkey');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_boq_item_id_fkey') THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL', t, t || '_boq_item_id_fkey');
+    END IF;
+  END LOOP;
   FOREACH t IN ARRAY ARRAY['progress_entries','wir_entries'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = t || '_contract_id_fkey') THEN
       EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL', t, t || '_contract_id_fkey');
@@ -78,6 +100,13 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_variations_contract_id ON variations(contract_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_contract_id ON tasks(contract_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_contract_id ON procurement(contract_id);
+CREATE INDEX IF NOT EXISTS idx_safety_contract_id ON safety(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cash_flow_contract_id ON cash_flow(contract_id);
+CREATE INDEX IF NOT EXISTS idx_documents_contract_id ON documents(contract_id);
+CREATE INDEX IF NOT EXISTS idx_labor_duty_contract_id ON labor_duty(contract_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_contract_id ON equipment(contract_id);
 CREATE INDEX IF NOT EXISTS idx_wir_entries_contract_id ON wir_entries(contract_id);
 CREATE INDEX IF NOT EXISTS idx_wir_entries_boq_item_id ON wir_entries(boq_item_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_contract_id ON schedules(contract_id);
