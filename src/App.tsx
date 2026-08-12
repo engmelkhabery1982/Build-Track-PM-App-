@@ -86,7 +86,6 @@ const TASK_COLUMNS: ColumnDef[] = [
 ];
 
 const COST_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
@@ -102,7 +101,6 @@ const COST_COLUMNS: ColumnDef[] = [
 ];
 
 const COST_ENTRY_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
@@ -140,7 +138,6 @@ const SAFETY_COLUMNS: ColumnDef[] = [
 ];
 
 const PROGRESS_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Company', type: 'text', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
@@ -158,7 +155,6 @@ const PROGRESS_COLUMNS: ColumnDef[] = [
 ];
 
 const SCHEDULE_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
@@ -198,7 +194,6 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
 ];
 
 const BOQ_HEADER_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_code', label: 'BOQ Code', type: 'text', editable: true },
   { key: 'classification', label: 'Classification', type: 'text', editable: true, options: BOQ_CLASSIFICATIONS },
@@ -208,7 +203,6 @@ const BOQ_HEADER_COLUMNS: ColumnDef[] = [
 ];
 
 const BOQ_ITEM_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
   { key: 'item_code', label: 'BOQ Item Code', type: 'text', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text', editable: true },
@@ -305,7 +299,6 @@ const DOC_COLUMNS: ColumnDef[] = [
 ];
 
 const WIR_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_header_id', label: 'BOQ Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
@@ -329,7 +322,6 @@ const WIR_COLUMNS: ColumnDef[] = [
 ];
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'worker_name', label: 'Worker Name', type: 'text', editable: true },
   { key: 'role', label: 'Role', type: 'text', editable: true, options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] },
@@ -343,7 +335,6 @@ const LABOR_DUTY_COLUMNS: ColumnDef[] = [
 ];
 
 const EQUIPMENT_COLUMNS: ColumnDef[] = [
-  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'equipment_name', label: 'Equipment Name', type: 'text', editable: true },
   { key: 'equipment_type', label: 'Type', type: 'text', editable: true, options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] },
@@ -447,6 +438,10 @@ export default function App() {
     const title = VIEW_TITLES[activeView];
     const viewData = (data as any)[activeView] || [];
     const navItem = NAV_ITEMS.find((n) => n.key === activeView);
+    const projectCodeBackedTables = new Set([
+      'costs', 'cost_entries', 'progress_entries', 'schedules', 'boq_headers',
+      'boq_items', 'wir_entries', 'labor_duty', 'equipment',
+    ]);
 
     const autoFillOptions: Record<string, string[]> = {};
     const relationshipOptions: Record<string, SelectOption[]> = {};
@@ -543,6 +538,7 @@ export default function App() {
         }}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
+        relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
       />
     );
   }

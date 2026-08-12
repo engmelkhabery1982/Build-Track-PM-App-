@@ -50,6 +50,7 @@ interface DataTableViewProps {
   onMutated: (mutation: LocalDataMutation) => void;
   autoFillOptions?: Record<string, string[]>;
   relationshipOptions?: Record<string, SelectOption[]>;
+  relationshipAutoFillFields?: string[];
 }
 
 function statusColor(status: string): string {
@@ -214,7 +215,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, dateRangeColumn, boqItems, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields,
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -414,7 +415,7 @@ export function DataTableView({
 
   function applyRelationshipSelection(row: Record<string, any>, changedKey: string, selectedValue: string | null): Record<string, any> {
     const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
-    const allowedFields = new Set([...columns.map((column) => column.key), 'project_id']);
+    const allowedFields = new Set([...columns.map((column) => column.key), 'project_id', ...(relationshipAutoFillFields || [])]);
     const relatedData = Object.fromEntries(
       Object.entries(selected?.data || {}).filter(([key]) => allowedFields.has(key)),
     );
@@ -642,7 +643,7 @@ export function DataTableView({
 
   const formCols = columns.filter((c) => c.editable !== false);
   const allColsForForm = showProjectFilter
-    ? [{ key: 'project_id', label: 'Project', type: 'text' as const, options: projects.map((p) => p.id) }, ...formCols]
+    ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...formCols]
     : formCols;
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
@@ -923,7 +924,7 @@ export function DataTableView({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
-                  {showProjectFilter && <th className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300">Project</th>}
+                  {showProjectFilter && <th className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300">Project Code</th>}
                   {columns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
                       className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
