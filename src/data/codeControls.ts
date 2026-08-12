@@ -15,8 +15,8 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
     scopeFields: [],
   },
   contracts: {
-    codeField: 'contract_code',
-    lockField: 'contract_code_locked',
+    codeField: 'contract_number',
+    lockField: 'contract_number_locked',
     defaultPrefix: 'CNT',
     scopeFields: ['project_id'],
   },

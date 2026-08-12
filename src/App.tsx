@@ -173,9 +173,8 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
 ];
 
 const CONTRACT_COLUMNS: ColumnDef[] = [
-  { key: 'contract_code', label: 'Contract Code', type: 'text', editable: true },
+  { key: 'contract_number', label: 'Contract Code', type: 'text', editable: true },
   { key: 'parent_main_contract_id', label: 'Parent Main Contract', type: 'select', editable: true },
-  { key: 'contract_number', label: 'Contract #', type: 'text', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
   { key: 'company', label: 'Company', type: 'text', editable: true },
@@ -432,13 +431,13 @@ export default function App() {
     if (activeView === 'contracts') {
       relationshipOptions.parent_main_contract_id = data.contracts.map((contract) => ({
         value: contract.id,
-        label: `${contract.contract_code || contract.contract_number || contract.id} - ${contract.title}`,
+        label: `${contract.contract_number || contract.id} - ${contract.title}`,
       }));
     }
     if (activeView === 'boq') {
       relationshipOptions.contract_id = data.contracts.map((contract) => ({
         value: contract.id,
-        label: `${contract.contract_code || contract.contract_number || contract.id} - ${contract.title}`,
+        label: `${contract.contract_number || contract.id} - ${contract.title}`,
       }));
     }
     if (activeView === 'boqItems') {

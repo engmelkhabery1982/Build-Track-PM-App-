@@ -158,6 +158,7 @@ export interface Contract {
   id: string;
   project_id: string;
   contract_number: string;
+  contract_number_locked: boolean;
   title: string;
   contractor: string;
   contract_type: string;
@@ -166,14 +167,12 @@ export interface Contract {
   end_date: string | null;
   status: string;
   signed_date: string | null;
-  contract_code: string;
   client: string;
   company: string;
   client_contract_type: string;
   company_contract_type: string;
   parent_main_contract_id: string | null;
   document_reference: string;
-  contract_code_locked: boolean;
   last_modified: string;
   notes: string;
   created_at: string;
