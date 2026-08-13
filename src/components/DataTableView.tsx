@@ -17,7 +17,7 @@ import type { LocalDataMutation } from '@/hooks/useData';
 export interface ColumnDef {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'money' | 'date' | 'status' | 'progress' | 'boolean' | 'select' | 'evm';
+  type?: 'text' | 'password' | 'number' | 'money' | 'date' | 'status' | 'progress' | 'boolean' | 'select' | 'evm';
   width?: string;
   editable?: boolean;
   options?: string[];
@@ -1353,7 +1353,7 @@ export function DataTableView({
     };
     return (
       <input
-        type={col.type === 'number' || col.type === 'money' ? 'number' : col.type === 'date' ? 'date' : 'text'}
+        type={col.type === 'number' || col.type === 'money' ? 'number' : col.type === 'date' ? 'date' : col.type === 'password' ? 'password' : 'text'}
         value={row[col.key] ?? ''}
         onChange={(e) => applyStandardValue(e.target.value)}
         className="w-full text-sm px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400"

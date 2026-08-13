@@ -114,6 +114,13 @@ const SNAPSHOT_COLUMNS: ColumnDef[] = [
 const USER_COLUMNS: ColumnDef[] = [
   { key: 'username', label: 'Username', type: 'text', editable: true }, { key: 'display_name', label: 'Display Name', type: 'text', editable: true }, { key: 'role', label: 'Role', type: 'status', editable: true, options: ['PMO Admin', 'Project Manager', 'Commercial Manager', 'Site Engineer', 'Executive Viewer'] }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Disabled'] }, { key: 'last_login_at', label: 'Last Login', type: 'date', editable: false },
 ];
+const USER_FORM_COLUMNS: ColumnDef[] = [
+  { key: 'username', label: 'Username', type: 'text', editable: true },
+  { key: 'display_name', label: 'Display Name', type: 'text', editable: true },
+  { key: 'role', label: 'Role', type: 'status', editable: true, options: ['PMO Admin', 'Project Manager', 'Commercial Manager', 'Site Engineer', 'Executive Viewer'] },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Disabled'] },
+  { key: 'initial_password', label: 'Initial Password (min. 8 characters)', type: 'password', editable: true },
+];
 
 const GOVERNANCE_COLUMNS: ColumnDef[] = [
   { key: 'reference_number', label: 'Reference #', type: 'text', editable: true },
@@ -1291,7 +1298,7 @@ export default function App() {
     if (!config) return null;
     const tableName = TABLE_NAMES[activeView];
     const title = VIEW_TITLES[activeView];
-    const roleReadOnly = activeRole === 'Executive Viewer' || (activeRole === 'Site Engineer' && ['contracts', 'variations', 'costs', 'cost_entries', 'cash_flow', 'project_baselines', 'reporting_periods', 'approval_requests'].includes(tableName));
+    const roleReadOnly = activeRole === 'Executive Viewer' || (activeRole === 'Site Engineer' && ['contracts', 'variations', 'costs', 'cost_entries', 'cash_flow', 'project_baselines', 'reporting_periods', 'approval_requests'].includes(tableName)) || (tableName === 'app_users' && activeRole !== 'PMO Admin');
     // The navigation key is "boq", while the loaded state is named
     // "boqHeaders". Reading the navigation key made successfully saved BOQs
     // look as if they had disappeared.
@@ -1790,8 +1797,23 @@ export default function App() {
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
-        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : undefined}
-        onInsert={tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
+        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : undefined}
+        onInsert={tableName === 'app_users' ? async (userDraft) => {
+          const username = String(userDraft.username || '').trim();
+          const password = String(userDraft.initial_password || '');
+          if (!username) throw new Error('Username is required.');
+          if (password.length < 8) throw new Error('Initial password must contain at least 8 characters.');
+          if (data.users.some((user: any) => String(user.username || '').toLowerCase() === username.toLowerCase())) {
+            throw new Error('This username is already in use.');
+          }
+          const secured = await hashPassword(password);
+          const { initial_password: _password, ...safeUser } = userDraft;
+          return dataRepository.insert<Record<string, any>>('app_users', {
+            ...safeUser, username, display_name: String(userDraft.display_name || username).trim(),
+            role: userDraft.role || 'Project Manager', status: userDraft.status || 'Active',
+            password_hash: secured.hash, password_salt: secured.salt, last_login_at: null,
+          });
+        } : tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
           const projectCosts = data.costs.filter((cost: any) => cost.project_id === snapshotDraft.project_id);
           const planned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
           const earned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
