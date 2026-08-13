@@ -1032,6 +1032,10 @@ export default function App() {
         { label: 'Cash Flow', view: 'cashflow', icon: Banknote },
         { label: 'Operations', view: 'procurement', icon: Package },
       ];
+      const openWorkspaceArea = (view: ViewKey) => {
+        setWorkspaceProjectId(selectedProject.id);
+        setActiveView(view);
+      };
 
       return (
         <div className="p-4 sm:p-6 space-y-5 overflow-y-auto h-full">
@@ -1052,7 +1056,7 @@ export default function App() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {sections.map((section) => {
               const Icon = section.icon;
-              return <button key={section.label} onClick={() => setActiveView(section.view)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm transition hover:border-primary-300 hover:shadow-md">
+              return <button key={section.label} onClick={() => openWorkspaceArea(section.view)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm transition hover:border-primary-300 hover:shadow-md">
                 <div className={`mb-3 inline-flex rounded-lg p-2 ${section.tone}`}><Icon size={19} /></div>
                 <p className="text-xs font-medium text-neutral-500">{section.label}</p>
                 <p className="mt-1 text-xl font-bold text-neutral-900">{section.value}</p>
@@ -1075,7 +1079,7 @@ export default function App() {
               <div className="mt-5 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-primary-600" style={{ width: `${progress}%` }} /></div>
               <div className="mt-2 flex justify-between text-xs text-neutral-500"><span>Delivery progress</span><span>{progress.toFixed(1)}%</span></div>
             </section>
-            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-neutral-900">Open a work area</h3><p className="mt-1 text-xs text-neutral-500">All areas preserve the same project relationship.</p><div className="mt-4 grid grid-cols-2 gap-2">{workspaceTabs.map((tab) => { const Icon = tab.icon; return <button key={tab.view} onClick={() => setActiveView(tab.view)} className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm text-neutral-700 hover:border-primary-300 hover:bg-primary-50"><Icon size={16} className="text-primary-600" />{tab.label}</button>; })}</div></section>
+            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-neutral-900">Open a work area</h3><p className="mt-1 text-xs text-neutral-500">All areas preserve the same project relationship.</p><div className="mt-4 grid grid-cols-2 gap-2">{workspaceTabs.map((tab) => { const Icon = tab.icon; return <button key={tab.view} onClick={() => openWorkspaceArea(tab.view)} className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm text-neutral-700 hover:border-primary-300 hover:bg-primary-50"><Icon size={16} className="text-primary-600" />{tab.label}</button>; })}</div></section>
           </div>
         </div>
       );
@@ -1488,6 +1492,7 @@ export default function App() {
         filters={config.filters}
         projects={data.projects as Project[]}
         showProjectFilter={config.showProjectFilter}
+        initialProjectId={workspaceProjectId || undefined}
         showProjectColumn={tableName !== 'contracts'}
         projectPickerInForm={!['contracts', 'boq_headers', 'boq_items', 'client_invoices', 'subcontractor_invoices'].includes(tableName)}
         dateRangeColumn={config.dateRangeColumn}

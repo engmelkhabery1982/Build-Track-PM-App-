@@ -46,6 +46,8 @@ interface DataTableViewProps {
   filters?: FilterDef[];
   projects: Project[];
   showProjectFilter?: boolean;
+  /** Project selected from Project Workspace. It initializes the table context without preventing a user from changing the filter. */
+  initialProjectId?: string;
   showProjectColumn?: boolean;
   projectPickerInForm?: boolean;
   dateRangeColumn?: string;
@@ -272,16 +274,23 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [visibleFilterKeys, setVisibleFilterKeys] = useState<string[]>(() => filters?.map((filter) => filter.key) || []);
-  const [projectFilter, setProjectFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+
+  // Entering a work area from Project Workspace establishes that project's
+  // context. Once in the table, the normal project selector remains fully
+  // available, including the option to inspect all projects.
+  useEffect(() => {
+    if (initialProjectId) setProjectFilter(initialProjectId);
+  }, [initialProjectId]);
   const [newRow, setNewRow] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
