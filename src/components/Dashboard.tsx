@@ -74,7 +74,7 @@ function useAnimatedNumber(target: number, duration = 800): number {
   return value;
 }
 
-type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procurement' | 'documents' | 'action';
+type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety' | 'procurement' | 'documents' | 'action';
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
@@ -519,6 +519,7 @@ export function Dashboard({
 
   const tabs: { key: DashboardTab; label: string; icon: typeof LayoutDashboard }[] = [
     { key: 'overview', label: 'Executive Overview', icon: LayoutDashboard },
+    { key: 'report', label: 'PMO Report Pack', icon: Printer },
     { key: 'financials', label: 'Commercial & EVM', icon: BarChart3 },
     { key: 'schedule', label: 'Time Controls', icon: CalendarClock },
     { key: 'action', label: `PMO Actions${actionItems.length > 0 ? ` (${actionItems.length})` : ''}`, icon: Zap },
@@ -1311,6 +1312,76 @@ export function Dashboard({
                 {fDocuments.length === 0 && <p className="text-sm text-neutral-400 text-center py-8">No documents yet</p>}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ============ PMO REPORT PACK TAB ============ */}
+        {activeTab === 'report' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="rounded-xl border border-primary-200 bg-gradient-to-r from-primary-700 to-primary-600 p-6 text-white shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary-100">PMO Periodic Report</p>
+              <h3 className="mt-2 text-2xl font-bold">{selectedProject?.name || 'Portfolio Executive Report'}</h3>
+              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-primary-100">
+                <span>Reporting date: {new Date().toLocaleDateString()}</span>
+                <span>{pid === 'all' ? `${fProjects.length} projects in scope` : 'Project control summary'}</span>
+                <span>Health: <strong className="text-white">{healthLabel} ({healthScore}/100)</strong></span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { label: 'Modified Contract Value', value: fmtMoney(stats.modifiedContractValue), sub: `${stats.approvedVariations} approved variation(s)` },
+                { label: 'Planned Value to Date', value: fmtMoney(evm.PV), sub: `BAC ${fmtMoney(evm.BAC)}` },
+                { label: 'Earned Value', value: fmtMoney(evm.EV), sub: `SPI ${evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'}` },
+                { label: 'Actual Cost', value: fmtMoney(evm.AC), sub: `CPI ${evm.CPI > 0 ? evm.CPI.toFixed(2) : '—'}` },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{item.label}</p>
+                  <p className="mt-2 text-2xl font-bold text-neutral-900">{item.value}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{item.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-200 px-5 py-4"><h4 className="text-sm font-semibold text-neutral-800">Commercial & Forecast</h4></div>
+                <div className="space-y-3 p-5 text-sm">
+                  {[
+                    ['Original contract value', fmtMoney(stats.totalContractValue)],
+                    ['Approved variation impact', fmtMoney(stats.approvedVariationCostImpact)],
+                    ['Estimate at completion', fmtMoney(evm.EAC)],
+                    ['Variance at completion', fmtMoney(evm.VAC)],
+                    ['Net cash flow', fmtMoney(stats.netCashFlow)],
+                    ['Outstanding client invoices', fmtMoney(stats.clientOutstanding)],
+                    ['Outstanding subcontractor invoices', fmtMoney(stats.subOutstanding)],
+                  ].map(([label, value]) => <div key={label} className="flex justify-between gap-4"><span className="text-neutral-500">{label}</span><strong className="text-neutral-800">{value}</strong></div>)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-200 px-5 py-4"><h4 className="text-sm font-semibold text-neutral-800">Delivery & Governance</h4></div>
+                <div className="grid grid-cols-2 gap-px bg-neutral-100">
+                  {[
+                    ['Delayed activities', stats.delayedSchedules], ['Critical-path activities', stats.criticalPathCount],
+                    ['Open RFIs', stats.openRfis], ['Pending submittals', stats.pendingSubmittals],
+                    ['Open quality items', stats.openQualityItems], ['Open governance items', stats.openGovernanceItems],
+                    ['Open reporting periods', stats.openReportingPeriods], ['Current documents', stats.currentDocs],
+                  ].map(([label, value]) => <div key={String(label)} className="bg-white p-4"><p className="text-2xl font-bold text-neutral-900">{value}</p><p className="mt-1 text-xs text-neutral-500">{label}</p></div>)}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+                <h4 className="text-sm font-semibold text-neutral-800">Management Actions</h4>
+                <span className="text-xs text-neutral-500">{actionItems.length} action(s) identified</span>
+              </div>
+              {actionItems.length ? <div className="divide-y divide-neutral-100">{actionItems.map((item, index) => {
+                const Icon = item.icon;
+                return <button key={`${item.text}-${index}`} onClick={() => onNavigate(item.view)} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-neutral-50"><Icon size={16} className={severityIconColors[item.severity]} /><span className="flex-1 text-sm text-neutral-700">{item.text}</span><span className="text-xs font-medium text-primary-600">Open →</span></button>;
+              })}</div> : <p className="p-5 text-sm text-success-600">No management action is currently overdue or critical.</p>}
+            </div>
+            <p className="text-center text-xs text-neutral-400">Use Print above to print this report or save it as PDF.</p>
           </div>
         )}
 
