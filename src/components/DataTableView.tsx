@@ -748,7 +748,13 @@ export function DataTableView({
       const plannedQuantity = Number(record.planned_quantity) || 0;
       if (!item) throw new Error('Select a valid main BOQ item for the activity.');
       if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
-      const otherActivities = data.filter((activity) => activity.id !== record.id && activity.boq_item_id === item.id);
+      // A blank activity is the BOQ Total row, not an executable activity.
+      // It is derived from children and must not consume BOQ quantity.
+      const otherActivities = data.filter((activity) =>
+        activity.id !== record.id &&
+        activity.boq_item_id === item.id &&
+        String(activity.activity || '').trim(),
+      );
       const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + plannedQuantity;
       if (total > (Number(item.quantity) || 0)) {
         throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');

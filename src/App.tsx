@@ -1387,7 +1387,7 @@ export default function App() {
           const plannedQuantity = Number(scheduleRow.planned_quantity) || 0;
           if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
           const alreadyPlanned = data.schedules
-            .filter((activity: any) => activity.boq_item_id === item.id)
+            .filter((activity: any) => activity.boq_item_id === item.id && String(activity.activity || '').trim())
             .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
           if (alreadyPlanned + plannedQuantity > (Number(item.quantity) || 0)) {
             throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');
