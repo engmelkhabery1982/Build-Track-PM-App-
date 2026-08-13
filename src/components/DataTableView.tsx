@@ -63,6 +63,7 @@ interface DataTableViewProps {
   onDeleteGroup?: (row: Record<string, any>) => Promise<Record<string, any>[]>;
   deleteGroupKey?: string;
   canAdd?: boolean;
+  readOnly?: boolean;
   createDraft?: () => Record<string, any>;
   formColumns?: ColumnDef[];
   addButtonLabel?: string;
@@ -275,7 +276,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -1535,7 +1536,7 @@ export function DataTableView({
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
                         const codeControl = getCodeControl(tableName);
                         const codeIsLocked = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
-                        const canEdit = !isScheduleSummary && col.editable !== false && col.key !== 'id' && col.key !== 'created_at' && !codeIsLocked;
+                        const canEdit = !readOnly && !isScheduleSummary && col.editable !== false && col.key !== 'id' && col.key !== 'created_at' && !codeIsLocked;
                         return (
                           <td
                             key={col.key}
@@ -1624,7 +1625,7 @@ export function DataTableView({
       </div>
 
       {/* Add Modal */}
-      {showAdd && (
+      {showAdd && !readOnly && (
         minimizedModal === 'add' ? (
           <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
               <Plus size={16} /> Add {title}
@@ -1659,7 +1660,7 @@ export function DataTableView({
       )}
 
       {/* Edit Modal */}
-      {editingId && (
+      {editingId && !readOnly && (
         minimizedModal === 'edit' ? (
           <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
               <FileText size={16} /> Edit {title}

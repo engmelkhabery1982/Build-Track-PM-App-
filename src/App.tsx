@@ -503,11 +503,14 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspaceProjectId, setWorkspaceProjectId] = useState('');
+  const [activeRole, setActiveRole] = useState(() => localStorage.getItem('buildtrack:active-role') || 'PMO Admin');
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
   const synchronizingCostControl = useRef(false);
   const synchronizingProjectFinancials = useRef(false);
   const normalizingScheduleActivities = useRef(false);
+
+  useEffect(() => { localStorage.setItem('buildtrack:active-role', activeRole); }, [activeRole]);
 
   // Repair/synchronize existing records as soon as the local database has
   // loaded. Earlier records may have been saved before the date relationship
@@ -1244,6 +1247,7 @@ export default function App() {
     if (!config) return null;
     const tableName = TABLE_NAMES[activeView];
     const title = VIEW_TITLES[activeView];
+    const roleReadOnly = activeRole === 'Executive Viewer' || (activeRole === 'Site Engineer' && ['contracts', 'variations', 'costs', 'cost_entries', 'cash_flow', 'project_baselines', 'reporting_periods', 'approval_requests'].includes(tableName));
     // The navigation key is "boq", while the loaded state is named
     // "boqHeaders". Reading the navigation key made successfully saved BOQs
     // look as if they had disappeared.
@@ -1720,7 +1724,8 @@ export default function App() {
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
-        canAdd={tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
+        canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
+        readOnly={roleReadOnly}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : undefined}
         onInsert={tableName === 'schedules' ? async (scheduleRow) => {
@@ -1876,6 +1881,10 @@ export default function App() {
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-700">
+          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Local access profile</label>
+          <select value={activeRole} onChange={(event) => setActiveRole(event.target.value)} className="mb-2 w-full rounded-md border border-neutral-600 bg-neutral-700 px-2 py-1.5 text-xs text-neutral-100 outline-none">
+            <option>PMO Admin</option><option>Project Manager</option><option>Commercial Manager</option><option>Site Engineer</option><option>Executive Viewer</option>
+          </select>
           <p className="text-xs text-neutral-500 text-center">BuildTrack v1.0</p>
         </div>
       </aside>
