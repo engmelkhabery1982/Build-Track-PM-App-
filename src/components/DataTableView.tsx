@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -98,6 +98,42 @@ function fmtMoney(n: number): string {
   if (v >= 1_000_000) return `${n < 0 ? '-' : ''}$${(v / 1_000_000).toFixed(2)}M`;
   if (v >= 1_000) return `${n < 0 ? '-' : ''}$${(v / 1_000).toFixed(1)}K`;
   return `${n < 0 ? '-' : ''}$${v.toFixed(0)}`;
+}
+
+/** Evaluates numeric arithmetic only; it never executes JavaScript. */
+function evaluateArithmetic(expression: string): number | null {
+  const source = expression.replace(/\s+/g, '');
+  if (!source || !/^[0-9.+\-*/()]+$/.test(source)) return null;
+  let position = 0;
+  const factor = (): number | null => {
+    if (source[position] === '+') { position += 1; return factor(); }
+    if (source[position] === '-') { position += 1; const value = factor(); return value === null ? null : -value; }
+    if (source[position] === '(') { position += 1; const value = sum(); if (source[position] !== ')') return null; position += 1; return value; }
+    const match = source.slice(position).match(/^(?:\d+\.?\d*|\.\d+)/);
+    if (!match) return null;
+    position += match[0].length;
+    return Number(match[0]);
+  };
+  const product = (): number | null => {
+    let value = factor();
+    while (value !== null && (source[position] === '*' || source[position] === '/')) {
+      const operation = source[position++]; const next = factor();
+      if (next === null || (operation === '/' && next === 0)) return null;
+      value = operation === '*' ? value * next : value / next;
+    }
+    return value;
+  };
+  const sum = (): number | null => {
+    let value = product();
+    while (value !== null && (source[position] === '+' || source[position] === '-')) {
+      const operation = source[position++]; const next = product();
+      if (next === null) return null;
+      value = operation === '+' ? value + next : value - next;
+    }
+    return value;
+  };
+  const result = sum();
+  return result !== null && position === source.length && Number.isFinite(result) ? result : null;
 }
 
 function describeOperationError(error: unknown, fallback: string): string {
@@ -313,6 +349,7 @@ export function DataTableView({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [clipboardNotice, setClipboardNotice] = useState('');
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printableRef = useRef<HTMLDivElement>(null);
@@ -1073,7 +1110,8 @@ export function DataTableView({
     let val = commitValue !== undefined ? commitValue : inlineValue;
     if (col) {
       if (col.type === 'number' || col.type === 'money') {
-        val = val === '' || val === null ? null : parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
+        const raw = String(val ?? '');
+        val = raw.startsWith('=') ? evaluateGridFormula(raw) : raw === '' ? null : parseFloat(raw.replace(/[^0-9.\-]/g, ''));
         if (isNaN(val as number)) val = null;
       } else if (col.type === 'boolean') {
         val = val === true || val === 'true' || val === 1 || val === '1';
@@ -1223,6 +1261,143 @@ export function DataTableView({
       setSelectedCells(new Set([cellId]));
       selectionAnchor.current = { rowId, columnKey };
     }
+  }
+
+  function selectedBounds() {
+    const cells = [...selectedCells].map((cellId) => {
+      const divider = cellId.lastIndexOf(':');
+      return { row: sortedData.findIndex((row) => row.id === cellId.slice(0, divider)), col: columns.findIndex((column) => column.key === cellId.slice(divider + 1)) };
+    }).filter((cell) => cell.row >= 0 && cell.col >= 0);
+    if (!cells.length) return null;
+    return { fromRow: Math.min(...cells.map((cell) => cell.row)), toRow: Math.max(...cells.map((cell) => cell.row)), fromCol: Math.min(...cells.map((cell) => cell.col)), toCol: Math.max(...cells.map((cell) => cell.col)) };
+  }
+
+  function evaluateGridFormula(input: string): number | null {
+    if (!input.trim().startsWith('=')) return null;
+    const expanded = input.slice(1).replace(/\b([A-Z]+)(\d+)\b/g, (_match, letters: string, rowNumber: string) => {
+      const columnIndex = letters.split('').reduce((value, letter) => value * 26 + (letter.charCodeAt(0) - 64), 0) - 1;
+      const row = sortedData[Number(rowNumber) - 1];
+      const column = columns[columnIndex];
+      const value = Number(String(row?.[column?.key] ?? '').replace(/[^0-9.\-]/g, ''));
+      return Number.isFinite(value) ? String(value) : 'NaN';
+    });
+    return evaluateArithmetic(expanded);
+  }
+
+  async function copySelectedCells() {
+    const bounds = selectedBounds();
+    if (!bounds) return;
+    const text = Array.from({ length: bounds.toRow - bounds.fromRow + 1 }, (_, rowOffset) =>
+      Array.from({ length: bounds.toCol - bounds.fromCol + 1 }, (_, columnOffset) => {
+        const row = sortedData[bounds.fromRow + rowOffset];
+        const column = columns[bounds.fromCol + columnOffset];
+        return selectedCells.has(`${row.id}:${column.key}`) ? String(row[column.key] ?? '') : '';
+      }).join('\t'),
+    ).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setClipboardNotice(`Copied ${selectedCells.size} cell${selectedCells.size === 1 ? '' : 's'}.`);
+    } catch { setClipboardNotice('Clipboard access was blocked by the operating system.'); }
+  }
+
+  async function pasteSelectedCells() {
+    const anchor = selectionAnchor.current;
+    if (!anchor) return;
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      if (!clipboardText.trim()) return;
+      const startRow = sortedData.findIndex((row) => row.id === anchor.rowId);
+      const startColumn = columns.findIndex((column) => column.key === anchor.columnKey);
+      if (startRow < 0 || startColumn < 0) return;
+      const matrix = clipboardText.replace(/\r/g, '').split('\n').map((line) => line.split('\t'));
+      savedScroll.current = scrollRef.current?.scrollTop || 0;
+      let updatedCount = 0;
+      const nextSelection = new Set<string>();
+      for (let rowOffset = 0; rowOffset < matrix.length && startRow + rowOffset < sortedData.length; rowOffset += 1) {
+        const targetRow = sortedData[startRow + rowOffset];
+        if (targetRow.is_summary_row) continue;
+        for (let columnOffset = 0; columnOffset < matrix[rowOffset].length && startColumn + columnOffset < columns.length; columnOffset += 1) {
+          const column = columns[startColumn + columnOffset];
+          const control = getCodeControl(tableName);
+          if (readOnly || column.editable === false || (control?.codeField === column.key && targetRow[control.lockField])) continue;
+          let value: any = matrix[rowOffset][columnOffset];
+          if (column.type === 'number' || column.type === 'money') {
+            const formulaValue = evaluateGridFormula(value);
+            value = value === '' ? null : value.trim().startsWith('=') ? formulaValue : Number(value.replace(/[^0-9.\-]/g, ''));
+            if (value !== null && !Number.isFinite(value)) throw new Error(`Invalid numeric formula in ${column.label}.`);
+          }
+          else if (column.type === 'boolean') value = ['true', 'yes', '1'].includes(value.trim().toLowerCase());
+          else if (column.type === 'progress') value = Math.min(100, Math.max(0, Number(value) || 0));
+          else if (column.type === 'date') value = value ? value.slice(0, 10) : null;
+          const patch: Record<string, any> = { [column.key]: value };
+          if (tableName === 'boq_items' && (column.key === 'quantity' || column.key === 'unit_rate')) {
+            const quantity = Number(column.key === 'quantity' ? value : targetRow.quantity) || 0;
+            const rate = Number(column.key === 'unit_rate' ? value : targetRow.unit_rate) || 0;
+            patch.amount = Math.round(quantity * rate * 100) / 100;
+          }
+          assertCodeUpdateAllowed(tableName, targetRow, patch);
+          const updated = await dataRepository.update<Record<string, any>>(tableName, targetRow.id, patch);
+          onMutated({ type: 'update', row: updated });
+          nextSelection.add(`${targetRow.id}:${column.key}`);
+          updatedCount += 1;
+        }
+      }
+      setSelectedCells(nextSelection);
+      setClipboardNotice(updatedCount ? `Pasted ${updatedCount} cell${updatedCount === 1 ? '' : 's'}.` : 'No editable cells were available to paste.');
+    } catch (error: any) { setClipboardNotice(`Paste failed: ${error.message || 'clipboard access was blocked.'}`); }
+  }
+
+  async function fillDownSelectedCells() {
+    const bounds = selectedBounds();
+    if (!bounds || bounds.toRow === bounds.fromRow) return;
+    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    let count = 0;
+    try {
+      for (let columnIndex = bounds.fromCol; columnIndex <= bounds.toCol; columnIndex += 1) {
+        const column = columns[columnIndex];
+        const source = sortedData[bounds.fromRow];
+        const control = getCodeControl(tableName);
+        if (source.is_summary_row || readOnly || column.editable === false || (control?.codeField === column.key && source[control.lockField])) continue;
+        const value = source[column.key];
+        for (let rowIndex = bounds.fromRow + 1; rowIndex <= bounds.toRow; rowIndex += 1) {
+          const target = sortedData[rowIndex];
+          if (!selectedCells.has(`${target.id}:${column.key}`) || target.is_summary_row || (control?.codeField === column.key && target[control.lockField])) continue;
+          const patch: Record<string, any> = { [column.key]: value };
+          if (tableName === 'boq_items' && (column.key === 'quantity' || column.key === 'unit_rate')) {
+            const quantity = Number(column.key === 'quantity' ? value : target.quantity) || 0;
+            const rate = Number(column.key === 'unit_rate' ? value : target.unit_rate) || 0;
+            patch.amount = Math.round(quantity * rate * 100) / 100;
+          }
+          assertCodeUpdateAllowed(tableName, target, patch);
+          const updated = await dataRepository.update<Record<string, any>>(tableName, target.id, patch);
+          onMutated({ type: 'update', row: updated });
+          count += 1;
+        }
+      }
+      setClipboardNotice(count ? `Filled down ${count} cell${count === 1 ? '' : 's'}.` : 'Select at least two editable rows to fill down.');
+    } catch (error: any) { setClipboardNotice(`Fill down failed: ${error.message || 'Unknown error.'}`); }
+  }
+
+  function handleGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); void copySelectedCells(); return; }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') { event.preventDefault(); void pasteSelectedCells(); return; }
+    const anchor = selectionAnchor.current;
+    if (!anchor || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) return;
+    const rowIndex = sortedData.findIndex((row) => row.id === anchor.rowId);
+    const columnIndex = columns.findIndex((column) => column.key === anchor.columnKey);
+    if (rowIndex < 0 || columnIndex < 0) return;
+    if (event.key === 'Enter') {
+      const row = sortedData[rowIndex]; const column = columns[columnIndex];
+      if (!readOnly && !row.is_summary_row && column.editable !== false) startInlineEdit(row.id, column.key, row[column.key]);
+      event.preventDefault(); return;
+    }
+    const nextRow = Math.min(sortedData.length - 1, Math.max(0, rowIndex + (event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0)));
+    const nextColumn = Math.min(columns.length - 1, Math.max(0, columnIndex + (event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0)));
+    const next = { rowId: sortedData[nextRow].id, columnKey: columns[nextColumn].key };
+    selectionAnchor.current = next;
+    setSelectedCells(new Set([`${next.rowId}:${next.columnKey}`]));
+    window.requestAnimationFrame(() => document.querySelector(`[data-grid-cell="${next.rowId}:${next.columnKey}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+    event.preventDefault();
   }
 
   const formCols = formColumns || columns.filter((c) => c.editable !== false);
@@ -1467,6 +1642,9 @@ export function DataTableView({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => void copySelectedCells()} disabled={selectedCells.size === 0} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Copy selected cells (Ctrl+C)"><Copy size={15} /> Copy</button>
+            <button onClick={() => void pasteSelectedCells()} disabled={selectedCells.size === 0} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Paste starting at selected cell (Ctrl+V)"><ClipboardPaste size={15} /> Paste</button>
+            <button onClick={() => void fillDownSelectedCells()} disabled={selectedCells.size < 2} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Copy the top selected value down through the selected range"><ArrowDownToLine size={15} /> Fill Down</button>
             <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Print or save as PDF">
               <Printer size={15} /> Print
             </button>
@@ -1579,6 +1757,7 @@ export function DataTableView({
               {selectedNumericValues.length > 0 && <span className="text-neutral-600">Sum <span className="font-semibold text-primary-700">{selectedNumericValues.reduce((sum, value) => sum + value, 0).toLocaleString()}</span> · Avg <span className="font-semibold text-primary-700">{(selectedNumericValues.reduce((sum, value) => sum + value, 0) / selectedNumericValues.length).toFixed(2)}</span></span>}
             </>
           )}
+          {clipboardNotice && <><span className="text-neutral-300">|</span><span className="text-primary-700">{clipboardNotice}</span></>}
         </div>
 
         {/* Import result banner */}
@@ -1601,15 +1780,15 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Double-click to edit. Press Enter to save, Esc to cancel.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Ctrl+C / Ctrl+V copies and pastes ranges. Numeric cells accept safe formulas such as =12*5 or =A1+B1. Double-click to edit; Enter saves.</p>
 
         {/* Table */}
         <div ref={printableRef} className="bg-white rounded-xl border border-neutral-300 shadow-sm overflow-hidden printable-area flex-1 flex flex-col min-h-0">
-          <div ref={scrollRef} className="scrollbar-always flex-1 overflow-auto min-h-0" style={{ overflowX: 'scroll', overflowY: 'auto' }}>
+          <div ref={scrollRef} tabIndex={0} onKeyDown={handleGridKeyDown} className="scrollbar-always flex-1 overflow-auto min-h-0 outline-none" style={{ overflowX: 'scroll', overflowY: 'auto' }}>
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
-                  {showProjectColumn && <th className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300">Project Name</th>}
+                  {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
                   {columns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
                       className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
@@ -1636,7 +1815,7 @@ export function DataTableView({
                     return (
                     <tr key={row.id} className={`border-b border-neutral-200 ${isScheduleSummary ? 'bg-primary-50 font-semibold border-y-2 border-primary-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
                       {showProjectColumn && (
-                        <td className="px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200">{projectMap[row.project_id] || '—'}</td>
+                        <td className={`sticky left-0 z-10 px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>{projectMap[row.project_id] || '—'}</td>
                       )}
                       {columns.map((col) => {
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
@@ -1646,6 +1825,7 @@ export function DataTableView({
                         return (
                           <td
                             key={col.key}
+                            data-grid-cell={`${row.id}:${col.key}`}
                             onClick={(event) => selectCell(row.id, col.key, event)}
                             onDoubleClick={() => { if (canEdit) startInlineEdit(row.id, col.key, row[col.key]); }}
                             className={`px-2 py-1.5 whitespace-nowrap border border-neutral-200 text-sm ${
