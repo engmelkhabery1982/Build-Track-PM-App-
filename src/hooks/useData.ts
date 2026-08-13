@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry,
+  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -28,6 +28,9 @@ export function useData() {
   const [governanceRegister, setGovernanceRegister] = useState<GovernanceRegisterEntry[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [rfis, setRfis] = useState<RFIEntry[]>([]);
+  const [submittals, setSubmittals] = useState<SubmittalEntry[]>([]);
+  const [quality, setQuality] = useState<QualityEntry[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [boqHeaders, setBoqHeaders] = useState<BOQHeader[]>([]);
   const [boqItems, setBoqItems] = useState<BOQItem[]>([]);
@@ -59,7 +62,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -75,6 +78,7 @@ export function useData() {
         listOptional<GovernanceRegisterEntry>('governance_register'),
         listOptional<ApprovalRequest>('approval_requests'),
         listOptional<AuditLogEntry>('audit_log'),
+        listOptional<RFIEntry>('rfi_register'), listOptional<SubmittalEntry>('submittals'), listOptional<QualityEntry>('quality_register'),
         dataRepository.list<Contract>('contracts'),
         dataRepository.list<BOQHeader>('boq_headers'),
         dataRepository.list<BOQItem>('boq_items'),
@@ -105,6 +109,7 @@ export function useData() {
       setGovernanceRegister(gr);
       setApprovals(ap);
       setAuditLog(al);
+      setRfis(rf); setSubmittals(su); setQuality(qu);
       setContracts(ct);
       setBoqHeaders(bh);
       setBoqItems(bq);
@@ -159,6 +164,9 @@ export function useData() {
       case 'governance_register': apply(setGovernanceRegister); break;
       case 'approval_requests': apply(setApprovals); break;
       case 'audit_log': apply(setAuditLog); break;
+      case 'rfi_register': apply(setRfis); break;
+      case 'submittals': apply(setSubmittals); break;
+      case 'quality_register': apply(setQuality); break;
       case 'contracts': apply(setContracts); break;
       case 'boq_headers': apply(setBoqHeaders); break;
       case 'boq_items': apply(setBoqItems); break;
@@ -183,7 +191,7 @@ export function useData() {
   }, [listOptional]);
 
   return {
-    projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog,
+    projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations,
     documents, wirEntries, laborDuty, equipment, tracking, loading,

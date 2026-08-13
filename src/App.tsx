@@ -35,6 +35,9 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'governance', label: 'Risk, Issue & Decision Register', icon: ShieldAlert, group: 'Field & Governance' },
   { key: 'approvals', label: 'Approvals', icon: ClipboardCheck, group: 'Field & Governance' },
   { key: 'auditLog', label: 'Audit Trail', icon: FileCheck2, group: 'Field & Governance' },
+  { key: 'rfi', label: 'RFI Register', icon: FileText, group: 'Field & Governance' },
+  { key: 'submittals', label: 'Submittals', icon: ClipboardList, group: 'Field & Governance' },
+  { key: 'quality', label: 'NCR & Punch Register', icon: ClipboardCheck, group: 'Field & Governance' },
   { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Field & Governance' },
   { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Field & Governance' },
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Field & Governance' },
@@ -125,6 +128,15 @@ const APPROVAL_COLUMNS: ColumnDef[] = [
 ];
 const AUDIT_COLUMNS: ColumnDef[] = [
   { key: 'created_at', label: 'Timestamp', type: 'date', editable: false }, { key: 'action', label: 'Action', type: 'status', editable: false }, { key: 'entity_type', label: 'Entity', type: 'text', editable: false }, { key: 'entity_id', label: 'Record ID', type: 'text', editable: false }, { key: 'actor', label: 'Actor', type: 'text', editable: false }, { key: 'summary', label: 'Summary', type: 'text', editable: false },
+];
+const RFI_COLUMNS: ColumnDef[] = [
+  { key: 'rfi_number', label: 'RFI #', type: 'text', editable: true }, { key: 'subject', label: 'Subject', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'raised_by', label: 'Raised By', type: 'text', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'response', label: 'Response', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Open', 'Answered', 'Closed'] }, { key: 'impact', label: 'Impact', type: 'status', editable: true, options: ['None', 'Cost', 'Time', 'Cost & Time'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const SUBMITTAL_COLUMNS: ColumnDef[] = [
+  { key: 'submittal_number', label: 'Submittal #', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'document_type', label: 'Type', type: 'status', editable: true, options: ['Material', 'Shop Drawing', 'Method Statement', 'Sample', 'Calculation', 'Other'] }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'submitted_by', label: 'Submitted By', type: 'text', editable: true }, { key: 'submitted_date', label: 'Submitted Date', type: 'date', editable: true }, { key: 'reviewer', label: 'Reviewer', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'] }, { key: 'revision', label: 'Revision', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const QUALITY_COLUMNS: ColumnDef[] = [
+  { key: 'reference_number', label: 'Reference #', type: 'text', editable: true }, { key: 'record_type', label: 'Type', type: 'status', editable: true, options: ['NCR', 'Punch Item', 'Observation'] }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'location', label: 'Location', type: 'text', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'owner', label: 'Owner', type: 'text', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'closed_date', label: 'Closed Date', type: 'date', editable: true }, { key: 'severity', label: 'Severity', type: 'status', editable: true, options: ['Low', 'Medium', 'High', 'Critical'] }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'corrective_action', label: 'Corrective Action', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
@@ -426,6 +438,9 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   governance: { columns: GOVERNANCE_COLUMNS, filters: [{ key: 'record_type', label: 'Type', options: ['Risk', 'Issue', 'Decision', 'Opportunity'] }, { key: 'status', label: 'Status', options: ['Open', 'Mitigating', 'Escalated', 'Approved', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'due_date' },
   approvals: { columns: APPROVAL_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }], showProjectFilter: true, dateRangeColumn: 'requested_date' },
   auditLog: { columns: AUDIT_COLUMNS, filters: [{ key: 'action', label: 'Action', options: ['Insert', 'Update', 'Delete'] }, { key: 'entity_type', label: 'Entity', options: [] }], showProjectFilter: true, dateRangeColumn: 'created_at' },
+  rfi: { columns: RFI_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Open', 'Answered', 'Closed'] }, { key: 'impact', label: 'Impact', options: ['None', 'Cost', 'Time', 'Cost & Time'] }], showProjectFilter: true, dateRangeColumn: 'raised_date' },
+  submittals: { columns: SUBMITTAL_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'] }], showProjectFilter: true, dateRangeColumn: 'submitted_date' },
+  quality: { columns: QUALITY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'severity', label: 'Severity', options: ['Low', 'Medium', 'High', 'Critical'] }], showProjectFilter: true, dateRangeColumn: 'raised_date' },
   tasks: { columns: TASK_COLUMNS, filters: [{ key: 'status', label: 'Status', options: TASK_STATUSES }, { key: 'priority', label: 'Priority', options: PRIORITIES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   costs: { columns: COST_COLUMNS, filters: [{ key: 'category', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -450,7 +465,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -460,7 +475,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1225,6 +1240,12 @@ export default function App() {
               ? data.approvals
               : activeView === 'auditLog'
                 ? data.auditLog
+                : activeView === 'rfi'
+                  ? data.rfis
+                  : activeView === 'submittals'
+                    ? data.submittals
+                    : activeView === 'quality'
+                      ? data.quality
       : activeView === 'boqItems'
         ? data.boqItems
         : activeView === 'wir'

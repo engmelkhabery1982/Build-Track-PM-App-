@@ -488,6 +488,9 @@ export interface AuditLogEntry {
   id: string; project_id: string; contract_id: string | null; entity_type: string; entity_id: string;
   action: string; actor: string; summary: string; before?: Record<string, any> | null; after?: Record<string, any> | null; created_at: string;
 }
+export interface RFIEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; rfi_number: string; subject: string; raised_by: string; raised_date: string | null; due_date: string | null; response: string; response_date: string | null; status: string; impact: string; notes: string; created_at: string; }
+export interface SubmittalEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; submittal_number: string; title: string; document_type: string; submitted_by: string; submitted_date: string | null; reviewer: string; response_date: string | null; status: string; revision: string; notes: string; created_at: string; }
+export interface QualityEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; reference_number: string; record_type: string; title: string; location: string; raised_date: string | null; owner: string; due_date: string | null; closed_date: string | null; severity: string; status: string; corrective_action: string; notes: string; created_at: string; }
 
 export interface WIREntry {
   id: string;
@@ -520,7 +523,7 @@ export interface WIREntry {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'approvals' | 'auditLog' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'

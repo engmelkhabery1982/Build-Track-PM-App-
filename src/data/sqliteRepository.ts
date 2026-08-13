@@ -6,6 +6,7 @@ const TABLES = new Set([
   "schedule_distributions",
   "project_baselines", "reporting_periods", "governance_register",
   "approval_requests", "audit_log",
+  "rfi_register", "submittals", "quality_register",
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
