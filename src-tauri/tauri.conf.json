@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "construction-management",
+  "productName": "BuildTrack",
   "version": "0.1.0",
   "identifier": "com.buildtrack.app",
   "build": {
@@ -30,6 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "icon": ["icons/icon.ico"]
   }
 }
