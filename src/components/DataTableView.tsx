@@ -59,6 +59,7 @@ interface DataTableViewProps {
   contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null; start_date?: string | null; end_date?: string | null }[];
   onInsert?: (row: Record<string, any>) => Promise<Record<string, any> | Record<string, any>[]>;
   dateWarning?: (row: Record<string, any>) => string | null;
+  validateRecord?: (row: Record<string, any>) => void;
   onDeleteGroup?: (row: Record<string, any>) => Promise<Record<string, any>[]>;
   deleteGroupKey?: string;
   canAdd?: boolean;
@@ -274,7 +275,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -832,6 +833,7 @@ export function DataTableView({
       const row = prepareCodeControlledInsert(tableName, newRow, data);
       const prepared = coerceTypes(row);
       assertRelationshipScope(prepared);
+      validateRecord?.(prepared);
       const inserted = onInsert
         ? await onInsert(prepared)
         : await dataRepository.insert<Record<string, any>>(tableName, prepared);
@@ -859,6 +861,7 @@ export function DataTableView({
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
       assertValidHierarchyChange(tableName, data, editingId, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === editingId), ...patch });
+      validateRecord?.({ ...data.find((row) => row.id === editingId), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
       setEditingId(null);
       setMinimizedModal(null);
@@ -909,6 +912,7 @@ export function DataTableView({
       for (let i = 0; i < mapped.length; i += BATCH) {
         const batch = mapped.slice(i, i + BATCH);
         try {
+          batch.forEach((row) => validateRecord?.(row));
           const inserted = await dataRepository.insertMany<Record<string, any>>(tableName, batch);
           success += inserted.length;
           insertedRows.push(...inserted);
@@ -1028,6 +1032,7 @@ export function DataTableView({
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
       assertValidHierarchyChange(tableName, data, id, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === id), ...patch });
+      validateRecord?.({ ...data.find((row) => row.id === id), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, id, patch);
       onMutated({ type: 'update', row: updated });
     } catch (error: any) {

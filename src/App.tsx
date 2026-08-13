@@ -1682,6 +1682,16 @@ export default function App() {
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
             : null;
         } : undefined}
+        validateRecord={config.dateRangeColumn && !['reporting_periods', 'project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
+          const projectId = row.project_id;
+          const recordDate = row[config.dateRangeColumn!];
+          if (!projectId || !recordDate) return;
+          const lockedPeriod = data.reportingPeriods.find((period: any) =>
+            period.project_id === projectId && ['Locked', 'Closed'].includes(period.status) &&
+            period.start_date && period.end_date && String(recordDate) >= String(period.start_date) && String(recordDate) <= String(period.end_date),
+          );
+          if (lockedPeriod) throw new Error(`Reporting period "${lockedPeriod.period_name || lockedPeriod.id}" is ${lockedPeriod.status}. Reopen it before changing a dated record.`);
+        } : undefined}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);
           if (tableName === 'contracts') {
