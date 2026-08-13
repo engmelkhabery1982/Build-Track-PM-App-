@@ -4,7 +4,7 @@ import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
-  Schedule, ScheduleDistribution, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
+  Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
   Variation, DocumentEntry,
 } from '@/types';
 
@@ -17,7 +17,6 @@ interface DashboardProps {
   safety: Safety[];
   progress: ProgressEntry[];
   schedules: Schedule[];
-  scheduleDistributions: ScheduleDistribution[];
   contracts: Contract[];
   boqHeaders: BOQHeader[];
   boqItems: BOQItem[];
@@ -69,7 +68,7 @@ function useAnimatedNumber(target: number, duration = 800): number {
 type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procurement' | 'documents' | 'action';
 
 export function Dashboard({
-  projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, contracts,
+  projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
   boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
@@ -85,7 +84,6 @@ export function Dashboard({
   const fSafety = pid === 'all' ? safety : safety.filter((s) => s.project_id === pid);
   const fProgress = pid === 'all' ? progress : progress.filter((p) => p.project_id === pid);
   const fSchedules = pid === 'all' ? schedules : schedules.filter((s) => s.project_id === pid);
-  const fScheduleDistributions = pid === 'all' ? scheduleDistributions : scheduleDistributions.filter((d) => d.project_id === pid);
   const fContracts = pid === 'all' ? contracts : contracts.filter((c) => c.project_id === pid);
   const primaryContracts = selectPrimaryContracts(fContracts);
   const fBOQ = pid === 'all' ? boqItems : boqItems.filter((b) => b.project_id === pid);
@@ -138,13 +136,9 @@ export function Dashboard({
     // WIR-derived committed value in Cost Control. Project progress is a
     // presentation percentage and must not be used to calculate money.
     const reportDate = new Date().toISOString().slice(0, 10);
-    const scheduledActivityIds = new Set(fScheduleDistributions.map((distribution) => distribution.schedule_id));
-    const totalPlannedWork = fScheduleDistributions
-      .filter((distribution) => String(distribution.period_end || distribution.period_start || '') <= reportDate)
-      .reduce((s, distribution) => s + (Number(distribution.planned_value) || 0), 0)
-      + fSchedules
-        .filter((schedule) => !scheduledActivityIds.has(schedule.id) && String(schedule.end_date || schedule.start_date || '') <= reportDate)
-        .reduce((s, schedule) => s + (Number(schedule.planned_value) || 0), 0);
+    const totalPlannedWork = fSchedules
+      .filter((schedule) => String(schedule.end_date || schedule.start_date || '') <= reportDate)
+      .reduce((s, schedule) => s + (Number(schedule.planned_value) || 0), 0);
     const totalEarnedWork = fCosts.reduce((s, cost) => s + (Number(cost.committed) || 0), 0);
     const costVariance = totalPlannedCosts - totalActualCosts;
 
@@ -215,7 +209,7 @@ export function Dashboard({
       variationCostImpact, approvedVariationCostImpact, totalVariations: mainVariations.length, pendingVariations, approvedVariations,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, fScheduleDistributions, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
+  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
 
   const evm = useMemo(() => {
     const BAC = stats.totalBudget || stats.totalPlannedWork || 0;

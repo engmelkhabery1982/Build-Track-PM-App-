@@ -536,6 +536,14 @@ export function DataTableView({
       const rate = Number(out.unit_rate) || 0;
       out.planned_value = Math.round(quantity * rate * 100) / 100;
     }
+    if (tableName === 'schedules') {
+      const item = boqItems?.find((candidate) => candidate.id === out.boq_item_id);
+      const quantity = Number(out.planned_quantity) || 0;
+      const rate = Number(item?.unit_rate ?? out.unit_rate) || 0;
+      out.unit_rate = rate;
+      out.planned_value = Math.round(quantity * rate * 100) / 100;
+      out.budget = out.planned_value;
+    }
     if (contracts && (tableName === 'subcontractor_invoices' || tableName === 'cost_entries' || tableName === 'costs' || tableName === 'progress_entries' || tableName === 'wir_entries')) {
       const mainContractId = getMainContractId(out.contract_id, contracts);
       if (mainContractId && mainContractId !== out.contract_id) out.main_contract_id = mainContractId;
@@ -586,7 +594,7 @@ export function DataTableView({
     const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
-      'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id',
+      'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       ...(relationshipAutoFillFields || []),
@@ -622,6 +630,17 @@ export function DataTableView({
       if (!updated.item_code || /^ITM-\d+$/i.test(String(updated.item_code))) {
         updated.item_code = `${prefix}${String(next).padStart(3, '0')}`;
       }
+    }
+    if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
+      const itemCode = String(selected.data.item_code);
+      const next = data.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
+      if (!updated.activity_code || /^ACT-\d+$/i.test(String(updated.activity_code))) {
+        updated.activity_code = `${itemCode}-ACT-${String(next).padStart(3, '0')}`;
+      }
+      updated.unit_rate = Number(selected.data.unit_rate) || 0;
+      const plannedQuantity = Number(updated.planned_quantity) || 0;
+      updated.planned_value = Math.round(plannedQuantity * updated.unit_rate * 100) / 100;
+      updated.budget = updated.planned_value;
     }
     if (tableName === 'wir_entries' && changedKey === 'company_name' && selected?.data?.contract_number) {
       const prefix = `${String(selected.data.contract_number)}-${selected.data.contract_role === 'Subcontract' ? 'SUB-' : ''}WIR-`;
@@ -669,6 +688,13 @@ export function DataTableView({
     if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
       throw new Error('The selected activity belongs to a different project.');
     }
+    const predecessor = relationshipOptions?.predecessor_item?.find((option) => option.value === record.predecessor_item);
+    if (predecessor?.data?.project_id && record.project_id && predecessor.data.project_id !== record.project_id) {
+      throw new Error('The predecessor activity belongs to a different project.');
+    }
+    if (tableName === 'schedules' && record.predecessor_item && record.predecessor_item === record.id) {
+      throw new Error('An activity cannot be its own predecessor.');
+    }
 
     const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);
     if (tableName === 'boq_items' && selectedContractRow?.parent_main_contract_id && !record.main_boq_item_id) {
@@ -689,6 +715,46 @@ export function DataTableView({
     }
     if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
       throw new Error('A subcontractor invoice must be assigned to a subcontract.');
+    }
+    if (tableName === 'schedules') {
+      const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
+      const plannedQuantity = Number(record.planned_quantity) || 0;
+      if (!item) throw new Error('Select a valid main BOQ item for the activity.');
+      if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
+      const otherActivities = data.filter((activity) => activity.id !== record.id && activity.boq_item_id === item.id);
+      const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + plannedQuantity;
+      if (total > (Number(item.quantity) || 0)) {
+        throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');
+      }
+    }
+    assertDateGovernance(record);
+  }
+
+  function assertDateGovernance(record: Record<string, any>): void {
+    const start = String(record.start_date || '');
+    const end = String(record.end_date || '');
+    if (start && end && end < start) throw new Error('End date cannot be earlier than start date.');
+
+    const ownContract = contracts?.find((contract) => contract.id === record.contract_id) as Record<string, any> | undefined;
+    const parentContract = tableName === 'contracts' && record.parent_main_contract_id
+      ? contracts?.find((contract) => contract.id === record.parent_main_contract_id) as Record<string, any> | undefined
+      : undefined;
+    const scope = parentContract || (tableName === 'contracts' ? undefined : ownContract);
+    // A main contract is the master date source and is allowed to extend its
+    // project; its update is then synchronized to Projects by App. Every
+    // other operational record is constrained by its contract/project.
+    const project = tableName === 'contracts'
+      ? undefined
+      : projects.find((candidate) => candidate.id === (record.project_id || ownContract?.project_id));
+    const scopeStart = String(scope?.start_date || project?.start_date || '');
+    const scopeEnd = String(scope?.end_date || project?.end_date || '');
+    const dateFields = ['start_date', 'end_date', 'inspection_date', 'date', 'invoice_date', 'order_date', 'delivery_date'];
+    for (const field of dateFields) {
+      const date = String(record[field] || '');
+      if (!date) continue;
+      const label = field.replace(/_/g, ' ');
+      if (scopeStart && date < scopeStart) throw new Error(`${label} must not be before the contract/project start date.`);
+      if (scopeEnd && date > scopeEnd) throw new Error(`${label} must not be after the contract/project end date.`);
     }
   }
 
@@ -866,6 +932,26 @@ export function DataTableView({
         const mainItemValue = Number(existing.main_boq_item_value) || 0;
         patch.completion_pct = mainItemValue > 0 ? Math.round(patch.item_amount / mainItemValue * 10000) / 100 : 0;
       }
+      if (tableName === 'schedules') {
+        const existing = data.find((row) => row.id === id) || {};
+        const merged = { ...existing, ...patch };
+        const item = boqItems?.find((candidate) => candidate.id === merged.boq_item_id);
+        if (key === 'planned_quantity' || key === 'boq_item_id') {
+          const rate = Number(item?.unit_rate ?? merged.unit_rate) || 0;
+          patch.unit_rate = rate;
+          patch.planned_value = Math.round((Number(merged.planned_quantity) || 0) * rate * 100) / 100;
+          patch.budget = patch.planned_value;
+        }
+        if ((key === 'start_date' || key === 'end_date') && merged.start_date && merged.end_date) {
+          const days = Math.ceil((new Date(`${merged.end_date}T00:00:00`).getTime() - new Date(`${merged.start_date}T00:00:00`).getTime()) / 86400000);
+          if (Number.isFinite(days) && days >= 0) patch.duration_days = Math.max(1, days);
+        }
+        if (key === 'duration_days' && merged.start_date && Number(val) > 0) {
+          const finish = new Date(`${merged.start_date}T00:00:00`);
+          finish.setDate(finish.getDate() + Math.ceil(Number(val)));
+          patch.end_date = finish.toISOString().slice(0, 10);
+        }
+      }
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
       assertValidHierarchyChange(tableName, data, id, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === id), ...patch });
@@ -971,7 +1057,14 @@ export function DataTableView({
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
   const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
-    (tableName === 'boq_items' ? c.key === 'amount' : tableName === 'wir_entries' ? c.key === 'item_amount' : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices') ? c.key === 'amount' : true));
+    (tableName === 'boq_items' ? c.key === 'amount' : tableName === 'wir_entries' ? c.key === 'item_amount' : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices') ? c.key === 'amount' : tableName === 'schedules' ? c.type === 'money' : true));
+  const scheduleSpanDays = useMemo(() => {
+    if (tableName !== 'schedules') return 0;
+    const starts = displayData.map((row) => String(row.start_date || '')).filter(Boolean).sort();
+    const ends = displayData.map((row) => String(row.end_date || '')).filter(Boolean).sort();
+    if (!starts.length || !ends.length) return 0;
+    return Math.max(1, Math.ceil((new Date(`${ends[ends.length - 1]}T00:00:00`).getTime() - new Date(`${starts[0]}T00:00:00`).getTime()) / 86400000));
+  }, [tableName, displayData]);
   const selectedNumericValues = useMemo(() => {
     const values: number[] = [];
     selectedCells.forEach((cellId) => {
@@ -1011,6 +1104,7 @@ export function DataTableView({
       if (col.key === 'boq_item_id' && row.boq_header_id) return option.data?.boq_header_id === row.boq_header_id;
       if (col.key === 'boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
       if (col.key === 'schedule_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'predecessor_item' && row.contract_id) return option.data?.contract_id === row.contract_id;
       if (col.key === 'main_boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
       return true;
     });
@@ -1103,8 +1197,8 @@ export function DataTableView({
 
     const applyStandardValue = (value: string) => {
       const updated = { ...row, [col.key]: value };
-      // Initial duration is calculated from dates, while remaining editable
-      // for schedules imported from professional planning software.
+      // Any two of Start, Finish and Duration determine the third. This keeps
+      // manual entry consistent with Primavera-style imported activities.
       if (tableName === 'schedules' && (col.key === 'start_date' || col.key === 'end_date')) {
         const start = col.key === 'start_date' ? value : updated.start_date;
         const end = col.key === 'end_date' ? value : updated.end_date;
@@ -1112,6 +1206,21 @@ export function DataTableView({
           const days = Math.ceil((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000);
           if (Number.isFinite(days) && days >= 0) updated.duration_days = Math.max(1, days);
         }
+      }
+      if (tableName === 'schedules' && col.key === 'duration_days' && updated.start_date) {
+        const days = Number(value);
+        if (Number.isFinite(days) && days > 0) {
+          const finish = new Date(`${updated.start_date}T00:00:00`);
+          finish.setDate(finish.getDate() + Math.ceil(days));
+          updated.end_date = finish.toISOString().slice(0, 10);
+        }
+      }
+      if (tableName === 'schedules' && col.key === 'planned_quantity') {
+        const item = boqItems?.find((candidate) => candidate.id === updated.boq_item_id);
+        const rate = Number(item?.unit_rate ?? updated.unit_rate) || 0;
+        updated.unit_rate = rate;
+        updated.planned_value = Math.round((Number(value) || 0) * rate * 100) / 100;
+        updated.budget = updated.planned_value;
       }
       setRow(updated);
     };
@@ -1242,6 +1351,7 @@ export function DataTableView({
               <span className="font-semibold text-neutral-800">{col.type === 'money' ? fmtMoney(columnSums[col.key] || 0) : (columnSums[col.key] || 0).toLocaleString()}</span>
             </span>
           ))}
+          {tableName === 'schedules' && scheduleSpanDays > 0 && <span className="inline-flex items-center gap-1"><span className="text-neutral-500">Project duration:</span><span className="font-semibold text-neutral-800">{scheduleSpanDays.toLocaleString()} days</span></span>}
           {displayData.length > 0 && numericCols.length > 0 && <span className="text-neutral-300">|</span>}
           {displayData.length > 0 && numericCols.map((col) => {
             const avg = (columnSums[col.key] || 0) / displayData.length;

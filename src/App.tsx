@@ -12,7 +12,6 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'projects', label: 'Projects', icon: FolderKanban, group: 'Overview' },
   { key: 'tasks', label: 'Tasks', icon: CheckSquare, group: 'Overview' },
   { key: 'schedule', label: 'Schedule', icon: CalendarClock, group: 'Planning' },
-  { key: 'scheduleDistributions', label: 'Planned Quantities', icon: ListOrdered, group: 'Planning' },
   { key: 'progress', label: 'Progress', icon: TrendingUp, group: 'Planning' },
   { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Financial' },
   { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Financial' },
@@ -161,12 +160,13 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
-  { key: 'budget', label: 'Budget', type: 'money', editable: true },
-  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: false },
+  { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
+  { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
+  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: true },
   { key: 'planned_value', label: 'Total Planned Value', type: 'money', editable: false },
   { key: 'earned_work_value', label: 'Earned Work Value', type: 'money', editable: false },
   { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
-  { key: 'predecessor_item', label: 'Predecessor Item', type: 'text', editable: true },
+  { key: 'predecessor_item', label: 'Predecessor Activity', type: 'select', editable: true },
   { key: 'relationship_type', label: 'Relationship', type: 'select', editable: true, options: ['FS', 'SS', 'FF', 'SF'] },
   { key: 'lag_days', label: 'Lag (days)', type: 'number', editable: true },
   { key: 'calendar_name', label: 'Calendar', type: 'text', editable: true },
@@ -174,17 +174,6 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
   { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
-  { key: 'notes', label: 'Notes', type: 'text', editable: true },
-];
-
-const SCHEDULE_DISTRIBUTION_COLUMNS: ColumnDef[] = [
-  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
-  { key: 'period_start', label: 'Period Start', type: 'date', editable: true },
-  { key: 'period_end', label: 'Period End', type: 'date', editable: true },
-  { key: 'planned_quantity', label: 'Planned Quantity', type: 'number', editable: true },
-  { key: 'unit', label: 'Unit', type: 'text', editable: false },
-  { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
-  { key: 'planned_value', label: 'Planned Value', type: 'money', editable: false },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -376,7 +365,6 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
-  scheduleDistributions: { columns: SCHEDULE_DISTRIBUTION_COLUMNS, showProjectFilter: true, dateRangeColumn: 'period_start' },
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
@@ -396,7 +384,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 const TABLE_NAMES: Record<string, string> = {
   projects: 'projects', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries',
-  schedule: 'schedules', scheduleDistributions: 'schedule_distributions', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
+  schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', documents: 'documents', wir: 'wir_entries',
@@ -406,7 +394,7 @@ const TABLE_NAMES: Record<string, string> = {
 const VIEW_TITLES: Record<string, string> = {
   projects: 'Projects', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries',
-  schedule: 'Schedule', scheduleDistributions: 'Planned Quantities', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
+  schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', documents: 'Documents', wir: 'Work Inspection Reports',
@@ -582,10 +570,7 @@ export default function App() {
         if (!mainItemId) continue;
         const key = `${scheduleContract.project_id}|${scheduleContract.parent_main_contract_id || scheduleContract.id}|${mainItemId}`;
         const previous = scheduleValuesByItem.get(key) || { budget: 0, planned: 0 };
-        const distributions = data.scheduleDistributions.filter((distribution: any) => distribution.schedule_id === schedule.id);
-        const activityPlannedValue = distributions.length > 0
-          ? distributions.reduce((sum: number, distribution: any) => sum + (Number(distribution.planned_value) || 0), 0)
-          : (Number(schedule.planned_value) || 0);
+        const activityPlannedValue = Number(schedule.planned_value) || 0;
         scheduleValuesByItem.set(key, {
           budget: previous.budget + (Number(schedule.budget) || 0),
           planned: previous.planned + activityPlannedValue,
@@ -679,7 +664,7 @@ export default function App() {
     void synchronizeCostControl().catch((error) =>
       console.error('Could not synchronize cost control.', error),
     );
-  }, [data.costEntries, data.wirEntries, data.schedules, data.scheduleDistributions, data.boqItems, data.boqHeaders, data.contracts]);
+  }, [data.costEntries, data.wirEntries, data.schedules, data.boqItems, data.boqHeaders, data.contracts]);
 
   useEffect(() => {
     if (synchronizingProjectFinancials.current || data.projects.length === 0) return;
@@ -855,7 +840,6 @@ export default function App() {
           safety={data.safety}
           progress={data.progress}
           schedules={data.schedules}
-          scheduleDistributions={data.scheduleDistributions}
           contracts={data.contracts}
           boqHeaders={data.boqHeaders}
           boqItems={data.boqItems}
@@ -884,8 +868,6 @@ export default function App() {
           ? data.wirEntries
         : activeView === 'schedule'
           ? data.schedules
-          : activeView === 'scheduleDistributions'
-            ? data.scheduleDistributions
           : activeView === 'subinvoices'
             ? data.subInvoices
             : activeView === 'clientinvoices'
@@ -968,12 +950,19 @@ export default function App() {
             const scheduleItem = data.boqItems.find((item: any) => item.id === schedule.boq_item_id) as any;
             const mainItemId = scheduleItem?.main_boq_item_id || scheduleItem?.id;
             const mainItem = mainItemId ? data.boqItems.find((item: any) => item.id === mainItemId) as any : null;
-            const distributions = data.scheduleDistributions.filter((distribution: any) => distribution.schedule_id === schedule.id);
-            const plannedQuantity = distributions.reduce((sum: number, distribution: any) => sum + (Number(distribution.planned_quantity) || 0), 0);
-            // The time-phased plan is the source of truth for Planned Value.
-            // A legacy activity-level planned_value is only used until periods
-            // have been entered for that activity.
-            const distributedPlannedValue = distributions.reduce((sum: number, distribution: any) => sum + (Number(distribution.planned_value) || 0), 0);
+            const plannedQuantity = Number(schedule.planned_quantity) || 0;
+            // One BOQ item can be split across many activities. Allocate the
+            // item-level EV and actual cost by planned quantity so activity
+            // rows add up to the BOQ/control total instead of duplicating it.
+            const activitiesForItem = data.schedules
+              .filter((activity: any) => activity.project_id === schedule.project_id && activity.boq_item_id === schedule.boq_item_id);
+            const itemPlannedQuantity = activitiesForItem
+              .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
+            const itemPlannedValue = activitiesForItem
+              .reduce((sum: number, activity: any) => sum + (Number(activity.planned_value) || 0), 0);
+            const allocation = itemPlannedQuantity > 0
+              ? plannedQuantity / itemPlannedQuantity
+              : itemPlannedValue > 0 ? (Number(schedule.planned_value) || 0) / itemPlannedValue : 0;
             const earnedWorkValue = derivedWirs
               .filter((wir: any) => {
                 const wirContract = contractById.get(wir.contract_id) as any;
@@ -987,11 +976,9 @@ export default function App() {
               cost.contract_id === mainContractId &&
               cost.boq_item_id === mainItemId,
             ) as any;
-            const earned = Math.round(earnedWorkValue * 100) / 100;
-            const actualCost = Number(costControl?.actual) || 0;
-            const plannedValue = distributions.length > 0
-              ? distributedPlannedValue
-              : (Number(schedule.planned_value) || 0);
+            const earned = Math.round(earnedWorkValue * allocation * 100) / 100;
+            const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
+            const plannedValue = Number(schedule.planned_value) || 0;
             const budget = Number(schedule.budget) || 0;
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
@@ -999,6 +986,7 @@ export default function App() {
             const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
             return {
               ...schedule,
+              unit_rate: Number(mainItem?.unit_rate) || Number(schedule.unit_rate) || 0,
               budget,
               planned_quantity: plannedQuantity,
               planned_value: plannedValue,
@@ -1009,25 +997,6 @@ export default function App() {
               cost_cpi: cpi,
               schedule_spi: spi,
               status: `${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
-            };
-          })
-        : activeView === 'scheduleDistributions'
-          ? rawViewData.map((distribution: any) => {
-            const schedule = data.schedules.find((item: any) => item.id === distribution.schedule_id) as any;
-            const item = data.boqItems.find((candidate: any) => candidate.id === (distribution.boq_item_id || schedule?.boq_item_id)) as any;
-            const mainItem = item?.main_boq_item_id ? mainBoqItemById.get(item.main_boq_item_id) : item;
-            const quantity = Number(distribution.planned_quantity) || 0;
-            const unitRate = Number(mainItem?.unit_rate) || Number(distribution.unit_rate) || 0;
-            return {
-              ...distribution,
-              project_id: distribution.project_id || schedule?.project_id || null,
-              contract_id: distribution.contract_id || schedule?.contract_id || null,
-              boq_header_id: distribution.boq_header_id || schedule?.boq_header_id || null,
-              boq_item_id: distribution.boq_item_id || schedule?.boq_item_id || null,
-              activity_name: schedule?.activity || distribution.activity_name || '',
-              unit: mainItem?.unit || distribution.unit || '',
-              unit_rate: unitRate,
-              planned_value: Math.round(quantity * unitRate * 100) / 100,
             };
           })
         : activeView === 'progress'
@@ -1195,17 +1164,10 @@ export default function App() {
         })(),
       },
     }));
-    relationshipOptions.schedule_id = data.schedules.map((schedule: any) => ({
-      value: schedule.id,
-      label: `${schedule.activity_code || 'ACT'} - ${schedule.activity || schedule.id}`,
-      data: {
-        project_id: schedule.project_id,
-        contract_id: schedule.contract_id,
-        boq_header_id: schedule.boq_header_id,
-        boq_item_id: schedule.boq_item_id,
-        project_code: schedule.project_code,
-        activity_name: schedule.activity,
-      },
+    relationshipOptions.predecessor_item = data.schedules.map((activity: any) => ({
+      value: activity.id,
+      label: `${activity.activity_code || 'ACT'} - ${activity.activity || activity.id}`,
+      data: { project_id: activity.project_id, contract_id: activity.contract_id },
     }));
     if (activeView === 'costs' || activeView === 'costEntries' || activeView === 'schedule') {
       const mainContractIds = new Set(data.contracts
@@ -1299,32 +1261,7 @@ export default function App() {
         canAdd={tableName !== 'projects' && tableName !== 'progress_entries'}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : undefined}
-        onInsert={tableName === 'schedule_distributions' ? async (distributionRow) => {
-          const schedule = data.schedules.find((item: any) => item.id === distributionRow.schedule_id) as any;
-          if (!schedule) throw new Error('Select a schedule activity before saving the planned quantity.');
-          const item = data.boqItems.find((candidate: any) => candidate.id === schedule.boq_item_id) as any;
-          if (!item) throw new Error('The selected activity must be linked to a main BOQ item.');
-          const plannedQuantity = Number(distributionRow.planned_quantity) || 0;
-          if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
-          const totalScheduled = data.scheduleDistributions
-            .filter((row: any) => row.schedule_id === schedule.id)
-            .reduce((sum: number, row: any) => sum + (Number(row.planned_quantity) || 0), 0);
-          if (totalScheduled + plannedQuantity > (Number(item.quantity) || 0)) {
-            throw new Error('Planned quantities cannot exceed the main BOQ item quantity.');
-          }
-          return dataRepository.insert<Record<string, any>>('schedule_distributions', {
-            ...distributionRow,
-            project_id: schedule.project_id,
-            contract_id: schedule.contract_id,
-            boq_header_id: schedule.boq_header_id,
-            boq_item_id: schedule.boq_item_id,
-            project_code: schedule.project_code || '',
-            activity_name: schedule.activity || '',
-            unit: item.unit || '',
-            unit_rate: Number(item.unit_rate) || 0,
-            planned_value: Math.round(plannedQuantity * (Number(item.unit_rate) || 0) * 100) / 100,
-          });
-        } : tableName === 'schedules' ? async (scheduleRow) => {
+        onInsert={tableName === 'schedules' ? async (scheduleRow) => {
           const contract = data.contracts.find((item: any) => item.id === scheduleRow.contract_id) as any;
           if (!contract || contract.parent_main_contract_id) {
             throw new Error('Select a main contract before saving the schedule activity.');
@@ -1340,6 +1277,17 @@ export default function App() {
           const calculatedDuration = start && end
             ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
             : Number(scheduleRow.duration_days) || 0;
+          const plannedQuantity = Number(scheduleRow.planned_quantity) || 0;
+          if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
+          const alreadyPlanned = data.schedules
+            .filter((activity: any) => activity.boq_item_id === item.id)
+            .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
+          if (alreadyPlanned + plannedQuantity > (Number(item.quantity) || 0)) {
+            throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');
+          }
+          const plannedValue = Math.round(plannedQuantity * (Number(item.unit_rate) || 0) * 100) / 100;
+          const activityNumber = data.schedules.filter((activity: any) => activity.boq_item_id === item.id).length + 1;
+          const generatedActivityCode = `${item.item_code || 'ITEM'}-ACT-${String(activityNumber).padStart(3, '0')}`;
           return dataRepository.insert<Record<string, any>>('schedules', {
             ...scheduleRow,
             project_id: contract.project_id,
@@ -1349,8 +1297,11 @@ export default function App() {
             boq_item_code: item.item_code || '',
             boq_item_name: item.item_name || item.description || '',
             duration_days: calculatedDuration,
-            budget: Number(scheduleRow.budget) || 0,
-            planned_value: Number(scheduleRow.planned_value) || 0,
+            unit_rate: Number(item.unit_rate) || 0,
+            planned_quantity: plannedQuantity,
+            budget: plannedValue,
+            planned_value: plannedValue,
+            activity_code: scheduleRow.activity_code || generatedActivityCode,
           });
         } : tableName === 'contracts' ? async (contractRow) => {
           // Project Code is entered with a contract because the main contract
