@@ -517,6 +517,10 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspaceProjectId, setWorkspaceProjectId] = useState('');
   const [activeRole, setActiveRole] = useState(() => localStorage.getItem('buildtrack:active-role') || 'PMO Admin');
+  const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem('buildtrack:session-user') || '');
+  const [loginName, setLoginName] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
   const synchronizingCostControl = useRef(false);
@@ -524,6 +528,33 @@ export default function App() {
   const normalizingScheduleActivities = useRef(false);
 
   useEffect(() => { localStorage.setItem('buildtrack:active-role', activeRole); }, [activeRole]);
+
+  const hashPassword = async (password: string, salt?: string) => {
+    const actualSalt = salt || Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, '0')).join('');
+    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(actualSalt), iterations: 150000, hash: 'SHA-256' }, material, 256);
+    return { salt: actualSalt, hash: Array.from(new Uint8Array(bits), (value) => value.toString(16).padStart(2, '0')).join('') };
+  };
+
+  const signIn = async () => {
+    setLoginError('');
+    try {
+      if (!loginName.trim() || loginPassword.length < 8) throw new Error('Enter a username and a password of at least 8 characters.');
+      if (data.users.length === 0) {
+        const secured = await hashPassword(loginPassword);
+        const user = await dataRepository.insert<Record<string, any>>('app_users', { username: loginName.trim(), display_name: loginName.trim(), role: 'PMO Admin', status: 'Active', password_hash: secured.hash, password_salt: secured.salt, last_login_at: new Date().toISOString() });
+        data.applyLocalMutation('app_users', { type: 'insert', row: user });
+        setSessionUserId(user.id); setActiveRole('PMO Admin'); localStorage.setItem('buildtrack:session-user', user.id); return;
+      }
+      const user = data.users.find((candidate: any) => candidate.username?.toLowerCase() === loginName.trim().toLowerCase() && candidate.status === 'Active') as any;
+      if (!user?.password_hash || !user?.password_salt) throw new Error('Invalid username or password.');
+      const secured = await hashPassword(loginPassword, user.password_salt);
+      if (secured.hash !== user.password_hash) throw new Error('Invalid username or password.');
+      const updated = await dataRepository.update<Record<string, any>>('app_users', user.id, { last_login_at: new Date().toISOString() });
+      data.applyLocalMutation('app_users', { type: 'update', row: updated });
+      setSessionUserId(user.id); setActiveRole(user.role); localStorage.setItem('buildtrack:session-user', user.id);
+    } catch (error: any) { setLoginError(error.message || 'Could not sign in.'); }
+  };
 
   // Repair/synchronize existing records as soon as the local database has
   // loaded. Earlier records may have been saved before the date relationship
@@ -1879,6 +1910,23 @@ export default function App() {
     );
   }
 
+  const sessionUser = data.users.find((user: any) => user.id === sessionUserId && user.status === 'Active');
+  if (!data.loading && !sessionUser) {
+    const setup = data.users.length === 0;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-100 p-4">
+        <form onSubmit={(event) => { event.preventDefault(); void signIn(); }} className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-7 shadow-xl">
+          <div className="mb-6 flex items-center gap-3"><div className="rounded-xl bg-primary-600 p-3 text-white"><Building2 size={24} /></div><div><h1 className="text-xl font-bold text-neutral-900">BuildTrack</h1><p className="text-sm text-neutral-500">{setup ? 'Create the first local PMO administrator' : 'Sign in to the local workspace'}</p></div></div>
+          <label className="mb-4 block text-sm font-medium text-neutral-700">Username<input value={loginName} onChange={(event) => setLoginName(event.target.value)} autoComplete="username" className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-primary-500" /></label>
+          <label className="block text-sm font-medium text-neutral-700">Password<input value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} type="password" autoComplete={setup ? 'new-password' : 'current-password'} className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-primary-500" /></label>
+          {setup && <p className="mt-2 text-xs text-neutral-500">The first account is PMO Admin. Use at least 8 characters.</p>}
+          {loginError && <p className="mt-3 rounded-lg bg-error-50 p-2 text-sm text-error-700">{loginError}</p>}
+          <button type="submit" className="mt-5 w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700">{setup ? 'Create administrator' : 'Sign in'}</button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-neutral-50">
       {/* Sidebar */}
@@ -1925,10 +1973,9 @@ export default function App() {
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-700">
-          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Local access profile</label>
-          <select value={activeRole} onChange={(event) => setActiveRole(event.target.value)} className="mb-2 w-full rounded-md border border-neutral-600 bg-neutral-700 px-2 py-1.5 text-xs text-neutral-100 outline-none">
-            <option>PMO Admin</option><option>Project Manager</option><option>Commercial Manager</option><option>Site Engineer</option><option>Executive Viewer</option>
-          </select>
+          <p className="truncate text-xs font-medium text-neutral-200">{sessionUser?.display_name || sessionUser?.username || 'Local User'}</p>
+          <p className="mb-2 text-[10px] text-neutral-500">{activeRole}</p>
+          <button onClick={() => { localStorage.removeItem('buildtrack:session-user'); setSessionUserId(''); }} className="mb-2 text-xs text-primary-300 hover:text-primary-200">Sign out</button>
           <p className="text-xs text-neutral-500 text-center">BuildTrack v1.0</p>
         </div>
       </aside>
