@@ -63,6 +63,7 @@ interface DataTableViewProps {
   relationshipAutoFillFields?: string[];
   contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null; start_date?: string | null; end_date?: string | null }[];
   onInsert?: (row: Record<string, any>) => Promise<Record<string, any> | Record<string, any>[]>;
+  onUpdate?: (id: string, row: Record<string, any>) => Promise<Record<string, any>>;
   dateWarning?: (row: Record<string, any>) => string | null;
   validateRecord?: (row: Record<string, any>) => void;
   onDeleteGroup?: (row: Record<string, any>) => Promise<Record<string, any>[]>;
@@ -71,6 +72,7 @@ interface DataTableViewProps {
   readOnly?: boolean;
   createDraft?: () => Record<string, any>;
   formColumns?: ColumnDef[];
+  editFormColumns?: ColumnDef[];
   addButtonLabel?: string;
   submitLabel?: string;
   progressWirs?: Record<string, any>[];
@@ -281,7 +283,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -868,7 +870,9 @@ export function DataTableView({
       assertValidHierarchyChange(tableName, data, editingId, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === editingId), ...patch });
       validateRecord?.({ ...data.find((row) => row.id === editingId), ...patch });
-      const updated = await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
+      const updated = onUpdate
+        ? await onUpdate(editingId, patch)
+        : await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
       setEditingId(null);
       setMinimizedModal(null);
       setEditRow({});
@@ -1181,9 +1185,13 @@ export function DataTableView({
   }
 
   const formCols = formColumns || columns.filter((c) => c.editable !== false);
+  const editCols = editFormColumns || formCols;
   const allColsForForm = showProjectFilter && projectPickerInForm !== false
     ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...formCols]
     : formCols;
+  const allColsForEdit = showProjectFilter && projectPickerInForm !== false
+    ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...editCols]
+    : editCols;
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
   const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
@@ -1698,7 +1706,7 @@ export function DataTableView({
               </div>
             </div>
             <div className="space-y-3">
-              {allColsForForm.map((col) => (
+              {allColsForEdit.map((col) => (
                 <div key={col.key}>
                   <label className="block text-xs font-medium text-neutral-600 mb-1">{col.label}</label>
                   {renderFormField(col, newRow, setNewRow)}

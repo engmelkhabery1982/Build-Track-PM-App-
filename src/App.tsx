@@ -123,6 +123,13 @@ const USER_FORM_COLUMNS: ColumnDef[] = [
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Disabled'] },
   { key: 'initial_password', label: 'Initial Password (min. 8 characters)', type: 'password', editable: true },
 ];
+const USER_EDIT_COLUMNS: ColumnDef[] = [
+  { key: 'username', label: 'Username', type: 'text', editable: true },
+  { key: 'display_name', label: 'Display Name', type: 'text', editable: true },
+  { key: 'role', label: 'Role', type: 'status', editable: true, options: ['PMO Admin', 'Project Manager', 'Commercial Manager', 'Site Engineer', 'Executive Viewer'] },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Disabled'] },
+  { key: 'new_password', label: 'Reset Password (leave blank to keep current)', type: 'password', editable: true },
+];
 
 const GOVERNANCE_COLUMNS: ColumnDef[] = [
   { key: 'reference_number', label: 'Reference #', type: 'text', editable: true },
@@ -1852,6 +1859,7 @@ export default function App() {
         readOnly={roleReadOnly}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : undefined}
+        editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : undefined}
         onInsert={tableName === 'app_users' ? async (userDraft) => {
           const username = String(userDraft.username || '').trim();
           const password = String(userDraft.initial_password || '');
@@ -1971,6 +1979,19 @@ export default function App() {
         } : tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
           ? async (invoiceDraft) => createInvoiceFromWir(tableName, invoiceDraft)
           : undefined}
+        onUpdate={tableName === 'app_users' ? async (id, userPatch) => {
+          const username = String(userPatch.username || '').trim();
+          const password = String(userPatch.new_password || '');
+          if (!username) throw new Error('Username is required.');
+          if (data.users.some((user: any) => user.id !== id && String(user.username || '').toLowerCase() === username.toLowerCase())) {
+            throw new Error('This username is already in use.');
+          }
+          const { new_password: _password, ...safePatch } = userPatch;
+          if (!password) return dataRepository.update<Record<string, any>>('app_users', id, safePatch);
+          if (password.length < 8) throw new Error('Reset password must contain at least 8 characters.');
+          const secured = await hashPassword(password);
+          return dataRepository.update<Record<string, any>>('app_users', id, { ...safePatch, password_hash: secured.hash, password_salt: secured.salt });
+        } : undefined}
         onDeleteGroup={tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
           ? async (invoiceRow) => deleteInvoiceGroup(tableName, invoiceRow)
           : undefined}
