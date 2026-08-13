@@ -9,30 +9,30 @@ import { addCalendarDays, scheduleBudget, schedulePlannedValueToDate } from '@/u
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Home' },
-  { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Projects' },
-  { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Projects' },
-  { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Progress' },
-  { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Progress' },
-  { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Progress' },
-  { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Progress' },
-  { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Progress' },
-  { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial' },
-  { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial' },
-  { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial' },
-  { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial' },
-  { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial' },
-  { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Commercial' },
-  { key: 'cashflow', label: 'Cash Flow', icon: Banknote, group: 'Commercial' },
-  { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost Control' },
-  { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost Control' },
-  { key: 'procurement', label: 'Procurement', icon: Package, group: 'Operations' },
-  { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Operations' },
-  { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Operations' },
-  { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Operations' },
-  { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Operations' },
-  { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Operations' },
-  { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Operations' },
+  { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
+  { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
+  { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
+  { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
+  { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
+  { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
+  { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Controls' },
+  { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Controls' },
+  { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial & Cash' },
+  { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial & Cash' },
+  { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial & Cash' },
+  { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial & Cash' },
+  { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
+  { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
+  { key: 'cashflow', label: 'Cash Flow', icon: Banknote, group: 'Commercial & Cash' },
+  { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost & Resources' },
+  { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost & Resources' },
+  { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
+  { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
+  { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
+  { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Field & Governance' },
+  { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Field & Governance' },
+  { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Field & Governance' },
+  { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Field & Governance' },
 ];
 
 const PROJECT_STATUSES = ['Planning', 'In Progress', 'On Hold', 'Completed', 'Delayed'];
@@ -481,7 +481,7 @@ export default function App() {
     void normalizeScheduleActivities().catch((error) => console.error('Could not normalize schedule activities.', error));
   }, [data.schedules, data.boqItems, data.applyLocalMutation]);
 
-  const groups = ['Home', 'Projects', 'Planning & Progress', 'Commercial', 'Cost Control', 'Operations'];
+  const groups = ['Executive', 'Planning & Controls', 'Commercial & Cash', 'Cost & Resources', 'Field & Governance'];
 
   async function syncSubcontractWirCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
     const sourceId = mutation.row?.id || mutation.id;

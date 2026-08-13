@@ -391,70 +391,70 @@ export function Dashboard({
 
   const kpis = [
     {
-      label: pid === 'all' ? 'Total Projects' : 'Project Status',
-      value: pid === 'all' ? projects.length.toString() : (selectedProject?.status || '—'),
+      label: pid === 'all' ? 'Portfolio Status' : 'Project Status',
+      value: pid === 'all' ? `${stats.activeProjects}/${projects.length}` : (selectedProject?.status || '—'),
       sub: pid === 'all' ? `${stats.activeProjects} active · ${stats.completedProjects} done` : `${selectedProject?.client || ''}`,
       icon: FolderKanban,
       color: 'from-primary-500 to-primary-600',
       trend: 'up' as const,
-      view: 'projects' as ViewKey,
+      view: 'portfolio' as ViewKey,
     },
     {
-      label: 'Total Budget',
-      value: fmtMoney(stats.totalBudget),
+      label: 'Modified Contract Value',
+      value: fmtMoney(stats.modifiedContractValue),
       sub: `${fmtMoney(stats.totalSpent)} spent (${stats.budgetUtilization}%)`,
-      icon: Wallet,
-      color: 'from-success-500 to-success-600',
-      trend: stats.budgetUtilization > 80 ? ('down' as const) : ('up' as const),
-      view: 'costs' as ViewKey,
-    },
-    {
-      label: 'Tasks Progress',
-      value: `${stats.completedTasks}/${fTasks.length}`,
-      sub: `${stats.inProgressTasks} in progress · ${stats.delayedTasks} delayed`,
-      icon: CheckCircle2,
+      icon: FileSignature,
       color: 'from-secondary-500 to-secondary-600',
-      trend: stats.delayedTasks > 0 ? ('down' as const) : ('up' as const),
-      view: 'tasks' as ViewKey,
+      trend: 'up' as const,
+      view: 'contracts' as ViewKey,
     },
     {
-      label: 'Safety Alerts',
-      value: stats.openSafety.toString(),
-      sub: stats.highSeverity > 0 ? `${stats.highSeverity} high/critical` : 'No critical issues',
-      icon: AlertTriangle,
-      color: stats.openSafety > 0 ? 'from-error-500 to-error-600' : 'from-success-500 to-success-600',
-      trend: stats.openSafety > 0 ? ('down' as const) : ('up' as const),
-      view: 'safety' as ViewKey,
+      label: 'Planned Value (PV)',
+      value: fmtMoney(stats.totalPlannedWork),
+      sub: `As of today · BAC ${fmtMoney(evm.BAC)}`,
+      icon: CheckCircle2,
+      color: 'from-primary-500 to-primary-600',
+      trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
+      view: 'schedule' as ViewKey,
+    },
+    {
+      label: 'Earned Value (EV)',
+      value: fmtMoney(stats.totalEarnedWork),
+      sub: `SPI ${evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'} · ${evm.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'}`,
+      icon: TrendingUp,
+      color: evm.SPI >= 1 ? 'from-success-500 to-success-600' : 'from-warning-500 to-warning-600',
+      trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
+      view: 'progress' as ViewKey,
+    },
+    {
+      label: 'Actual Cost (AC)',
+      value: fmtMoney(evm.AC),
+      sub: `CPI ${evm.CPI > 0 ? evm.CPI.toFixed(2) : '—'} · ${evm.CPI >= 1 ? 'cost efficient' : 'cost exposure'}`,
+      icon: DollarSign,
+      color: evm.CPI >= 1 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
+      trend: evm.CPI >= 1 ? ('up' as const) : ('down' as const),
+      view: 'costs' as ViewKey,
     },
     {
       label: 'Net Cash Flow',
       value: fmtMoney(stats.netCashFlow),
-      sub: `In: ${fmtMoney(stats.totalInflow)} · Out: ${fmtMoney(stats.totalOutflow)}`,
+      sub: `In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)}`,
       icon: CircleDollarSign,
       color: stats.netCashFlow >= 0 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
       trend: stats.netCashFlow >= 0 ? ('up' as const) : ('down' as const),
       view: 'cashflow' as ViewKey,
     },
     {
-      label: 'Procurement',
-      value: `${stats.deliveredProcurement}/${fProcurement.length}`,
-      sub: `${stats.pendingProcurement} pending · ${fmtMoney(stats.totalProcurementValue)} total`,
-      icon: PackageCheck,
-      color: 'from-accent-500 to-accent-600',
-      trend: stats.pendingProcurement > 0 ? ('down' as const) : ('up' as const),
-      view: 'procurement' as ViewKey,
+      label: 'PMO Actions',
+      value: actionItems.length.toString(),
+      sub: `${stats.delayedTasks} delayed tasks · ${stats.highSeverity} high HSE issue(s)`,
+      icon: Zap,
+      color: actionItems.length > 0 ? 'from-warning-500 to-warning-600' : 'from-success-500 to-success-600',
+      trend: actionItems.length > 0 ? ('down' as const) : ('up' as const),
+      view: 'tasks' as ViewKey,
     },
     {
-      label: 'Modified Contract Value',
-      value: fmtMoney(stats.modifiedContractValue),
-      sub: `${stats.activeContracts} active · ${fContracts.length} total`,
-      icon: FileSignature,
-      color: 'from-primary-500 to-primary-600',
-      trend: 'up' as const,
-      view: 'contracts' as ViewKey,
-    },
-    {
-      label: 'Health Score',
+      label: 'PMO Health',
       value: `${healthScore}/100`,
       sub: healthLabel,
       icon: HeartPulse,
@@ -487,13 +487,13 @@ export function Dashboard({
   const severityIconColors = { high: 'text-error-600', medium: 'text-warning-600', low: 'text-primary-600' };
 
   const tabs: { key: DashboardTab; label: string; icon: typeof LayoutDashboard }[] = [
-    { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { key: 'financials', label: 'Financials', icon: BarChart3 },
-    { key: 'schedule', label: 'Schedule', icon: CalendarClock },
-    { key: 'safety', label: 'Safety', icon: ShieldAlert },
-    { key: 'procurement', label: 'Procurement', icon: Truck },
-    { key: 'documents', label: 'Documents', icon: FileCheck2 },
-    { key: 'action', label: `Action Items${actionItems.length > 0 ? ` (${actionItems.length})` : ''}`, icon: Zap },
+    { key: 'overview', label: 'Executive Overview', icon: LayoutDashboard },
+    { key: 'financials', label: 'Commercial & EVM', icon: BarChart3 },
+    { key: 'schedule', label: 'Time Controls', icon: CalendarClock },
+    { key: 'action', label: `PMO Actions${actionItems.length > 0 ? ` (${actionItems.length})` : ''}`, icon: Zap },
+    { key: 'procurement', label: 'Resources', icon: Truck },
+    { key: 'safety', label: 'HSE & Quality', icon: ShieldAlert },
+    { key: 'documents', label: 'Records', icon: FileCheck2 },
   ];
 
   const procurementStatuses = [
@@ -509,11 +509,11 @@ export function Dashboard({
         {/* Header */}
         <div className="mb-5 flex items-start justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-neutral-900">Project Dashboard</h2>
+            <h2 className="text-2xl font-bold text-neutral-900">PMO Command Center</h2>
             <p className="text-sm text-neutral-500 mt-1">
               {pid === 'all'
-                ? 'Complete overview of all construction projects, costs, procurement, safety, and progress'
-                : `Detailed view for ${selectedProject?.name || 'project'}`}
+                ? 'Portfolio decisions first: value, delivery performance, cost exposure and actions requiring management attention.'
+                : `Management control view for ${selectedProject?.name || 'project'}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
