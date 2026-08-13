@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
@@ -336,7 +336,10 @@ function InlineCellEditor({
   return (
     <input
       ref={inputRef}
-      type={col.type === 'number' || col.type === 'money' ? 'number' : col.type === 'date' ? 'date' : 'text'}
+      // Numeric cells deliberately use a text input: HTML number inputs reject
+      // an initial "=" and therefore make Excel-style formulas impossible.
+      type={col.type === 'date' ? 'date' : 'text'}
+      inputMode={col.type === 'number' || col.type === 'money' ? 'decimal' : undefined}
       value={valRef.current ?? ''}
       onChange={(e) => { valRef.current = e.target.value; }}
       onBlur={() => onCommit(valRef.current)}
@@ -384,7 +387,15 @@ export function DataTableView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printableRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const savedScroll = useRef<number>(0);
+  const savedViewport = useRef<{ top: number; left: number } | null>(null);
+
+  function preserveViewport() {
+    if (!scrollRef.current) return;
+    savedViewport.current = {
+      top: scrollRef.current.scrollTop,
+      left: scrollRef.current.scrollLeft,
+    };
+  }
 
   const availableFilters = useMemo(() => columns
     .filter((column) => !['id', 'created_at', 'notes'].includes(column.key))
@@ -591,11 +602,19 @@ export function DataTableView({
     return m;
   }, [projects]);
 
-  useEffect(() => {
-    if (scrollRef.current && savedScroll.current) {
-      scrollRef.current.scrollTop = savedScroll.current;
-      savedScroll.current = 0;
-    }
+  useLayoutEffect(() => {
+    const viewport = savedViewport.current;
+    const table = scrollRef.current;
+    if (!viewport || !table) return;
+    // Restore before the browser paints the refreshed rows, then once more on
+    // the next frame for WebView layout recalculation after a local SQLite save.
+    table.scrollTop = viewport.top;
+    table.scrollLeft = viewport.left;
+    window.requestAnimationFrame(() => {
+      table.scrollTop = viewport.top;
+      table.scrollLeft = viewport.left;
+    });
+    savedViewport.current = null;
   }, [data]);
 
   useEffect(() => {
@@ -903,7 +922,7 @@ export function DataTableView({
 
   async function handleAdd() {
     setSaving(true);
-    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    preserveViewport();
     try {
       const row = prepareCodeControlledInsert(tableName, newRow, data);
       const prepared = coerceTypes(row);
@@ -930,7 +949,7 @@ export function DataTableView({
   async function handleEdit() {
     if (!editingId) return;
     setSaving(true);
-    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    preserveViewport();
     try {
       const patch = coerceTypes(editRow);
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
@@ -1147,14 +1166,15 @@ export function DataTableView({
 
   async function commitInlineEdit(commitValue?: any) {
     if (!inlineEdit) return;
-    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    preserveViewport();
     const { id, key } = inlineEdit;
     const col = columns.find((c) => c.key === key);
     let val = commitValue !== undefined ? commitValue : inlineValue;
     if (col) {
       if (col.type === 'number' || col.type === 'money') {
         const raw = String(val ?? '');
-        val = raw.startsWith('=') ? evaluateGridFormula(raw) : raw === '' ? null : parseFloat(raw.replace(/[^0-9.\-]/g, ''));
+        const expression = raw.trim();
+        val = expression.startsWith('=') ? evaluateGridFormula(expression) : expression === '' ? null : parseFloat(expression.replace(/[^0-9.\-]/g, ''));
         if (isNaN(val as number)) val = null;
       } else if (col.type === 'boolean') {
         val = val === true || val === 'true' || val === 1 || val === '1';
@@ -1239,7 +1259,7 @@ export function DataTableView({
   async function handleDelete() {
     if (!deleteId) return;
     setSaving(true);
-    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    preserveViewport();
     try {
       const row = data.find((item) => item.id === deleteId);
       const deletedRows = row && onDeleteGroup
@@ -1363,7 +1383,7 @@ export function DataTableView({
       const startColumn = columns.findIndex((column) => column.key === anchor.columnKey);
       if (startRow < 0 || startColumn < 0) return;
       const matrix = clipboardText.replace(/\r/g, '').split('\n').map((line) => line.split('\t'));
-      savedScroll.current = scrollRef.current?.scrollTop || 0;
+      preserveViewport();
       let updatedCount = 0;
       const nextSelection = new Set<string>();
       for (let rowOffset = 0; rowOffset < matrix.length && startRow + rowOffset < sortedData.length; rowOffset += 1) {
@@ -1420,7 +1440,7 @@ export function DataTableView({
   async function fillDownSelectedCells() {
     const bounds = selectedBounds();
     if (!bounds || bounds.toRow === bounds.fromRow) return;
-    savedScroll.current = scrollRef.current?.scrollTop || 0;
+    preserveViewport();
     let count = 0;
     try {
       for (let columnIndex = bounds.fromCol; columnIndex <= bounds.toCol; columnIndex += 1) {
