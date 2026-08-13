@@ -1389,8 +1389,9 @@ export default function App() {
           const alreadyPlanned = data.schedules
             .filter((activity: any) => activity.boq_item_id === item.id && String(activity.activity || '').trim())
             .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
-          if (alreadyPlanned + plannedQuantity > (Number(item.quantity) || 0)) {
-            throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');
+          const allowedQuantity = Number(item.quantity) || 0;
+          if (alreadyPlanned + plannedQuantity > allowedQuantity + 0.000001) {
+            throw new Error(`Planned quantity exceeds BOQ quantity: existing activities ${alreadyPlanned.toLocaleString()} + new ${plannedQuantity.toLocaleString()} = ${(alreadyPlanned + plannedQuantity).toLocaleString()}, while BOQ allows ${allowedQuantity.toLocaleString()}.`);
           }
           const plannedValue = Math.round(plannedQuantity * (Number(item.unit_rate) || 0) * 100) / 100;
           const activityNumber = data.schedules.filter((activity: any) => activity.boq_item_id === item.id).length + 1;

@@ -756,8 +756,9 @@ export function DataTableView({
         String(activity.activity || '').trim(),
       );
       const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + plannedQuantity;
-      if (total > (Number(item.quantity) || 0)) {
-        throw new Error('The combined planned quantities of activities cannot exceed the BOQ item quantity.');
+      const allowed = Number(item.quantity) || 0;
+      if (total > allowed + 0.000001) {
+        throw new Error(`Planned quantity exceeds BOQ quantity: existing activities ${otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0).toLocaleString()} + new ${plannedQuantity.toLocaleString()} = ${total.toLocaleString()}, while BOQ allows ${allowed.toLocaleString()}.`);
       }
     }
     assertDateGovernance(record);
