@@ -48,4 +48,4 @@ Read-only review of the current local SQLite database, source build, and desktop
 
 ## Recovery point
 
-The matching database backup and metadata are stored in the generated `_Checkpoints/Review_Checkpoint_*` folder. The source code revision for this checkpoint is recorded in its manifest.
+The source-code checkpoint is the Git tag `review-checkpoint-20260813` at the reviewed revision. A consistent local database backup must be created only after BuildTrack closes its active SQLite connection; use the in-app Backup action or close the app briefly before a file-level backup is taken.
