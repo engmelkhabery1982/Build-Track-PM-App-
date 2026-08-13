@@ -531,6 +531,11 @@ export function DataTableView({
       const ur = Number(out.unit_rate) || 0;
       if (qty && ur) out.amount = Math.round(qty * ur * 100) / 100;
     }
+    if (tableName === 'schedule_distributions') {
+      const quantity = Number(out.planned_quantity) || 0;
+      const rate = Number(out.unit_rate) || 0;
+      out.planned_value = Math.round(quantity * rate * 100) / 100;
+    }
     if (contracts && (tableName === 'subcontractor_invoices' || tableName === 'cost_entries' || tableName === 'costs' || tableName === 'progress_entries' || tableName === 'wir_entries')) {
       const mainContractId = getMainContractId(out.contract_id, contracts);
       if (mainContractId && mainContractId !== out.contract_id) out.main_contract_id = mainContractId;
@@ -581,7 +586,7 @@ export function DataTableView({
     const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
-      'project_id', 'contract_id', 'boq_header_id', 'boq_item_id',
+      'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       ...(relationshipAutoFillFields || []),
@@ -644,6 +649,7 @@ export function DataTableView({
     const selectedContract = relationshipOptions?.contract_id?.find((option) => option.value === record.contract_id);
     const selectedHeader = relationshipOptions?.boq_header_id?.find((option) => option.value === record.boq_header_id);
     const selectedItem = relationshipOptions?.boq_item_id?.find((option) => option.value === record.boq_item_id);
+    const selectedSchedule = relationshipOptions?.schedule_id?.find((option) => option.value === record.schedule_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -659,6 +665,9 @@ export function DataTableView({
     }
     if (selectedItem?.data?.boq_header_id && record.boq_header_id && selectedItem.data.boq_header_id !== record.boq_header_id) {
       throw new Error('The selected BOQ item belongs to a different BOQ.');
+    }
+    if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
+      throw new Error('The selected activity belongs to a different project.');
     }
 
     const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);
@@ -1001,6 +1010,7 @@ export function DataTableView({
       if (col.key === 'boq_item_id' && row.contract_id) return option.data?.contract_id === row.contract_id;
       if (col.key === 'boq_item_id' && row.boq_header_id) return option.data?.boq_header_id === row.boq_header_id;
       if (col.key === 'boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'schedule_id' && row.project_id) return option.data?.project_id === row.project_id;
       if (col.key === 'main_boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
       return true;
     });

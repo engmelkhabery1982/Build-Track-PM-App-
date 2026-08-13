@@ -168,6 +168,21 @@ pub fn run() {
       ALTER TABLE contracts ADD COLUMN boq_item_id TEXT;
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 4,
+    description: "add_schedule_time_phasing",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS schedule_distributions (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
+      );
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

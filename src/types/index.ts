@@ -157,6 +157,8 @@ export interface Schedule {
   boq_code: string;
   boq_item_code: string;
   boq_item_name: string;
+  wbs_code?: string;
+  activity_code?: string;
   activity: string;
   start_date: string | null;
   end_date: string | null;
@@ -168,10 +170,33 @@ export interface Schedule {
   actual_cost?: number;
   predecessors: string;
   predecessor_item: string;
+  relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string;
+  lag_days?: number;
+  calendar_name?: string;
   critical_path: boolean;
   is_critical_item: boolean;
   responsible: string;
   status: string;
+  notes: string;
+  created_at: string;
+}
+
+/** Time-phased planned quantity for one schedule activity. */
+export interface ScheduleDistribution {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string;
+  project_code: string;
+  activity_name: string;
+  period_start: string | null;
+  period_end: string | null;
+  planned_quantity: number;
+  unit: string;
+  unit_rate: number;
+  planned_value: number;
   notes: string;
   created_at: string;
 }
@@ -433,7 +458,7 @@ export interface WIREntry {
 
 export type ViewKey =
   | 'dashboard' | 'projects' | 'tasks' | 'costs' | 'costEntries'
-  | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
+  | 'procurement' | 'safety' | 'progress' | 'schedule' | 'scheduleDistributions' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking';
