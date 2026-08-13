@@ -5,7 +5,7 @@ import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
-import { addCalendarDays, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -17,6 +17,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
+  { key: 'scheduleDistributions', label: 'Planned Quantity Distribution', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Controls' },
   { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Controls' },
   { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial & Cash' },
@@ -246,6 +247,19 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
+const SCHEDULE_DISTRIBUTION_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity ID', type: 'text', editable: true },
+  { key: 'activity_name', label: 'Activity', type: 'text', editable: true },
+  { key: 'period_start', label: 'Period Start', type: 'date', editable: true },
+  { key: 'period_end', label: 'Period End', type: 'date', editable: true },
+  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: true },
+  { key: 'unit', label: 'Unit', type: 'text', editable: true },
+  { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: true },
+  { key: 'planned_value', label: 'Planned Value', type: 'money', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
 
 const CONTRACT_COLUMNS: ColumnDef[] = [
   { key: 'contract_role', label: 'Contract Role', type: 'status', editable: true, options: ['Main Contract', 'Subcontract'] },
@@ -448,6 +462,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  scheduleDistributions: { columns: SCHEDULE_DISTRIBUTION_COLUMNS, filters: [{ key: 'activity_name', label: 'Activity', options: [] }], showProjectFilter: true, dateRangeColumn: 'period_start' },
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
@@ -466,7 +481,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 
 const TABLE_NAMES: Record<string, string> = {
   projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
-  procurement: 'procurement', safety: 'safety', progress: 'progress_entries',
+  procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
@@ -476,7 +491,7 @@ const TABLE_NAMES: Record<string, string> = {
 
 const VIEW_TITLES: Record<string, string> = {
   projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
-  procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries',
+  procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
@@ -764,7 +779,7 @@ export default function App() {
         const key = `${scheduleContract.project_id}|${scheduleContract.parent_main_contract_id || scheduleContract.id}|${mainItemId}`;
         const previous = scheduleValuesByItem.get(key) || { budget: 0, planned: 0 };
         const activityBudget = scheduleBudget(schedule);
-        const activityPlannedValue = schedulePlannedValueToDate(schedule);
+        const activityPlannedValue = distributedPlannedValueToDate(schedule, data.scheduleDistributions as Record<string, any>[]);
         scheduleValuesByItem.set(key, {
           budget: previous.budget + activityBudget,
           planned: previous.planned + activityPlannedValue,
@@ -1048,6 +1063,7 @@ export default function App() {
           baselines={data.baselines}
           reportingPeriods={data.reportingPeriods}
           governanceRegister={data.governanceRegister}
+          scheduleDistributions={data.scheduleDistributions}
           onNavigate={setActiveView}
         />
       );
@@ -1252,6 +1268,8 @@ export default function App() {
           ? data.wirEntries
         : activeView === 'schedule'
           ? data.schedules
+          : activeView === 'scheduleDistributions'
+            ? data.scheduleDistributions
           : activeView === 'subinvoices'
             ? data.subInvoices
             : activeView === 'clientinvoices'
@@ -1352,8 +1370,8 @@ export default function App() {
             // EV and AC are allocated only among activities which have a PV
             // at the report date. Budget is never used as the allocation key.
             const itemPVToDate = activitiesForItem
-              .reduce((sum: number, activity: any) => sum + schedulePlannedValueToDate(activity, reportDate), 0);
-            const activityPVToDate = schedulePlannedValueToDate(schedule, reportDate);
+              .reduce((sum: number, activity: any) => sum + distributedPlannedValueToDate(activity, data.scheduleDistributions as Record<string, any>[], reportDate), 0);
+            const activityPVToDate = distributedPlannedValueToDate(schedule, data.scheduleDistributions as Record<string, any>[], reportDate);
             const allocation = isSummaryRow && childActivities.length > 0
               ? 1
               : itemPVToDate > 0 ? activityPVToDate / itemPVToDate : 0;
@@ -1376,8 +1394,8 @@ export default function App() {
               ? childActivities.reduce((sum: number, activity: any) => sum + scheduleBudget(activity), 0)
               : scheduleBudget(schedule);
             const plannedValue = isSummaryRow && childActivities.length > 0
-              ? childActivities.reduce((sum: number, activity: any) => sum + schedulePlannedValueToDate(activity), 0)
-              : schedulePlannedValueToDate(schedule);
+              ? childActivities.reduce((sum: number, activity: any) => sum + distributedPlannedValueToDate(activity, data.scheduleDistributions as Record<string, any>[]), 0)
+              : distributedPlannedValueToDate(schedule, data.scheduleDistributions as Record<string, any>[]);
             const summaryQuantity = isSummaryRow && childActivities.length > 0
               ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0)
               : plannedQuantity;

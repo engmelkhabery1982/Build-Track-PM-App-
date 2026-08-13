@@ -523,7 +523,7 @@ export interface WIREntry {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'

@@ -29,6 +29,29 @@ export function schedulePlannedValueToDate(
   return Math.round(Math.max(0, Math.min(1, (reportMs - startMs) / duration)) * budget * 100) / 100;
 }
 
+/**
+ * Uses imported/time-phased planning data when it exists for an activity.
+ * This replaces the linear fallback with the approved period distribution.
+ */
+export function distributedPlannedValueToDate(
+  activity: Record<string, any>,
+  distributions: Record<string, any>[],
+  reportDate = new Date().toISOString().slice(0, 10),
+): number {
+  const rows = distributions.filter((distribution) => distribution.schedule_id === activity.id);
+  if (rows.length === 0) return schedulePlannedValueToDate(activity, reportDate);
+  return Math.round(rows.reduce((sum, distribution) => {
+    const value = Number(distribution.planned_value) || ((Number(distribution.planned_quantity) || 0) * (Number(distribution.unit_rate) || 0));
+    const start = String(distribution.period_start || '');
+    const end = String(distribution.period_end || start);
+    if (!start || reportDate < start) return sum;
+    if (!end || reportDate >= end) return sum + value;
+    const span = Math.max(1, Math.ceil((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000));
+    const elapsed = Math.max(0, Math.ceil((new Date(`${reportDate}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000));
+    return sum + value * Math.min(1, elapsed / span);
+  }, 0) * 100) / 100;
+}
+
 export function addCalendarDays(date: string | null | undefined, days: number): string | null {
   if (!date) return null;
   const value = new Date(`${date}T00:00:00`);

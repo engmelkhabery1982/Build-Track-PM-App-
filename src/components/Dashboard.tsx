@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
-import { addCalendarDays, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, distributedPlannedValueToDate, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -30,6 +30,7 @@ interface DashboardProps {
   baselines: ProjectBaseline[];
   reportingPeriods: ReportingPeriod[];
   governanceRegister: GovernanceRegisterEntry[];
+  scheduleDistributions: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -74,7 +75,7 @@ type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procure
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -359,13 +360,13 @@ export function Dashboard({
       const dayOffset = (i / numPoints) * totalDays;
       const currentDate = new Date(startMs + dayOffset * 86400000);
       const dateStr = currentDate.toISOString().slice(0, 10);
-      const planned = datedSchedules.reduce((sum, schedule) => sum + schedulePlannedValueToDate(schedule as Record<string, any>, dateStr), 0);
+      const planned = datedSchedules.reduce((sum, schedule) => sum + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, dateStr), 0);
       const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
       const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
       points.push({ label: dateStr, planned, earned, actual, date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
