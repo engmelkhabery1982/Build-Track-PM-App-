@@ -48,4 +48,4 @@ Read-only review of the current local SQLite database, source build, and desktop
 
 ## Recovery point
 
-The source-code checkpoint is the Git tag `review-checkpoint-20260813` at the reviewed revision. A consistent local database backup must be created only after BuildTrack closes its active SQLite connection; use the in-app Backup action or close the app briefly before a file-level backup is taken.
+The source-code checkpoint is the Git tag `review-checkpoint-20260813` at the reviewed revision. The matching verified local SQLite backup is in `_Checkpoints/Review_Checkpoint_20260813_200737/buildtrack.db`; its `PRAGMA integrity_check` result is `ok` and its SHA-256 is `3f4d260b8e74493be8244a1c81591e8638409b73cb3376f298fe37931163c448`.
