@@ -162,6 +162,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
+  { key: 'remaining_duration_days', label: 'Remaining Duration', type: 'number', editable: false },
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
   { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
   { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: true },
@@ -1067,6 +1068,9 @@ export default function App() {
                 : '';
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
+            const remainingDuration = budget > 0
+              ? Math.max(0, Math.round(summaryDuration * (1 - Math.min(1, earned / budget))))
+              : summaryDuration;
             const costState = actualCost <= budget ? 'Under Budget' : 'Over Budget';
             const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
             return {
@@ -1076,6 +1080,7 @@ export default function App() {
               start_date: summaryStart,
               end_date: summaryEnd,
               duration_days: summaryDuration,
+              remaining_duration_days: remainingDuration,
               unit_rate: Number(mainItem?.unit_rate) || Number(schedule.unit_rate) || 0,
               budget,
               planned_quantity: summaryQuantity,

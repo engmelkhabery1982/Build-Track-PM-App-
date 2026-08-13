@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -291,6 +291,7 @@ export function DataTableView({
   const [inlineValue, setInlineValue] = useState<any>(null);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -418,6 +419,24 @@ export function DataTableView({
   }, [filtered, tableName, dateFrom, dateTo, progressWirs, projects]);
 
   const sortedData = useMemo(() => {
+    if (tableName === 'schedules') {
+      const byItem = new Map<string, Record<string, any>[]>();
+      displayData.forEach((row) => {
+        const key = String(row.boq_item_id || row.id);
+        byItem.set(key, [...(byItem.get(key) || []), row]);
+      });
+      const ordered: Record<string, any>[] = [];
+      [...byItem.entries()]
+        .sort(([, a], [, b]) => String(a[0]?.boq_item_code || a[0]?.boq_item_name || '').localeCompare(String(b[0]?.boq_item_code || b[0]?.boq_item_name || '')))
+        .forEach(([boqItemId, rows]) => {
+          const summary = rows.find((row) => row.is_summary_row === true);
+          const activities = rows.filter((row) => row !== summary)
+            .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.activity_code || '').localeCompare(String(b.activity_code || '')));
+          if (summary) ordered.push(summary);
+          if (!collapsedScheduleItems.has(boqItemId)) ordered.push(...activities);
+        });
+      return ordered;
+    }
     if (!sortField) return displayData;
     return [...displayData].sort((a, b) => {
       const col = columns.find((c) => c.key === sortField);
@@ -430,7 +449,7 @@ export function DataTableView({
       }
       return sortDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
     });
-  }, [displayData, sortField, sortDir, columns]);
+  }, [displayData, sortField, sortDir, columns, tableName, collapsedScheduleItems]);
 
   const scheduleBOQIds = useMemo(() => new Set(
     displayData.map((row) => String(row.boq_item_id || '')).filter(Boolean),
@@ -1445,7 +1464,7 @@ export function DataTableView({
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
                         const codeControl = getCodeControl(tableName);
                         const codeIsLocked = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
-                        const canEdit = col.editable !== false && col.key !== 'id' && col.key !== 'created_at' && !codeIsLocked;
+                        const canEdit = !isScheduleSummary && col.editable !== false && col.key !== 'id' && col.key !== 'created_at' && !codeIsLocked;
                         return (
                           <td
                             key={col.key}
@@ -1467,6 +1486,27 @@ export function DataTableView({
                                 autoFillOptions={autoFillOptions?.[col.key]}
                                 relationshipOptions={relationshipOptions?.[col.key]}
                               />
+                            ) : tableName === 'schedules' && col.key === 'activity' && isScheduleSummary ? (
+                              <div className="flex items-center gap-1.5 min-w-[220px]">
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    const boqItemId = String(row.boq_item_id || row.id);
+                                    setCollapsedScheduleItems((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(boqItemId)) next.delete(boqItemId); else next.add(boqItemId);
+                                      return next;
+                                    });
+                                  }}
+                                  className="rounded p-0.5 text-primary-700 hover:bg-primary-100"
+                                  title={collapsedScheduleItems.has(String(row.boq_item_id || row.id)) ? 'Expand activities' : 'Collapse activities'}
+                                >
+                                  {collapsedScheduleItems.has(String(row.boq_item_id || row.id)) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                                </button>
+                                <span className="font-bold text-primary-900">{row[col.key]}</span>
+                              </div>
+                            ) : tableName === 'schedules' && col.key === 'activity' ? (
+                              <div className="pl-7 text-neutral-700 before:content-['↳'] before:mr-2 before:text-primary-400">{renderCell(row[col.key], col, relationshipOptions?.[col.key], row)}</div>
                             ) : (
                               renderCell(row[col.key], col, relationshipOptions?.[col.key], row)
                             )}
