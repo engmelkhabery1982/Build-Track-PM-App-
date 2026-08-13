@@ -273,6 +273,20 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_quality_project ON quality_register(project_id);
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 8,
+    description: "add_pmo_reporting_snapshots",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS pmo_snapshots (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_pmo_snapshots_project_date ON pmo_snapshots(project_id, created_at DESC);
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

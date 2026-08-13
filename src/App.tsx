@@ -14,6 +14,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
   { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
   { key: 'reportingPeriods', label: 'Reporting Periods', icon: CalendarClock, group: 'Executive' },
+  { key: 'snapshots', label: 'PMO Snapshots', icon: FileCheck2, group: 'Executive' },
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
@@ -105,6 +106,9 @@ const REPORTING_PERIOD_COLUMNS: ColumnDef[] = [
   { key: 'data_date', label: 'Data Date', type: 'date', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'Locked', 'Closed'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const SNAPSHOT_COLUMNS: ColumnDef[] = [
+  { key: 'snapshot_name', label: 'Snapshot Name', type: 'text', editable: true }, { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true }, { key: 'data_date', label: 'Data Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved', 'Archived'] }, { key: 'planned_value', label: 'PV', type: 'money', editable: false }, { key: 'earned_value', label: 'EV', type: 'money', editable: false }, { key: 'actual_cost', label: 'AC', type: 'money', editable: false }, { key: 'cpi', label: 'CPI', type: 'number', editable: false }, { key: 'spi', label: 'SPI', type: 'number', editable: false }, { key: 'eac', label: 'EAC', type: 'money', editable: false }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const GOVERNANCE_COLUMNS: ColumnDef[] = [
@@ -449,6 +453,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   projects: { columns: PROJECT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROJECT_STATUSES }, { key: 'category', label: 'Category', options: ['Residential', 'Commercial', 'Industrial', 'Infrastructure', 'Renovation'] }], dateRangeColumn: 'start_date' },
   baselines: { columns: BASELINE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Approved', 'Superseded'] }], showProjectFilter: true, dateRangeColumn: 'baseline_date' },
   reportingPeriods: { columns: REPORTING_PERIOD_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'Locked', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  snapshots: { columns: SNAPSHOT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Approved', 'Archived'] }], showProjectFilter: true, dateRangeColumn: 'data_date' },
   governance: { columns: GOVERNANCE_COLUMNS, filters: [{ key: 'record_type', label: 'Type', options: ['Risk', 'Issue', 'Decision', 'Opportunity'] }, { key: 'status', label: 'Status', options: ['Open', 'Mitigating', 'Escalated', 'Approved', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'due_date' },
   approvals: { columns: APPROVAL_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }], showProjectFilter: true, dateRangeColumn: 'requested_date' },
   auditLog: { columns: AUDIT_COLUMNS, filters: [{ key: 'action', label: 'Action', options: ['Insert', 'Update', 'Delete'] }, { key: 'entity_type', label: 'Entity', options: [] }], showProjectFilter: true, dateRangeColumn: 'created_at' },
@@ -480,7 +485,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -490,7 +495,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1257,6 +1262,8 @@ export default function App() {
         ? data.baselines
         : activeView === 'reportingPeriods'
           ? data.reportingPeriods
+          : activeView === 'snapshots'
+            ? data.snapshots
           : activeView === 'governance'
             ? data.governanceRegister
             : activeView === 'approvals'
@@ -1743,7 +1750,19 @@ export default function App() {
         readOnly={roleReadOnly}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : undefined}
-        onInsert={tableName === 'schedules' ? async (scheduleRow) => {
+        onInsert={tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
+          const projectCosts = data.costs.filter((cost: any) => cost.project_id === snapshotDraft.project_id);
+          const planned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
+          const earned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
+          const actual = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
+          const bac = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.budget) || Number(cost.planned) || 0), 0);
+          const cpi = actual > 0 ? earned / actual : null;
+          const spi = planned > 0 ? earned / planned : null;
+          return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
+            ...snapshotDraft, planned_value: planned, earned_value: earned, actual_cost: actual,
+            cpi, spi, eac: cpi && cpi > 0 ? bac / cpi : bac,
+          });
+        } : tableName === 'schedules' ? async (scheduleRow) => {
           const contract = data.contracts.find((item: any) => item.id === scheduleRow.contract_id) as any;
           if (!contract || contract.parent_main_contract_id) {
             throw new Error('Select a main contract before saving the schedule activity.');
