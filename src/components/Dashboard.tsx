@@ -266,6 +266,9 @@ export function Dashboard({
     if (stats.delayedTasks > 0) score -= Math.min(stats.delayedTasks * 5, 25);
     if (stats.highSeverity > 0) score -= Math.min(stats.highSeverity * 8, 20);
     if (stats.openSafety > 0) score -= Math.min(stats.openSafety * 3, 10);
+    if (stats.criticalGovernanceItems > 0) score -= Math.min(stats.criticalGovernanceItems * 8, 20);
+    if (stats.openQualityItems > 0) score -= Math.min(stats.openQualityItems * 2, 10);
+    if (stats.openRfis > 0) score -= Math.min(stats.openRfis, 5);
     if (evm.CPI > 0 && evm.CPI < 0.9) score -= 15;
     if (evm.SPI > 0 && evm.SPI < 0.9) score -= 10;
     if (stats.budgetUtilization > 90) score -= 10;
@@ -660,6 +663,11 @@ export function Dashboard({
                     <p className="text-xs text-neutral-500">Variations</p>
                     <p className="text-sm font-bold text-neutral-800">{stats.pendingVariations}</p>
                   </div>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-error-50 py-2"><p className="text-xs text-neutral-500">Critical Risks</p><p className="text-sm font-bold text-neutral-800">{stats.criticalGovernanceItems}</p></div>
+                  <div className="rounded-lg bg-warning-50 py-2"><p className="text-xs text-neutral-500">Open Quality</p><p className="text-sm font-bold text-neutral-800">{stats.openQualityItems}</p></div>
+                  <div className="rounded-lg bg-primary-50 py-2"><p className="text-xs text-neutral-500">Open RFIs</p><p className="text-sm font-bold text-neutral-800">{stats.openRfis}</p></div>
                 </div>
               </div>
 
