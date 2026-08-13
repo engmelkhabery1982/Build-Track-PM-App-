@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
-import { schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -78,7 +78,16 @@ export function Dashboard({
   const [statusFilter, setStatusFilter] = useState('all');
 
   const pid = selectedProjectId;
-  const fProjects = pid === 'all' ? projects : projects.filter((p) => p.id === pid);
+  const effectiveProjects = useMemo(() => projects.map((project) => {
+    const mainContractIds = new Set(contracts
+      .filter((contract) => contract.project_id === project.id && !contract.parent_main_contract_id)
+      .map((contract) => contract.id));
+    const approvedExtensionDays = variations
+      .filter((variation) => variation.status === 'Approved' && variation.contract_id && mainContractIds.has(variation.contract_id))
+      .reduce((sum, variation) => sum + (Number(variation.time_impact_days) || 0), 0);
+    return { ...project, end_date: addCalendarDays(project.end_date, approvedExtensionDays) || project.end_date };
+  }), [projects, contracts, variations]);
+  const fProjects = pid === 'all' ? effectiveProjects : effectiveProjects.filter((p) => p.id === pid);
   const fTasks = pid === 'all' ? tasks : tasks.filter((t) => t.project_id === pid);
   const fCosts = pid === 'all' ? costs : costs.filter((c) => c.project_id === pid);
   const fProcurement = pid === 'all' ? procurement : procurement.filter((p) => p.project_id === pid);

@@ -5,7 +5,7 @@ import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
-import { scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -84,6 +84,7 @@ const TASK_COLUMNS: ColumnDef[] = [
   { key: 'progress', label: 'Progress', type: 'progress', editable: true },
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
+  { key: 'revised_end_date', label: 'Revised End', type: 'date', editable: false },
 ];
 
 const COST_COLUMNS: ColumnDef[] = [
@@ -194,6 +195,7 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
   { key: 'document_reference', label: 'Document Ref', type: 'text', editable: true },
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
+  { key: 'revised_end_date', label: 'Revised End', type: 'date', editable: false },
   { key: 'signed_date', label: 'Signed Date', type: 'date', editable: true },
 ];
 
@@ -914,11 +916,16 @@ export default function App() {
         const approvedVariationValue = data.variations
           .filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved')
           .reduce((sum: number, variation: any) => sum + (Number(variation.cost_impact) || 0), 0);
+        const approvedTimeImpact = data.variations
+          .filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved')
+          .reduce((sum: number, variation: any) => sum + (Number(variation.time_impact_days) || 0), 0);
         return {
           ...contract,
           contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
           project_code: contract.project_code || data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
           modified_contract_value: (Number(contract.contract_value) || 0) + approvedVariationValue,
+          revised_end_date: addCalendarDays(contract.end_date, approvedTimeImpact),
+          approved_time_impact_days: approvedTimeImpact,
         };
       });
     const contractById = new Map(contractsWithModifiedValue.map((contract: any) => [contract.id, contract]));
@@ -989,17 +996,17 @@ export default function App() {
             const mainItem = mainItemId ? data.boqItems.find((item: any) => item.id === mainItemId) as any : null;
             const plannedQuantity = Number(schedule.planned_quantity) || 0;
             // One BOQ item can be split across many activities. Allocate the
-            // item-level EV and actual cost by planned quantity so activity
-            // rows add up to the BOQ/control total instead of duplicating it.
+            // item-level EV and actual cost by PV-to-date so activity rows
+            // add up to the BOQ/control total without duplication.
             const activitiesForItem = data.schedules
               .filter((activity: any) => activity.project_id === schedule.project_id && activity.boq_item_id === schedule.boq_item_id);
-            const itemPlannedQuantity = activitiesForItem
-              .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
-            const itemPlannedValue = activitiesForItem
-              .reduce((sum: number, activity: any) => sum + scheduleBudget(activity), 0);
-            const allocation = itemPlannedQuantity > 0
-              ? plannedQuantity / itemPlannedQuantity
-              : itemPlannedValue > 0 ? scheduleBudget(schedule) / itemPlannedValue : 0;
+            const reportDate = new Date().toISOString().slice(0, 10);
+            // EV and AC are allocated only among activities which have a PV
+            // at the report date. Budget is never used as the allocation key.
+            const itemPVToDate = activitiesForItem
+              .reduce((sum: number, activity: any) => sum + schedulePlannedValueToDate(activity, reportDate), 0);
+            const activityPVToDate = schedulePlannedValueToDate(schedule, reportDate);
+            const allocation = itemPVToDate > 0 ? activityPVToDate / itemPVToDate : 0;
             const earnedWorkValue = derivedWirs
               .filter((wir: any) => {
                 const wirContract = contractById.get(wir.contract_id) as any;
@@ -1017,6 +1024,12 @@ export default function App() {
             const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
             const budget = scheduleBudget(schedule);
             const plannedValue = schedulePlannedValueToDate(schedule);
+            const revisedFinish = scheduleContract?.revised_end_date || scheduleContract?.end_date;
+            const dateAlert = revisedFinish && schedule.end_date && String(schedule.end_date) > revisedFinish
+              ? `⚠ Delayed: finishes after revised contract end (${revisedFinish})`
+              : scheduleContract?.end_date && schedule.end_date && String(schedule.end_date) > String(scheduleContract.end_date)
+                ? `ℹ Uses approved time extension to ${revisedFinish || schedule.end_date}`
+                : '';
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
             const costState = actualCost <= budget ? 'Under Budget' : 'Over Budget';
@@ -1033,7 +1046,7 @@ export default function App() {
               actual_cost: actualCost,
               cost_cpi: cpi,
               schedule_spi: spi,
-              status: `${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
+              status: `${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
             };
           })
         : activeView === 'progress'
@@ -1067,6 +1080,7 @@ export default function App() {
             return {
               ...project,
               total_value: contractValue,
+              end_date: mainContract?.revised_end_date || project.end_date,
               progress: contractValue > 0 ? Math.round(completedValue / contractValue * 10000) / 100 : 0,
             };
           })
@@ -1275,6 +1289,13 @@ export default function App() {
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
         contracts={data.contracts}
+        dateWarning={tableName === 'schedules' ? (activity) => {
+          const contract = contractsWithModifiedValue.find((row: any) => row.id === activity.contract_id) as any;
+          const revisedEnd = contract?.revised_end_date || contract?.end_date;
+          return revisedEnd && activity.end_date && String(activity.end_date) > String(revisedEnd)
+            ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
+            : null;
+        } : undefined}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);
           if (tableName === 'contracts') {

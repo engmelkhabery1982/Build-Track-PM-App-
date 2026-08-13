@@ -56,6 +56,7 @@ interface DataTableViewProps {
   relationshipAutoFillFields?: string[];
   contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null; start_date?: string | null; end_date?: string | null }[];
   onInsert?: (row: Record<string, any>) => Promise<Record<string, any> | Record<string, any>[]>;
+  dateWarning?: (row: Record<string, any>) => string | null;
   onDeleteGroup?: (row: Record<string, any>) => Promise<Record<string, any>[]>;
   deleteGroupKey?: string;
   canAdd?: boolean;
@@ -271,7 +272,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, dateWarning, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -778,6 +779,8 @@ export function DataTableView({
       setNewRow({});
       if (Array.isArray(inserted)) onMutated({ type: 'insertMany', rows: inserted });
       else onMutated({ type: 'insert', row: inserted });
+      const warning = dateWarning?.(Array.isArray(inserted) ? inserted[0] : inserted);
+      if (warning) alert(`Saved with schedule warning: ${warning}`);
     } catch (error: any) {
       console.error(`Could not add a ${tableName} record.`, error);
       alert(`Error: ${describeOperationError(error, 'Failed to add the record.')}`);
@@ -799,6 +802,8 @@ export function DataTableView({
       setEditingId(null);
       setEditRow({});
       onMutated({ type: 'update', row: updated });
+      const warning = dateWarning?.(updated);
+      if (warning) alert(`Saved with schedule warning: ${warning}`);
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to update the record.'}`);
     } finally {

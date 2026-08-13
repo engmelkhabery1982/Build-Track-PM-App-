@@ -28,3 +28,11 @@ export function schedulePlannedValueToDate(
   if (duration <= 0) return reportDate >= start ? budget : 0;
   return Math.round(Math.max(0, Math.min(1, (reportMs - startMs) / duration)) * budget * 100) / 100;
 }
+
+export function addCalendarDays(date: string | null | undefined, days: number): string | null {
+  if (!date) return null;
+  const value = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(value.getTime())) return null;
+  value.setDate(value.getDate() + (Number(days) || 0));
+  return value.toISOString().slice(0, 10);
+}
