@@ -1354,11 +1354,10 @@ export function DataTableView({
     }
   }
 
-  async function pasteSelectedCells() {
+  async function pasteTextAtSelection(clipboardText: string) {
     const anchor = selectionAnchor.current;
     if (!anchor) return;
     try {
-      const clipboardText = await navigator.clipboard.readText();
       if (!clipboardText.trim()) return;
       const startRow = sortedData.findIndex((row) => row.id === anchor.rowId);
       const startColumn = columns.findIndex((column) => column.key === anchor.columnKey);
@@ -1401,6 +1400,23 @@ export function DataTableView({
     } catch (error: any) { setClipboardNotice(`Paste failed: ${error.message || 'clipboard access was blocked.'}`); }
   }
 
+  async function pasteSelectedCells() {
+    try {
+      await pasteTextAtSelection(await navigator.clipboard.readText());
+    } catch {
+      // The toolbar has no native ClipboardEvent. Ctrl+V is still supported through
+      // handleGridPaste below, which works in Tauri even when Clipboard permission is denied.
+      setClipboardNotice('Clipboard permission was blocked. Select a cell, then use Ctrl+V to paste.');
+    }
+  }
+
+  function handleGridPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const clipboardText = event.clipboardData?.getData('text/plain');
+    if (!clipboardText) return;
+    event.preventDefault();
+    void pasteTextAtSelection(clipboardText);
+  }
+
   async function fillDownSelectedCells() {
     const bounds = selectedBounds();
     if (!bounds || bounds.toRow === bounds.fromRow) return;
@@ -1434,7 +1450,9 @@ export function DataTableView({
 
   function handleGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); void copySelectedCells(); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') { event.preventDefault(); void pasteSelectedCells(); return; }
+    // Do not consume Ctrl+V here. Tauri's WebView may deny navigator.clipboard,
+    // while the browser-native paste event still provides the text securely.
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return;
     const anchor = selectionAnchor.current;
     if (!anchor || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) return;
     const rowIndex = sortedData.findIndex((row) => row.id === anchor.rowId);
@@ -1838,7 +1856,7 @@ export function DataTableView({
 
         {/* Table */}
         <div ref={printableRef} className="bg-white rounded-xl border border-neutral-300 shadow-sm overflow-hidden printable-area flex-1 flex flex-col min-h-0">
-          <div ref={scrollRef} tabIndex={0} onKeyDown={handleGridKeyDown} className="scrollbar-always flex-1 overflow-auto min-h-0 outline-none" style={{ overflowX: 'scroll', overflowY: 'auto' }}>
+          <div ref={scrollRef} tabIndex={0} onKeyDown={handleGridKeyDown} onPaste={handleGridPaste} className="scrollbar-always flex-1 overflow-auto min-h-0 outline-none" style={{ overflowX: 'scroll', overflowY: 'auto' }}>
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
