@@ -6,7 +6,7 @@ import { addCalendarDays, schedulePlannedValueToDate } from '@/utils/schedulePla
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
-  Variation, DocumentEntry, WIREntry,
+  Variation, DocumentEntry, WIREntry, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry,
 } from '@/types';
 
 interface DashboardProps {
@@ -27,6 +27,9 @@ interface DashboardProps {
   variations: Variation[];
   documents: DocumentEntry[];
   wirEntries: WIREntry[];
+  baselines: ProjectBaseline[];
+  reportingPeriods: ReportingPeriod[];
+  governanceRegister: GovernanceRegisterEntry[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -71,7 +74,7 @@ type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procure
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -104,6 +107,9 @@ export function Dashboard({
   const fVariations = pid === 'all' ? variations : variations.filter((v) => v.project_id === pid);
   const fDocuments = pid === 'all' ? documents : documents.filter((d) => d.project_id === pid);
   const fWirs = pid === 'all' ? wirEntries : wirEntries.filter((wir) => wir.project_id === pid);
+  const fBaselines = pid === 'all' ? baselines : baselines.filter((baseline) => baseline.project_id === pid);
+  const fReportingPeriods = pid === 'all' ? reportingPeriods : reportingPeriods.filter((period) => period.project_id === pid);
+  const fGovernance = pid === 'all' ? governanceRegister : governanceRegister.filter((entry) => entry.project_id === pid);
 
   const selectedProject = pid !== 'all' ? projects.find((p) => p.id === pid) : null;
 
@@ -199,6 +205,10 @@ export function Dashboard({
     const modifiedContractValue = totalContractValue + approvedVariationCostImpact;
     const pendingVariations = mainVariations.filter((v) => v.status === 'Pending' || v.status === 'Submitted').length;
     const approvedVariations = mainVariations.filter((v) => v.status === 'Approved').length;
+    const approvedBaselines = fBaselines.filter((baseline) => baseline.status === 'Approved').length;
+    const openReportingPeriods = fReportingPeriods.filter((period) => period.status === 'Open').length;
+    const openGovernanceItems = fGovernance.filter((entry) => entry.status !== 'Closed').length;
+    const criticalGovernanceItems = fGovernance.filter((entry) => entry.status !== 'Closed' && (entry.impact === 'Critical' || entry.probability === 'Critical')).length;
     const currentDocs = fDocuments.filter((d) => d.status === 'Current').length;
     const underReviewDocs = fDocuments.filter((d) => d.status === 'Under Review').length;
     const approvedDocs = fDocuments.filter((d) => d.status === 'Approved').length;
@@ -219,9 +229,10 @@ export function Dashboard({
       subInvoiceTotal, subInvoicePaid, subOutstanding,
       clientInvoiceTotal, clientInvoicePaid, clientOutstanding,
       variationCostImpact, approvedVariationCostImpact, totalVariations: mainVariations.length, pendingVariations, approvedVariations,
+      approvedBaselines, openReportingPeriods, openGovernanceItems, criticalGovernanceItems,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
+  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance]);
 
   const evm = useMemo(() => {
     const BAC = stats.totalBudget || stats.totalPlannedWork || 0;
@@ -586,6 +597,12 @@ export function Dashboard({
         {/* ============ OVERVIEW TAB ============ */}
         {activeTab === 'overview' && (
           <div className="space-y-5 animate-fade-in">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <button onClick={() => onNavigate('baselines')} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-primary-300"><p className="text-xs font-medium text-neutral-500">Approved Baselines</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.approvedBaselines}</p><p className="mt-1 text-xs text-neutral-500">Approved control points</p></button>
+              <button onClick={() => onNavigate('reportingPeriods')} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-primary-300"><p className="text-xs font-medium text-neutral-500">Open Reporting Periods</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.openReportingPeriods}</p><p className="mt-1 text-xs text-neutral-500">Data-date governance</p></button>
+              <button onClick={() => onNavigate('governance')} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-primary-300"><p className="text-xs font-medium text-neutral-500">Open Risks / Issues</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.openGovernanceItems}</p><p className="mt-1 text-xs text-neutral-500">Require ownership and action</p></button>
+              <button onClick={() => onNavigate('governance')} className={`rounded-xl border p-4 text-left shadow-sm hover:border-primary-300 ${stats.criticalGovernanceItems > 0 ? 'border-error-200 bg-error-50' : 'border-neutral-200 bg-white'}`}><p className="text-xs font-medium text-neutral-500">Critical Governance Items</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.criticalGovernanceItems}</p><p className="mt-1 text-xs text-neutral-500">Critical likelihood or impact</p></button>
+            </div>
             {/* Health Score + Charts row 1 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Health Score Gauge */}

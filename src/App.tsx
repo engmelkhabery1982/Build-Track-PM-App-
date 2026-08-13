@@ -1019,6 +1019,9 @@ export default function App() {
           variations={data.variations}
           documents={data.documents}
           wirEntries={data.wirEntries}
+          baselines={data.baselines}
+          reportingPeriods={data.reportingPeriods}
+          governanceRegister={data.governanceRegister}
           onNavigate={setActiveView}
         />
       );
