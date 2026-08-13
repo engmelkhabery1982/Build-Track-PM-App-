@@ -123,6 +123,7 @@ const PROCUREMENT_COLUMNS: ColumnDef[] = [
   { key: 'unit_cost', label: 'Unit Cost', type: 'money', editable: true },
   { key: 'total_cost', label: 'Total', type: 'money' },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: PROC_STATUSES },
+  { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
   { key: 'order_date', label: 'Order Date', type: 'date', editable: true },
   { key: 'delivery_date', label: 'Delivery Date', type: 'date', editable: true },
 ];
@@ -326,6 +327,7 @@ const WIR_COLUMNS: ColumnDef[] = [
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'worker_name', label: 'Worker Name', type: 'text', editable: true },
   { key: 'role', label: 'Role', type: 'text', editable: true, options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] },
@@ -335,11 +337,13 @@ const LABOR_DUTY_COLUMNS: ColumnDef[] = [
   { key: 'total_hours', label: 'Total Hours', type: 'number' },
   { key: 'rate_per_hour', label: 'Rate/Hour', type: 'money', editable: true },
   { key: 'amount', label: 'Amount', type: 'money' },
+  { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const EQUIPMENT_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'equipment_name', label: 'Equipment Name', type: 'text', editable: true },
   { key: 'equipment_type', label: 'Type', type: 'text', editable: true, options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] },
@@ -347,6 +351,7 @@ const EQUIPMENT_COLUMNS: ColumnDef[] = [
   { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
   { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
   { key: 'amount', label: 'Amount', type: 'money' },
+  { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -550,6 +555,64 @@ export default function App() {
     }
   }
 
+  async function syncOperationalCost(sourceTable: 'procurement' | 'labor_duty' | 'equipment', mutation: { type: string; row?: Record<string, any>; id?: string }) {
+    const sourceId = mutation.row?.id || mutation.id;
+    if (!sourceId) return;
+    const sourceType = sourceTable === 'procurement' ? 'procurement' : sourceTable === 'labor_duty' ? 'labor' : 'equipment';
+    const existingCost = data.costEntries.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
+    const existingCash = data.cashFlow.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
+    if (mutation.type === 'delete') {
+      if (existingCost) { await dataRepository.delete('cost_entries', existingCost.id); data.applyLocalMutation('cost_entries', { type: 'delete', id: existingCost.id }); }
+      if (existingCash) { await dataRepository.delete('cash_flow', existingCash.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id }); }
+      return;
+    }
+    const source = mutation.row;
+    if (!source) return;
+    const contract = data.contracts.find((row: any) => row.id === source.contract_id) as any;
+    const item = data.boqItems.find((row: any) => row.id === source.boq_item_id) as any;
+    const header = data.boqHeaders.find((row: any) => row.id === item?.boq_header_id) as any;
+    if (!contract || contract.parent_main_contract_id || !item || header?.contract_id !== contract.id) {
+      // A source without the full main-contract / BOQ relationship remains a
+      // draft operational record and is deliberately not posted as a cost.
+      if (existingCost) { await dataRepository.delete('cost_entries', existingCost.id); data.applyLocalMutation('cost_entries', { type: 'delete', id: existingCost.id }); }
+      return;
+    }
+    const amount = sourceTable === 'procurement'
+      ? (Number(source.total_cost) || (Number(source.quantity) || 0) * (Number(source.unit_cost) || 0))
+      : Number(source.amount) || 0;
+    const costType = sourceTable === 'procurement' ? 'Materials' : sourceTable === 'labor_duty' ? 'Labor' : 'Equipment';
+    const costRow = {
+      project_id: contract.project_id, project_code: data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
+      contract_id: contract.id, main_contract_id: contract.id, boq_header_id: item.boq_header_id || null, boq_item_id: item.id,
+      boq_code: header?.boq_code || item.boq_code || '', company_name: contract.contractor || '',
+      boq_item_code: item.item_code || '', boq_item_name: item.item_name || item.description || '',
+      date: sourceTable === 'procurement' ? (source.delivery_date || source.order_date || null) : (source.date || null),
+      cost_type: costType, invoice_number: source.purchase_order_number || source.reference_number || '', payment_order_number: '',
+      amount: Math.round(amount * 100) / 100, source_type: sourceType, source_id: sourceId,
+    };
+    if (existingCost) {
+      const updated = await dataRepository.update<Record<string, any>>('cost_entries', existingCost.id, costRow);
+      data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
+    } else {
+      const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', costRow);
+      data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
+    }
+    const isPaid = String(source.payment_status || '') === 'Paid';
+    if (isPaid) {
+      const cashRow = { project_id: contract.project_id, contract_id: contract.id, date: costRow.date, description: `${costType}: ${source.item || source.worker_name || source.equipment_name || item.item_name || ''}`, category: costType, inflow: 0, outflow: costRow.amount, net: -costRow.amount, cumulative_balance: 0, source_type: sourceType, source_id: sourceId };
+      if (existingCash) {
+        const updated = await dataRepository.update<Record<string, any>>('cash_flow', existingCash.id, cashRow);
+        data.applyLocalMutation('cash_flow', { type: 'update', row: updated });
+      } else {
+        const inserted = await dataRepository.insert<Record<string, any>>('cash_flow', cashRow);
+        data.applyLocalMutation('cash_flow', { type: 'insert', row: inserted });
+      }
+    } else if (existingCash) {
+      await dataRepository.delete('cash_flow', existingCash.id);
+      data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+    }
+  }
+
   useEffect(() => {
     if (synchronizingLiveSubcontractCosts.current || data.wirEntries.length === 0) return;
     const synchronizeLiveSubcontractCosts = async () => {
@@ -571,6 +634,17 @@ export default function App() {
       console.error('Could not synchronize live subcontractor costs.', error),
     );
   }, [data.wirEntries, data.contracts, data.boqItems, data.boqHeaders, data.projects, data.costEntries]);
+
+  useEffect(() => {
+    const synchronizeOperationalSources = async () => {
+      for (const row of data.procurement as Record<string, any>[]) await syncOperationalCost('procurement', { type: 'update', row });
+      for (const row of data.laborDuty as Record<string, any>[]) await syncOperationalCost('labor_duty', { type: 'update', row });
+      for (const row of data.equipment as Record<string, any>[]) await syncOperationalCost('equipment', { type: 'update', row });
+    };
+    if (data.contracts.length > 0 && data.boqItems.length > 0) {
+      void synchronizeOperationalSources().catch((error) => console.error('Could not synchronize operational cost sources.', error));
+    }
+  }, [data.procurement, data.laborDuty, data.equipment, data.contracts, data.boqItems, data.boqHeaders]);
 
   useEffect(() => {
     if (synchronizingCostControl.current) return;
@@ -1359,6 +1433,14 @@ export default function App() {
               mutation.rows.forEach((row) => void syncSubcontractWirCost({ type: 'insert', row }).catch((error) => alert(`Failed to synchronize subcontractor cost: ${error.message || 'Unknown error'}`)));
             } else {
               void syncSubcontractWirCost(mutation).catch((error) => alert(`Failed to synchronize subcontractor cost: ${error.message || 'Unknown error'}`));
+            }
+          }
+          if (tableName === 'procurement' || tableName === 'labor_duty' || tableName === 'equipment') {
+            const sourceTable = tableName as 'procurement' | 'labor_duty' | 'equipment';
+            if (mutation.type === 'insertMany') {
+              mutation.rows.forEach((row) => void syncOperationalCost(sourceTable, { type: 'insert', row }).catch((error) => alert(`Failed to synchronize ${sourceTable} cost: ${error.message || 'Unknown error'}`)));
+            } else {
+              void syncOperationalCost(sourceTable, mutation).catch((error) => alert(`Failed to synchronize ${sourceTable} cost: ${error.message || 'Unknown error'}`));
             }
           }
         }}
