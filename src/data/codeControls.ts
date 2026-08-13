@@ -1,4 +1,4 @@
-export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items';
+export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices';
 
 export interface CodeControl {
   codeField: string;
@@ -32,6 +32,15 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
     defaultPrefix: 'ITM',
     scopeFields: ['boq_header_id', 'project_id', 'boq_code'],
   },
+  variations: {
+    codeField: 'variation_number',
+    lockField: 'variation_number_locked',
+    defaultPrefix: 'VO',
+    scopeFields: ['contract_id'],
+  },
+  wir_entries: { codeField: 'wir_number', lockField: 'wir_number_locked', defaultPrefix: 'WIR', scopeFields: ['contract_id'] },
+  client_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-CLIENT', scopeFields: ['contract_id'] },
+  subcontractor_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-SUB', scopeFields: ['contract_id'] },
 };
 
 function isCodeControlledTable(tableName: string): tableName is CodeControlledTable {

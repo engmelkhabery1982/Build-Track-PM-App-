@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, Calendar, Upload, Printer, FileText } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -17,7 +17,7 @@ import type { LocalDataMutation } from '@/hooks/useData';
 export interface ColumnDef {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'money' | 'date' | 'status' | 'progress' | 'boolean' | 'select';
+  type?: 'text' | 'number' | 'money' | 'date' | 'status' | 'progress' | 'boolean' | 'select' | 'evm';
   width?: string;
   editable?: boolean;
   options?: string[];
@@ -46,6 +46,7 @@ interface DataTableViewProps {
   filters?: FilterDef[];
   projects: Project[];
   showProjectFilter?: boolean;
+  showProjectColumn?: boolean;
   projectPickerInForm?: boolean;
   dateRangeColumn?: string;
   boqItems?: BOQItem[];
@@ -53,9 +54,16 @@ interface DataTableViewProps {
   autoFillOptions?: Record<string, string[]>;
   relationshipOptions?: Record<string, SelectOption[]>;
   relationshipAutoFillFields?: string[];
-  contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null }[];
-  onInsert?: (row: Record<string, any>) => Promise<Record<string, any>>;
+  contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null; start_date?: string | null; end_date?: string | null }[];
+  onInsert?: (row: Record<string, any>) => Promise<Record<string, any> | Record<string, any>[]>;
+  onDeleteGroup?: (row: Record<string, any>) => Promise<Record<string, any>[]>;
+  deleteGroupKey?: string;
   canAdd?: boolean;
+  createDraft?: () => Record<string, any>;
+  formColumns?: ColumnDef[];
+  addButtonLabel?: string;
+  submitLabel?: string;
+  progressWirs?: Record<string, any>[];
 }
 
 function statusColor(status: string): string {
@@ -80,11 +88,54 @@ function fmtMoney(n: number): string {
   return `${n < 0 ? '-' : ''}$${v.toFixed(0)}`;
 }
 
-function renderCell(value: any, col: ColumnDef, relationshipOptions?: SelectOption[]): React.ReactNode {
+function describeOperationError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const detail = error as Record<string, unknown>;
+    for (const key of ['message', 'error', 'reason', 'details']) {
+      const value = detail[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch {
+      // Fall through to the friendly message below.
+    }
+  }
+  return fallback;
+}
+
+function renderCell(value: any, col: ColumnDef, relationshipOptions?: SelectOption[], row?: Record<string, any>): React.ReactNode {
   if (value === null || value === undefined || value === '') return <span className="text-neutral-300">—</span>;
   const relationshipLabel = relationshipOptions?.find((option) => option.value === String(value))?.label;
   if (relationshipLabel) return <span className="text-neutral-700 text-sm">{relationshipLabel}</span>;
   switch (col.type) {
+    case 'evm': {
+      const cpi = Number(row?.cost_cpi);
+      const spi = Number(row?.schedule_spi);
+      const costHasData = Number.isFinite(cpi) && cpi > 0;
+      const scheduleHasData = Number.isFinite(spi) && spi > 0;
+      const costGood = costHasData && cpi >= 1;
+      const scheduleGood = scheduleHasData && spi >= 1;
+      const Indicator = ({ kind, good, hasData, ratio }: { kind: 'cost' | 'schedule'; good: boolean; hasData: boolean; ratio: number }) => {
+        const Icon = hasData ? (good ? CircleCheck : CircleAlert) : CircleMinus;
+        const colors = !hasData
+          ? 'bg-neutral-100 text-neutral-500 border-neutral-200'
+          : good ? 'bg-success-50 text-success-700 border-success-200' : 'bg-error-50 text-error-700 border-error-200';
+        const label = kind === 'cost' ? 'Cost' : 'Schedule';
+        const state = !hasData ? 'No data' : good ? 'Good' : 'Needs attention';
+        const metric = kind === 'cost' ? 'CPI' : 'SPI';
+        return (
+          <span title={`${label}: ${state}${hasData ? ` — ${metric} ${ratio.toFixed(2)}` : ''}`} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 ${colors}`}>
+            {kind === 'cost' ? <BadgeDollarSign size={14} /> : <Calendar size={14} />}
+            <Icon size={14} strokeWidth={2.5} />
+          </span>
+        );
+      };
+      return <div className="flex items-center gap-1.5"><Indicator kind="cost" good={costGood} hasData={costHasData} ratio={cpi} /><Indicator kind="schedule" good={scheduleGood} hasData={scheduleHasData} ratio={spi} /></div>;
+    }
     case 'money': return <span className="font-medium text-neutral-700">{fmtMoney(Number(value))}</span>;
     case 'number': return <span className="text-neutral-600">{Number(value).toLocaleString()}</span>;
     case 'date': return <span className="text-neutral-500 text-sm">{new Date(value).toLocaleDateString()}</span>;
@@ -220,7 +271,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, canAdd = true,
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onDeleteGroup, deleteGroupKey, canAdd = true, createDraft, formColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -239,6 +290,8 @@ export function DataTableView({
   const [inlineValue, setInlineValue] = useState<any>(null);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printableRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -252,10 +305,10 @@ export function DataTableView({
     Object.entries(filterValues).forEach(([key, val]) => {
       if (val !== 'all') result = result.filter((r) => String(r[key]) === val);
     });
-    if (dateRangeColumn && dateFrom) {
+    if (dateRangeColumn && dateFrom && tableName !== 'progress_entries') {
       result = result.filter((r) => { const d = r[dateRangeColumn]; return d && d >= dateFrom; });
     }
-    if (dateRangeColumn && dateTo) {
+    if (dateRangeColumn && dateTo && tableName !== 'progress_entries') {
       result = result.filter((r) => { const d = r[dateRangeColumn]; return d && d <= dateTo; });
     }
     if (search) {
@@ -266,6 +319,87 @@ export function DataTableView({
   }, [data, search, filterValues, projectFilter, columns, showProjectFilter, dateRangeColumn, dateFrom, dateTo]);
 
   const displayData: Record<string, any>[] = useMemo(() => {
+    if (tableName === 'progress_entries') {
+      const periodStart = dateFrom || '';
+      // Without a selected end date, report through the latest registered
+      // inspection. This also keeps imported/test records visible when their
+      // dates are later than the workstation clock.
+      const wirDates = progressWirs
+        .map((wir) => String(wir.inspection_date || ''))
+        .filter(Boolean)
+        .sort();
+      const latestWirDate = wirDates[wirDates.length - 1] || new Date().toISOString().slice(0, 10);
+      const periodEnd = dateTo || latestWirDate;
+      const contractsById = new Map((contracts || []).map((contract) => [contract.id, contract]));
+      const mainContractIdFor = (contractId: string | null | undefined): string | null => {
+        if (!contractId) return null;
+        const visited = new Set<string>();
+        let currentId = contractId;
+        while (currentId && !visited.has(currentId)) {
+          visited.add(currentId);
+          const current = contractsById.get(currentId);
+          if (!current?.parent_main_contract_id) return currentId;
+          currentId = current.parent_main_contract_id;
+        }
+        return contractId;
+      };
+      return filtered.map((contract) => {
+        const project = projects.find((item) => item.id === contract.project_id) as any;
+        // A project is created from its main contract. Use the contract date
+        // first so an edited contract immediately controls its own report,
+        // while retaining the project date as a safe fallback for old data.
+        const contractStart = String(contract.start_date || project?.start_date || '');
+        const scopedWirs = progressWirs.filter((wir) =>
+          (contract.contract_role === 'Main Contract'
+            ? mainContractIdFor(wir.contract_id) === contract.contract_id
+            : wir.contract_id === contract.contract_id) &&
+          String(wir.inspection_date || '') >= contractStart &&
+          String(wir.inspection_date || '') <= periodEnd,
+        );
+        const valueOf = (wir: Record<string, any>) => {
+          const wirContract = contractsById.get(wir.contract_id);
+          // WIR keeps the main-contract price for project progress. For a
+          // subcontractor's own progress, value its measured quantity using
+          // the rate agreed in the subcontract BOQ item instead.
+          if (contract.contract_role === 'Subcontract' && wirContract?.parent_main_contract_id) {
+            const subcontractItem = boqItems?.find((item: any) => item.id === wir.boq_item_id) as any;
+            const subcontractRate = Number(subcontractItem?.unit_rate);
+            if (Number.isFinite(subcontractRate)) {
+              return (Number(wir.quantity) || 0) * subcontractRate;
+            }
+          }
+          return Number(wir.item_amount) || ((Number(wir.quantity) || 0) * (Number(wir.unit_price) || 0));
+        };
+        const previous = periodStart
+          ? scopedWirs.filter((wir) => String(wir.inspection_date || '') < periodStart)
+            .reduce((sum, wir) => sum + valueOf(wir), 0)
+          : 0;
+        const current = periodStart
+          ? scopedWirs.filter((wir) => String(wir.inspection_date || '') >= periodStart)
+            .reduce((sum, wir) => sum + valueOf(wir), 0)
+          : scopedWirs.reduce((sum, wir) => sum + valueOf(wir), 0);
+        const contractValue = Number(contract.contract_value) || 0;
+        const total = previous + current;
+        const percent = (value: number) => contractValue > 0 ? Math.round(value / contractValue * 10000) / 100 : 0;
+        return {
+          ...contract,
+          date: periodEnd,
+          prev_value: previous,
+          prev_pct: percent(previous),
+          current_value: current,
+          current_pct: percent(current),
+          total_value: total,
+          total_pct: percent(total),
+          percent_complete: percent(total),
+        };
+      });
+    }
+    if (tableName === 'boq_items') {
+      return filtered.map((row) => ({
+        ...row,
+        amount: Math.round((Number(row.quantity) || 0) * (Number(row.unit_rate) || 0) * 100) / 100,
+      }));
+    }
     if (tableName === 'labor_duty') {
       return filtered.map((r) => ({
         ...r,
@@ -280,7 +414,7 @@ export function DataTableView({
       }));
     }
     return filtered;
-  }, [filtered, tableName]);
+  }, [filtered, tableName, dateFrom, dateTo, progressWirs, projects]);
 
   const sortedData = useMemo(() => {
     if (!sortField) return displayData;
@@ -300,12 +434,21 @@ export function DataTableView({
   const columnSums = useMemo(() => {
     const sums: Record<string, number> = {};
     columns.forEach((col) => {
-      if (col.type === 'number' || col.type === 'money') {
-        sums[col.key] = displayData.reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
+      const shouldSum = tableName === 'boq_items'
+        ? col.key === 'amount'
+        : tableName === 'wir_entries'
+          ? col.key === 'item_amount'
+          : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices')
+            ? col.key === 'amount'
+          : (col.type === 'number' || col.type === 'money');
+      if (shouldSum) {
+        sums[col.key] = displayData
+          .filter((row) => !['contracts', 'boq_headers', 'boq_items', 'variations'].includes(tableName) || row.contract_role !== 'Subcontract')
+          .reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
       }
     });
     return sums;
-  }, [displayData, columns]);
+  }, [displayData, columns, tableName, contracts]);
 
   const projectMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -371,6 +514,18 @@ export function DataTableView({
       const ur = Number(out.unit_rate) || 0;
       out.amount = Math.round(qty * ur * 100) / 100;
     }
+    if (tableName === 'boq_items') {
+      const qty = Number(out.quantity) || 0;
+      const unitRate = Number(out.unit_rate) || 0;
+      out.amount = Math.round(qty * unitRate * 100) / 100;
+    }
+    if (tableName === 'wir_entries') {
+      const qty = Number(out.quantity) || 0;
+      const price = Number(out.unit_price) || 0;
+      out.item_amount = Math.round(qty * price * 100) / 100;
+      const mainItemValue = Number(out.main_boq_item_value) || 0;
+      out.completion_pct = mainItemValue > 0 ? Math.round(out.item_amount / mainItemValue * 10000) / 100 : 0;
+    }
     if (tableName === 'subcontractor_invoices' || tableName === 'client_invoices') {
       const qty = Number(out.quantity) || 0;
       const ur = Number(out.unit_rate) || 0;
@@ -427,12 +582,62 @@ export function DataTableView({
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id',
+      'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
+      'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       ...(relationshipAutoFillFields || []),
     ]);
     const relatedData = Object.fromEntries(
       Object.entries(selected?.data || {}).filter(([key]) => allowedFields.has(key)),
     );
-    return { ...row, ...relatedData, [changedKey]: selectedValue };
+    const updated = {
+      ...row,
+      ...relatedData,
+      [changedKey]: changedKey === 'company_name' ? (selected?.data?.company_name || '') : selectedValue,
+    };
+    if (tableName === 'boq_headers' && changedKey === 'contract_id' && selected?.data?.contract_number) {
+      const contractCode = String(selected.data.contract_number);
+      const prefix = selected.data.contract_role === 'Subcontract'
+        ? `${contractCode}-BOQ-SUB-`
+        : `${contractCode}-BOQ-`;
+      const next = data
+        .filter((item) => item.contract_id === selectedValue)
+        .map((item) => Number(String(item.boq_code || '').replace(prefix, '')) || 0)
+        .reduce((highest, value) => Math.max(highest, value), 0) + 1;
+      if (!updated.boq_code || /^BOQ-(MAIN|SUB)-\d+$/i.test(String(updated.boq_code))) {
+        updated.boq_code = `${prefix}${String(next).padStart(3, '0')}`;
+      }
+    }
+    if (tableName === 'boq_items' && changedKey === 'boq_header_id' && selected?.data?.boq_code) {
+      const boqCode = String(selected.data.boq_code);
+      const prefix = `${boqCode}-ITM-`;
+      const next = data
+        .filter((item) => item.boq_header_id === selectedValue)
+        .map((item) => Number(String(item.item_code || '').replace(prefix, '')) || 0)
+        .reduce((highest, value) => Math.max(highest, value), 0) + 1;
+      if (!updated.item_code || /^ITM-\d+$/i.test(String(updated.item_code))) {
+        updated.item_code = `${prefix}${String(next).padStart(3, '0')}`;
+      }
+    }
+    if (tableName === 'wir_entries' && changedKey === 'company_name' && selected?.data?.contract_number) {
+      const prefix = `${String(selected.data.contract_number)}-${selected.data.contract_role === 'Subcontract' ? 'SUB-' : ''}WIR-`;
+      const next = data.filter((item) => item.contract_id === selected?.data?.contract_id)
+        .map((item) => Number(String(item.wir_number || '').replace(prefix, '')) || 0)
+        .reduce((highest, value) => Math.max(highest, value), 0) + 1;
+      if (!updated.wir_number || /^WIR-\d+$/i.test(String(updated.wir_number))) {
+        updated.wir_number = `${prefix}${String(next).padStart(3, '0')}`;
+      }
+    }
+    if ((tableName === 'client_invoices' || tableName === 'subcontractor_invoices') && changedKey === 'contract_id' && selected?.data?.contract_number) {
+      const suffix = tableName === 'client_invoices' ? 'INV-CLIENT-' : 'INV-SUB-';
+      const prefix = `${String(selected.data.contract_number)}-${suffix}`;
+      const next = data.filter((item) => item.contract_id === selectedValue)
+        .map((item) => Number(String(item.invoice_number || '').replace(prefix, '')) || 0)
+        .reduce((highest, value) => Math.max(highest, value), 0) + 1;
+      if (!updated.invoice_number || /^INV-(CLIENT|SUB)-\d+$/i.test(String(updated.invoice_number))) {
+        updated.invoice_number = `${prefix}${String(next).padStart(3, '0')}`;
+      }
+    }
+    return updated;
   }
 
   function assertRelationshipScope(record: Record<string, any>): void {
@@ -457,6 +662,19 @@ export function DataTableView({
     }
 
     const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);
+    if (tableName === 'boq_items' && selectedContractRow?.parent_main_contract_id && !record.main_boq_item_id) {
+      throw new Error('A subcontractor BOQ item must be linked to its parent main BOQ item.');
+    }
+    if (tableName === 'boq_items' && !selectedContractRow?.parent_main_contract_id && record.main_boq_item_id) {
+      throw new Error('Only subcontractor BOQ items may have a parent main BOQ item.');
+    }
+    if (tableName === 'boq_items' && record.main_boq_item_id) {
+      const selectedMainItem = relationshipOptions?.main_boq_item_id?.find((option) => option.value === record.main_boq_item_id);
+      if (!selectedMainItem) throw new Error('Select a valid parent main BOQ item.');
+      if (selectedMainItem.data?.project_id && record.project_id && selectedMainItem.data.project_id !== record.project_id) {
+        throw new Error('The parent main BOQ item must belong to the same project.');
+      }
+    }
     if (tableName === 'client_invoices' && selectedContractRow?.parent_main_contract_id) {
       throw new Error('Client invoices must be assigned to the main contract.');
     }
@@ -477,9 +695,11 @@ export function DataTableView({
         : await dataRepository.insert<Record<string, any>>(tableName, prepared);
       setShowAdd(false);
       setNewRow({});
-      onMutated({ type: 'insert', row: inserted });
+      if (Array.isArray(inserted)) onMutated({ type: 'insertMany', rows: inserted });
+      else onMutated({ type: 'insert', row: inserted });
     } catch (error: any) {
-      alert(`Error: ${error.message || 'Failed to add the record.'}`);
+      console.error(`Could not add a ${tableName} record.`, error);
+      alert(`Error: ${describeOperationError(error, 'Failed to add the record.')}`);
     } finally {
       setSaving(false);
     }
@@ -564,6 +784,7 @@ export function DataTableView({
     columns.forEach((c) => { headerRow[c.label] = ''; });
     if (showProjectFilter) headerRow['Project'] = '';
     const ws = XLSX.utils.json_to_sheet([headerRow]);
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, `${tableName}_template.xlsx`);
@@ -599,7 +820,21 @@ export function DataTableView({
     setInlineEdit(null);
     setInlineValue(null);
     try {
-      const patch = { [key]: val };
+      const patch: Record<string, any> = { [key]: val };
+      if (tableName === 'boq_items' && (key === 'quantity' || key === 'unit_rate')) {
+        const existing = data.find((row) => row.id === id) || {};
+        const quantity = Number(key === 'quantity' ? val : existing.quantity) || 0;
+        const unitRate = Number(key === 'unit_rate' ? val : existing.unit_rate) || 0;
+        patch.amount = Math.round(quantity * unitRate * 100) / 100;
+      }
+      if (tableName === 'wir_entries' && (key === 'quantity' || key === 'unit_price')) {
+        const existing = data.find((row) => row.id === id) || {};
+        const quantity = Number(key === 'quantity' ? val : existing.quantity) || 0;
+        const unitPrice = Number(key === 'unit_price' ? val : existing.unit_price) || 0;
+        patch.item_amount = Math.round(quantity * unitPrice * 100) / 100;
+        const mainItemValue = Number(existing.main_boq_item_value) || 0;
+        patch.completion_pct = mainItemValue > 0 ? Math.round(patch.item_amount / mainItemValue * 10000) / 100 : 0;
+      }
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
       assertValidHierarchyChange(tableName, data, id, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === id), ...patch });
@@ -634,9 +869,13 @@ export function DataTableView({
     setSaving(true);
     savedScroll.current = scrollRef.current?.scrollTop || 0;
     try {
-      await dataRepository.delete(tableName, deleteId);
+      const row = data.find((item) => item.id === deleteId);
+      const deletedRows = row && onDeleteGroup
+        ? await onDeleteGroup(row)
+        : [row].filter(Boolean) as Record<string, any>[];
+      if (!onDeleteGroup) await dataRepository.delete(tableName, deleteId);
       setDeleteId(null);
-      onMutated({ type: 'delete', id: deleteId });
+      deletedRows.forEach((deleted) => onMutated({ type: 'delete', id: deleted.id }));
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to delete the record.'}`);
     } finally {
@@ -646,31 +885,70 @@ export function DataTableView({
 
   function startEdit(row: Record<string, any>) { setEditingId(row.id); setEditRow({ ...row }); }
 
-  function exportCSV() {
-    const headers = columns.map((c) => c.label).join(',');
-    const rows = displayData.map((r) =>
-      columns.map((c) => {
-        const v = r[c.key];
-        if (v === null || v === undefined) return '';
-        if (c.type === 'money') return Number(v).toFixed(2);
-        return `"${String(v).replace(/"/g, '""')}"`;
-      }).join(',')
-    );
-    const csv = [headers, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${tableName}.csv`; a.click();
-    URL.revokeObjectURL(url);
+  function exportExcel() {
+    const exportedRows = displayData.map((row) => {
+      const exported: Record<string, any> = {};
+      if (showProjectColumn) exported.Project = projectMap[row.project_id] || '';
+      columns.forEach((column) => { exported[column.label] = row[column.key] ?? ''; });
+      return exported;
+    });
+    const ws = XLSX.utils.json_to_sheet(exportedRows.length ? exportedRows : [Object.fromEntries(columns.map((column) => [column.label, '']))]);
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Export');
+    XLSX.writeFile(wb, `${tableName}_export.xlsx`);
   }
 
-  const formCols = columns.filter((c) => c.editable !== false);
+  function selectCell(rowId: string, columnKey: string, event: React.MouseEvent<HTMLTableCellElement>) {
+    const cellId = `${rowId}:${columnKey}`;
+    if (event.shiftKey && selectionAnchor.current) {
+      const anchorRow = sortedData.findIndex((row) => row.id === selectionAnchor.current!.rowId);
+      const targetRow = sortedData.findIndex((row) => row.id === rowId);
+      const anchorColumn = columns.findIndex((column) => column.key === selectionAnchor.current!.columnKey);
+      const targetColumn = columns.findIndex((column) => column.key === columnKey);
+      if (anchorRow >= 0 && targetRow >= 0 && anchorColumn >= 0 && targetColumn >= 0) {
+        const range = new Set<string>();
+        for (let rowIndex = Math.min(anchorRow, targetRow); rowIndex <= Math.max(anchorRow, targetRow); rowIndex += 1) {
+          for (let columnIndex = Math.min(anchorColumn, targetColumn); columnIndex <= Math.max(anchorColumn, targetColumn); columnIndex += 1) {
+            range.add(`${sortedData[rowIndex].id}:${columns[columnIndex].key}`);
+          }
+        }
+        setSelectedCells(range);
+        return;
+      }
+    }
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedCells((previous) => {
+        const next = new Set(previous);
+        if (next.has(cellId)) next.delete(cellId); else next.add(cellId);
+        return next;
+      });
+    } else {
+      setSelectedCells(new Set([cellId]));
+      selectionAnchor.current = { rowId, columnKey };
+    }
+  }
+
+  const formCols = formColumns || columns.filter((c) => c.editable !== false);
   const allColsForForm = showProjectFilter && projectPickerInForm !== false
     ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...formCols]
     : formCols;
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
-  const numericCols = columns.filter((c) => c.type === 'number' || c.type === 'money');
+  const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
+    (tableName === 'boq_items' ? c.key === 'amount' : tableName === 'wir_entries' ? c.key === 'item_amount' : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices') ? c.key === 'amount' : true));
+  const selectedNumericValues = useMemo(() => {
+    const values: number[] = [];
+    selectedCells.forEach((cellId) => {
+      const separator = cellId.lastIndexOf(':');
+      const row = sortedData.find((item) => item.id === cellId.slice(0, separator));
+      const column = columns.find((item) => item.key === cellId.slice(separator + 1));
+      if (!row || !column || (column.type !== 'number' && column.type !== 'money')) return;
+      const value = Number(row[column.key]);
+      if (Number.isFinite(value)) values.push(value);
+    });
+    return values;
+  }, [selectedCells, sortedData, columns]);
 
   function renderFormField(col: ColumnDef, row: Record<string, any>, setRow: (r: Record<string, any>) => void) {
     const codeControl = getCodeControl(tableName);
@@ -694,8 +972,10 @@ export function DataTableView({
       if (col.key === 'contract_id' && row.project_id) return option.data?.project_id === row.project_id;
       if (col.key === 'boq_header_id' && row.contract_id) return option.data?.contract_id === row.contract_id;
       if (col.key === 'boq_header_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'boq_item_id' && row.contract_id) return option.data?.contract_id === row.contract_id;
       if (col.key === 'boq_item_id' && row.boq_header_id) return option.data?.boq_header_id === row.boq_header_id;
       if (col.key === 'boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
+      if (col.key === 'main_boq_item_id' && row.project_id) return option.data?.project_id === row.project_id;
       return true;
     });
     if (relationshipSelectOptions && relationshipSelectOptions.length > 0) {
@@ -785,30 +1065,49 @@ export function DataTableView({
       );
     }
 
+    const applyStandardValue = (value: string) => {
+      const updated = { ...row, [col.key]: value };
+      // Initial duration is calculated from dates, while remaining editable
+      // for schedules imported from professional planning software.
+      if (tableName === 'schedules' && (col.key === 'start_date' || col.key === 'end_date')) {
+        const start = col.key === 'start_date' ? value : updated.start_date;
+        const end = col.key === 'end_date' ? value : updated.end_date;
+        if (start && end) {
+          const days = Math.ceil((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000);
+          if (Number.isFinite(days) && days >= 0) updated.duration_days = Math.max(1, days);
+        }
+      }
+      setRow(updated);
+    };
     return (
       <input
         type={col.type === 'number' || col.type === 'money' ? 'number' : col.type === 'date' ? 'date' : 'text'}
         value={row[col.key] ?? ''}
-        onChange={(e) => setRow({ ...row, [col.key]: e.target.value })}
+        onChange={(e) => applyStandardValue(e.target.value)}
         className="w-full text-sm px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400"
       />
     );
   }
 
-  const [dragState, setDragState] = useState<{ modal: 'add' | 'edit' | null; offsetX: number; offsetY: number; x: number; y: number }>({ modal: null, offsetX: 0, offsetY: 0, x: 0, y: 0 });
+  const [dragState, setDragState] = useState<{ modal: 'add' | 'edit' | null; offsetX: number; offsetY: number }>({ modal: null, offsetX: 0, offsetY: 0 });
+  const [modalPosition, setModalPosition] = useState<Record<'add' | 'edit', { x: number; y: number } | null>>({ add: null, edit: null });
 
   function startDrag(modal: 'add' | 'edit', e: React.MouseEvent) {
     const target = e.currentTarget as HTMLElement;
     const modalEl = target.closest('[data-draggable]') as HTMLElement;
     if (!modalEl) return;
     const modalRect = modalEl.getBoundingClientRect();
-    setDragState({ modal, offsetX: e.clientX - modalRect.left, offsetY: e.clientY - modalRect.top, x: modalRect.left, y: modalRect.top });
+    setModalPosition((previous) => ({ ...previous, [modal]: { x: modalRect.left, y: modalRect.top } }));
+    setDragState({ modal, offsetX: e.clientX - modalRect.left, offsetY: e.clientY - modalRect.top });
   }
 
   useEffect(() => {
     if (!dragState.modal) return;
     function handleMove(e: MouseEvent) {
-      setDragState((prev) => prev.modal ? { ...prev, x: e.clientX - prev.offsetX, y: e.clientY - prev.offsetY } : prev);
+      setModalPosition((previous) => dragState.modal ? {
+        ...previous,
+        [dragState.modal]: { x: e.clientX - dragState.offsetX, y: e.clientY - dragState.offsetY },
+      } : previous);
     }
     function handleUp() { setDragState((prev) => ({ ...prev, modal: null })); }
     window.addEventListener('mousemove', handleMove);
@@ -816,8 +1115,8 @@ export function DataTableView({
     return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp); };
   }, [dragState.modal]);
 
-  const addModalStyle = dragState.modal === 'add' ? { position: 'fixed' as const, left: `${dragState.x}px`, top: `${dragState.y}px`, margin: 0 } : {};
-  const editModalStyle = dragState.modal === 'edit' ? { position: 'fixed' as const, left: `${dragState.x}px`, top: `${dragState.y}px`, margin: 0 } : {};
+  const addModalStyle = modalPosition.add ? { position: 'fixed' as const, left: `${modalPosition.add.x}px`, top: `${modalPosition.add.y}px`, margin: 0 } : {};
+  const editModalStyle = modalPosition.edit ? { position: 'fixed' as const, left: `${modalPosition.edit.x}px`, top: `${modalPosition.edit.y}px`, margin: 0 } : {};
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-neutral-50">
@@ -843,11 +1142,11 @@ export function DataTableView({
             <button onClick={downloadExcelTemplate} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Download a blank Excel template with the correct column headers">
               <FileText size={15} /> Template
             </button>
-            <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print">
+            <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
               <Download size={15} /> Export
             </button>
-            {canAdd && <button onClick={() => { setNewRow(createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
-              <Plus size={15} /> Add New
+            {canAdd && <button onClick={() => { setNewRow(createDraft ? createDraft() : createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+              <Plus size={15} /> {addButtonLabel}
             </button>}
           </div>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} className="hidden" />
@@ -917,6 +1216,13 @@ export function DataTableView({
               </span>
             );
           })}
+          {selectedCells.size > 0 && (
+            <>
+              <span className="text-neutral-300">|</span>
+              <span className="font-semibold text-neutral-700">Selected: <span className="text-primary-600">{selectedCells.size}</span></span>
+              {selectedNumericValues.length > 0 && <span className="text-neutral-600">Sum <span className="font-semibold text-primary-700">{selectedNumericValues.reduce((sum, value) => sum + value, 0).toLocaleString()}</span> · Avg <span className="font-semibold text-primary-700">{(selectedNumericValues.reduce((sum, value) => sum + value, 0) / selectedNumericValues.length).toFixed(2)}</span></span>}
+            </>
+          )}
         </div>
 
         {/* Import result banner */}
@@ -939,7 +1245,7 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click any cell to edit. Press Enter to save, Esc to cancel. Click column headers to sort.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Double-click to edit. Press Enter to save, Esc to cancel.</p>
 
         {/* Table */}
         <div ref={printableRef} className="bg-white rounded-xl border border-neutral-300 shadow-sm overflow-hidden printable-area flex-1 flex flex-col min-h-0">
@@ -947,7 +1253,7 @@ export function DataTableView({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
-                  {showProjectFilter && <th className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300">Project Code</th>}
+                  {showProjectColumn && <th className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300">Project Name</th>}
                   {columns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
                       className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
@@ -958,20 +1264,20 @@ export function DataTableView({
                       </div>
                     </th>
                   ))}
-                  <th className="text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 no-print">Actions</th>
+                  <th className="sticky right-0 z-20 text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedData.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + (showProjectFilter ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
+                    <td colSpan={columns.length + (showProjectColumn ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
                       No records found. {data.length === 0 ? (canAdd ? 'Click "Add New" to create the first record.' : 'Create a main contract to create the first project.') : 'Try adjusting your filters.'}
                     </td>
                   </tr>
                 ) : (
                   sortedData.map((row, rowIndex) => (
                     <tr key={row.id} className={`border-b border-neutral-200 ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
-                      {showProjectFilter && (
+                      {showProjectColumn && (
                         <td className="px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200">{projectMap[row.project_id] || '—'}</td>
                       )}
                       {columns.map((col) => {
@@ -982,11 +1288,12 @@ export function DataTableView({
                         return (
                           <td
                             key={col.key}
-                            onClick={() => { if (canEdit) startInlineEdit(row.id, col.key, row[col.key]); }}
+                            onClick={(event) => selectCell(row.id, col.key, event)}
+                            onDoubleClick={() => { if (canEdit) startInlineEdit(row.id, col.key, row[col.key]); }}
                             className={`px-2 py-1.5 whitespace-nowrap border border-neutral-200 text-sm ${
                               isEditing ? 'p-0' : ''
                             } ${
-                              isEditing ? 'bg-primary-50' : canEdit ? 'hover:bg-primary-50/30 cursor-text' : 'bg-neutral-50 cursor-default'
+                              isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : canEdit ? 'hover:bg-primary-50/30 cursor-cell' : 'bg-neutral-50 cursor-default'
                             }`}
                           >
                             {isEditing ? (
@@ -1000,12 +1307,12 @@ export function DataTableView({
                                 relationshipOptions={relationshipOptions?.[col.key]}
                               />
                             ) : (
-                              renderCell(row[col.key], col, relationshipOptions?.[col.key])
+                              renderCell(row[col.key], col, relationshipOptions?.[col.key], row)
                             )}
                           </td>
                         );
                       })}
-                      <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
+                      <td className="sticky right-0 z-10 px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 bg-inherit shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
                           {getCodeControl(tableName) && (
@@ -1013,7 +1320,7 @@ export function DataTableView({
                               {row[getCodeControl(tableName)!.lockField] ? 'Unlock Code' : 'Lock Code'}
                             </button>
                           )}
-                          <button onClick={() => setDeleteId(row.id)} className="text-xs text-error-600 hover:text-error-700 font-medium px-2 py-1 rounded hover:bg-error-50 transition-colors">Delete</button>
+                          <button onClick={() => setDeleteId(row.id)} className="text-xs text-error-600 hover:text-error-700 font-medium px-2 py-1 rounded hover:bg-error-50 transition-colors">{deleteGroupKey ? 'Delete Invoice' : 'Delete'}</button>
                         </div>
                       </td>
                     </tr>
@@ -1023,7 +1330,7 @@ export function DataTableView({
               {sortedData.length > 0 && (
                 <tfoot className="sticky bottom-0 z-10">
                   <tr className="bg-neutral-200/90 backdrop-blur border-t-2 border-neutral-400 font-semibold">
-                    {showProjectFilter && <td className="px-2 py-2 text-xs font-bold text-neutral-700 border border-neutral-300"></td>}
+                    {showProjectColumn && <td className="px-2 py-2 text-xs font-bold text-neutral-700 border border-neutral-300"></td>}
                     {columns.map((col, ci) => (
                       <td key={col.key} className="px-2 py-2 text-xs font-bold text-neutral-800 border border-neutral-300 whitespace-nowrap">
                         {columnSums[col.key] !== undefined
@@ -1060,7 +1367,7 @@ export function DataTableView({
             <div className="flex items-center justify-end gap-2 mt-5">
               <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
               <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Add Record
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} {submitLabel}
               </button>
             </div>
           </div>

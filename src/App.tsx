@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { dataRepository, prepareCodeControlledInsert } from '@/data';
+import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
@@ -37,7 +37,7 @@ const PROJECT_STATUSES = ['Planning', 'In Progress', 'On Hold', 'Completed', 'De
 const TASK_STATUSES = ['Not Started', 'In Progress', 'Completed', 'Delayed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 const COST_STATUSES = ['Planned', 'Committed', 'Actual', 'Over Budget'];
-const COST_TYPES = ['Labor', 'Equipment', 'Materials', 'Miscellaneous', 'Other'];
+const COST_TYPES = ['Labor', 'Equipment', 'Materials', 'Subcontractor Cost', 'Multiple Cost Types', 'Miscellaneous', 'Other'];
 const PROC_STATUSES = ['Requested', 'Ordered', 'Partially Delivered', 'Delivered'];
 const SAFETY_STATUSES = ['Open', 'Investigating', 'Closed'];
 const SAFETY_SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
@@ -66,8 +66,6 @@ const PROJECT_COLUMNS: ColumnDef[] = [
   { key: 'spent', label: 'Spent', type: 'money' },
   { key: 'total_value', label: 'Total Value', type: 'money' },
   { key: 'progress', label: 'Progress', type: 'progress', editable: true },
-  { key: 'client_contract_type', label: 'Client Contract Type', type: 'text', editable: true, options: CONTRACT_TYPES },
-  { key: 'company_contract_type', label: 'Company Contract Type', type: 'text', editable: true, options: CONTRACT_TYPES },
   { key: 'project_manager', label: 'Manager', type: 'text', editable: true },
   { key: 'contractor', label: 'Contractor', type: 'text', editable: true },
   { key: 'start_date', label: 'Start Date', type: 'date', editable: true },
@@ -94,10 +92,11 @@ const COST_COLUMNS: ColumnDef[] = [
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
   { key: 'category', label: 'Category', type: 'text', editable: true, options: ['Labor', 'Materials', 'Equipment', 'Subcontractor', 'Overhead', 'Other'] },
   { key: 'description', label: 'Description', type: 'text', editable: true },
-  { key: 'planned', label: 'Planned', type: 'money' },
-  { key: 'actual', label: 'Actual', type: 'money' },
-  { key: 'committed', label: 'Committed', type: 'money', editable: true },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: COST_STATUSES },
+  { key: 'budget', label: 'Budget', type: 'money', editable: false },
+  { key: 'planned', label: 'Planned Value', type: 'money', editable: false },
+  { key: 'actual', label: 'Actual', type: 'money', editable: false },
+  { key: 'committed', label: 'Committed Work Value', type: 'money', editable: false },
+  { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
 ];
 
 const COST_ENTRY_COLUMNS: ColumnDef[] = [
@@ -139,20 +138,16 @@ const SAFETY_COLUMNS: ColumnDef[] = [
 ];
 
 const PROGRESS_COLUMNS: ColumnDef[] = [
-  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
-  { key: 'company_name', label: 'Contractor', type: 'text', editable: true },
-  { key: 'date', label: 'Date', type: 'date', editable: true },
-  { key: 'area', label: 'Area', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
+  { key: 'company_name', label: 'Contractor', type: 'text', editable: false },
+  { key: 'date', label: 'As Of', type: 'date', editable: false },
   { key: 'prev_value', label: 'Previous Value', type: 'money' },
   { key: 'prev_pct', label: 'Previous %', type: 'progress' },
-  { key: 'current_value', label: 'Current Value', type: 'money', editable: true },
+  { key: 'current_value', label: 'Current Value', type: 'money' },
   { key: 'current_pct', label: 'Current %', type: 'progress' },
   { key: 'total_value', label: 'Total Value', type: 'money' },
   { key: 'total_pct', label: 'Total %', type: 'progress' },
-  { key: 'percent_complete', label: '% Complete', type: 'progress', editable: true },
-  { key: 'weather', label: 'Weather', type: 'text', editable: true },
-  { key: 'workers', label: 'Workers', type: 'number', editable: true },
-  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'percent_complete', label: '% Complete', type: 'progress' },
 ];
 
 const SCHEDULE_COLUMNS: ColumnDef[] = [
@@ -163,26 +158,27 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
+  { key: 'budget', label: 'Budget', type: 'money', editable: true },
   { key: 'planned_value', label: 'Planned Value', type: 'money', editable: true },
-  { key: 'progress', label: 'Progress', type: 'progress', editable: true },
+  { key: 'earned_work_value', label: 'Earned Work Value', type: 'money', editable: false },
+  { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
   { key: 'predecessor_item', label: 'Predecessor Item', type: 'text', editable: true },
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: SCHEDULE_STATUSES },
-  { key: 'predecessors', label: 'Predecessors', type: 'text', editable: true },
+  { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const CONTRACT_COLUMNS: ColumnDef[] = [
+  { key: 'contract_role', label: 'Contract Role', type: 'status', editable: true, options: ['Main Contract', 'Subcontract'] },
+  { key: 'project_code', label: 'Project Code', type: 'text', editable: true },
   { key: 'contract_number', label: 'Contract Code', type: 'text', editable: true },
   { key: 'parent_main_contract_id', label: 'Parent Main Contract', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
   { key: 'project_name', label: 'Project Name', type: 'text', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
   { key: 'contractor', label: 'Contractor', type: 'text', editable: true },
-  { key: 'client_contract_type', label: 'Client Contract Type', type: 'text', editable: true, options: CONTRACT_TYPES },
-  { key: 'company_contract_type', label: 'Company Contract Type', type: 'text', editable: true, options: CONTRACT_TYPES },
   { key: 'contract_type', label: 'Type', type: 'status', editable: true, options: CONTRACT_TYPES },
   { key: 'contract_value', label: 'Original Contract Value', type: 'money', editable: true },
   { key: 'modified_contract_value', label: 'Modified Contract Value', type: 'money', editable: false },
@@ -202,7 +198,9 @@ const BOQ_HEADER_COLUMNS: ColumnDef[] = [
 ];
 
 const BOQ_ITEM_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
   { key: 'boq_header_id', label: 'BOQ', type: 'select', editable: true },
+  { key: 'main_boq_item_id', label: 'Parent Main BOQ Item', type: 'select', editable: true },
   { key: 'item_code', label: 'BOQ Item Code', type: 'text', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
@@ -225,43 +223,43 @@ const CASHFLOW_COLUMNS: ColumnDef[] = [
 ];
 
 const SUBINV_COLUMNS: ColumnDef[] = [
-  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: true },
-  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
-  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
-  { key: 'subcontractor', label: 'Subcontractor', type: 'text', editable: true },
-  { key: 'item_desc', label: 'Item Description', type: 'text' },
-  { key: 'unit', label: 'Unit', type: 'text' },
-  { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
-  { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
-  { key: 'amount', label: 'Amount', type: 'money', editable: true },
-  { key: 'invoice_date', label: 'Date', type: 'date', editable: true },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: INVOICE_STATUSES },
-  { key: 'payment_status', label: 'Payment', type: 'status', editable: true, options: PAYMENT_STATUSES },
-  { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
-  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: false },
+  { key: 'project_code', label: 'Project Code', type: 'text', editable: false },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: false },
+  { key: 'item_desc', label: 'Item Description', type: 'text', editable: false },
+  { key: 'unit', label: 'Unit', type: 'text', editable: false },
+  { key: 'quantity', label: 'Quantity', type: 'number', editable: false },
+  { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: false },
+  { key: 'amount', label: 'Amount', type: 'money', editable: false },
 ];
 
 const CLIENTINV_COLUMNS: ColumnDef[] = [
-  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: true },
+  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: false },
+  { key: 'project_code', label: 'Project Code', type: 'text', editable: false },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
+  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: false },
+  { key: 'item_desc', label: 'Item Description', type: 'text', editable: false },
+  { key: 'unit', label: 'Unit', type: 'text', editable: false },
+  { key: 'quantity', label: 'Quantity', type: 'number', editable: false },
+  { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: false },
+  { key: 'amount', label: 'Amount', type: 'money', editable: false },
+];
+
+const INVOICE_GENERATION_FORM_COLUMNS: ColumnDef[] = [
+  { key: 'project_code', label: 'Project Code', type: 'text', editable: false },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
-  { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
-  { key: 'client', label: 'Client', type: 'text', editable: true },
-  { key: 'item_desc', label: 'Item Description', type: 'text' },
-  { key: 'unit', label: 'Unit', type: 'text' },
-  { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
-  { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
-  { key: 'amount', label: 'Amount', type: 'money', editable: true },
-  { key: 'invoice_date', label: 'Date', type: 'date', editable: true },
-  { key: 'due_date', label: 'Due Date', type: 'date', editable: true },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: INVOICE_STATUSES },
-  { key: 'payment_status', label: 'Payment', type: 'status', editable: true, options: PAYMENT_STATUSES },
-  { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
-  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'company_name', label: 'Contractor', type: 'text', editable: false },
+  { key: 'from_date', label: 'From Date', type: 'date', editable: true },
+  { key: 'to_date', label: 'To Date', type: 'date', editable: true },
+  { key: 'result', label: 'WIR Result', type: 'status', editable: true, options: WIR_RESULTS },
+  { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: true },
 ];
 
 const INVOICE_TRACKING_COLUMNS: ColumnDef[] = [
   { key: 'invoice_number', label: 'Invoice #', type: 'text', editable: false },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
+  { key: 'total_work_value', label: 'Total Work Value', type: 'money', editable: false },
   { key: 'invoice_date', label: 'Invoice Date', type: 'date', editable: false },
   { key: 'due_date', label: 'Due Date', type: 'date', editable: true },
   { key: 'status', label: 'Invoice Status', type: 'status', editable: true, options: INVOICE_STATUSES },
@@ -296,11 +294,11 @@ const DOC_COLUMNS: ColumnDef[] = [
 ];
 
 const WIR_COLUMNS: ColumnDef[] = [
-  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'company_name', label: 'Contractor', type: 'select', editable: true },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text' },
   { key: 'item_description', label: 'Description', type: 'text' },
-  { key: 'company_name', label: 'Contractor', type: 'text', editable: true },
   { key: 'wir_number', label: 'WIR #', type: 'text', editable: true },
   { key: 'area', label: 'Area', type: 'text', editable: true },
   { key: 'work_type', label: 'Work Type', type: 'text', editable: true },
@@ -308,12 +306,11 @@ const WIR_COLUMNS: ColumnDef[] = [
   { key: 'inspector', label: 'Inspector', type: 'text', editable: true },
   { key: 'result', label: 'Result', type: 'status', editable: true, options: WIR_RESULTS },
   { key: 'unit', label: 'Unit', type: 'text' },
-  { key: 'quantity', label: 'Qty', type: 'number' },
+  { key: 'quantity', label: 'Qty', type: 'number', editable: true },
   { key: 'unit_price', label: 'Unit Price', type: 'money' },
   { key: 'item_amount', label: 'Item Amount', type: 'money' },
   { key: 'completion_pct', label: 'Completion %', type: 'progress' },
   { key: 'remarks', label: 'Remarks', type: 'text', editable: true },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: WIR_STATUSES },
 ];
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
@@ -355,23 +352,23 @@ const TRACKING_COLUMNS: ColumnDef[] = [
 const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]; showProjectFilter?: boolean; dateRangeColumn?: string }> = {
   projects: { columns: PROJECT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROJECT_STATUSES }, { key: 'category', label: 'Category', options: ['Residential', 'Commercial', 'Industrial', 'Infrastructure', 'Renovation'] }], dateRangeColumn: 'start_date' },
   tasks: { columns: TASK_COLUMNS, filters: [{ key: 'status', label: 'Status', options: TASK_STATUSES }, { key: 'priority', label: 'Priority', options: PRIORITIES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
-  costs: { columns: COST_COLUMNS, filters: [{ key: 'status', label: 'Status', options: COST_STATUSES }, { key: 'category', label: 'Category', options: ['Labor', 'Materials', 'Equipment', 'Subcontractor', 'Overhead', 'Other'] }], showProjectFilter: true },
+  costs: { columns: COST_COLUMNS, filters: [{ key: 'category', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
-  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SCHEDULE_STATUSES }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
-  contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: CONTRACT_STATUSES }, { key: 'contract_type', label: 'Type', options: CONTRACT_TYPES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
-  boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }, { key: 'contract_type', label: 'Contract Type', options: CONTRACT_TYPES }], showProjectFilter: true },
-  boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
+  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
+  boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
   cashflow: { columns: CASHFLOW_COLUMNS, showProjectFilter: true, dateRangeColumn: 'date' },
-  subinvoices: { columns: SUBINV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
-  clientinvoices: { columns: CLIENTINV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
+  subinvoices: { columns: SUBINV_COLUMNS, showProjectFilter: true },
+  clientinvoices: { columns: CLIENTINV_COLUMNS, showProjectFilter: true },
   clientInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   subcontractorInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
-  variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'status', label: 'Status', options: VARIATION_STATUSES }, { key: 'type', label: 'Type', options: VARIATION_TYPES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
+  variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: VARIATION_STATUSES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
-  wir: { columns: WIR_COLUMNS, filters: [{ key: 'status', label: 'Status', options: WIR_STATUSES }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
+  wir: { columns: WIR_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
   laborDuty: { columns: LABOR_DUTY_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   equipment: { columns: EQUIPMENT_COLUMNS, filters: [{ key: 'equipment_type', label: 'Type', options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   tracking: { columns: TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Status', options: [] }, { key: 'source_type', label: 'Source', options: [] }], showProjectFilter: true, dateRangeColumn: 'created_time' },
@@ -401,11 +398,42 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const data = useData();
+  const synchronizingLiveSubcontractCosts = useRef(false);
+  const synchronizingCostControl = useRef(false);
+  const synchronizingProjectFinancials = useRef(false);
+
+  // Repair/synchronize existing records as soon as the local database has
+  // loaded. Earlier records may have been saved before the date relationship
+  // between the main contract and its generated project was enforced.
+  useEffect(() => {
+    const synchronizeExistingProjectDates = async () => {
+      const mainContracts = data.contracts.filter((contract: any) =>
+        !contract.parent_main_contract_id && contract.project_id,
+      ) as Record<string, any>[];
+      for (const contract of mainContracts) {
+        const project = data.projects.find((item: any) => item.id === contract.project_id) as Record<string, any> | undefined;
+        if (!project) continue;
+        const patch: Record<string, any> = {};
+        if ((project.start_date || null) !== (contract.start_date || null)) patch.start_date = contract.start_date || null;
+        if ((project.end_date || null) !== (contract.end_date || null)) patch.end_date = contract.end_date || null;
+        if (Object.keys(patch).length === 0) continue;
+        const updatedProject = await dataRepository.update<Record<string, any>>('projects', project.id, patch);
+        data.applyLocalMutation('projects', { type: 'update', row: updatedProject });
+      }
+    };
+    if (data.contracts.length > 0 && data.projects.length > 0) {
+      void synchronizeExistingProjectDates().catch((error) =>
+        console.error('Could not synchronize existing project dates.', error),
+      );
+    }
+  }, [data.contracts, data.projects, data.applyLocalMutation]);
 
   const groups = ['Overview', 'Planning', 'Financial', 'Operations'];
 
-  async function syncSubcontractInvoiceCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
-    const existing = data.costEntries.find((entry: any) => entry.source_type === 'subcontractor_invoice' && entry.source_id === (mutation.row?.id || mutation.id));
+  async function syncSubcontractWirCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
+    const sourceId = mutation.row?.id || mutation.id;
+    if (!sourceId) return;
+    const existing = data.costEntries.find((entry: any) => entry.source_type === 'subcontractor_wir' && entry.source_id === sourceId);
     if (mutation.type === 'delete') {
       if (existing) {
         await dataRepository.delete('cost_entries', existing.id);
@@ -414,35 +442,382 @@ export default function App() {
       return;
     }
 
-    const invoice = mutation.row;
-    if (!invoice) return;
-    const mainContractId = invoice.main_contract_id || invoice.contract_id;
-    const project = data.projects.find((item) => item.id === invoice.project_id);
+    const wir = mutation.row;
+    if (!wir) return;
+    const subcontract = data.contracts.find((contract: any) => contract.id === wir.contract_id) as any;
+    // Main-contract WIRs are not a cost. Only subcontractor work is loaded as
+    // a live cost against its parent main contract.
+    if (!subcontract?.parent_main_contract_id) {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
+      }
+      return;
+    }
+    const subcontractItem = data.boqItems.find((item: any) => item.id === wir.boq_item_id) as any;
+    const mainItem = subcontractItem?.main_boq_item_id
+      ? data.boqItems.find((item: any) => item.id === subcontractItem.main_boq_item_id) as any
+      : null;
+    if (!mainItem) {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
+      }
+      console.warn(`Subcontract WIR ${sourceId} has no linked main BOQ item; live cost was not created.`);
+      return;
+    }
+    const mainContractId = subcontract.parent_main_contract_id;
+    const project = data.projects.find((item) => item.id === subcontract.project_id);
+    const mainHeader = data.boqHeaders.find((header: any) => header.id === mainItem.boq_header_id) as any;
     const entry = {
-      project_id: invoice.project_id,
+      project_id: subcontract.project_id,
       project_code: project?.project_code || '',
       contract_id: mainContractId,
       main_contract_id: mainContractId,
-      boq_header_id: invoice.boq_header_id || null,
-      boq_item_id: invoice.boq_item_id || null,
-      company_name: invoice.subcontractor || '',
-      boq_item_code: invoice.boq_item_code || '',
-      boq_item_name: invoice.item_desc || '',
-      date: invoice.invoice_date || null,
-      cost_type: 'Subcontractor Invoice',
-      invoice_number: invoice.invoice_number || '',
+      boq_header_id: mainItem.boq_header_id || null,
+      boq_item_id: mainItem.id,
+      boq_code: mainHeader?.boq_code || mainItem.boq_code || '',
+      company_name: subcontract.contractor || '',
+      boq_item_code: mainItem.item_code || '',
+      boq_item_name: mainItem.item_name || mainItem.description || '',
+      date: wir.inspection_date || null,
+      cost_type: 'Subcontractor Cost',
+      invoice_number: wir.wir_number || '',
       payment_order_number: '',
-      amount: Number(invoice.amount) || 0,
-      source_type: 'subcontractor_invoice',
-      source_id: invoice.id,
+      // Subcontractor cost uses its agreed subcontract rate, while its BOQ
+      // code remains the linked main BOQ item code for project reporting.
+      amount: Math.round((Number(wir.quantity) || 0) * (Number(subcontractItem.unit_rate) || 0) * 100) / 100,
+      source_type: 'subcontractor_wir',
+      source_id: sourceId,
     };
     if (existing) {
+      const unchanged = Object.entries(entry).every(([key, value]) => {
+        const previous = (existing as Record<string, any>)[key];
+        return (previous ?? null) === (value ?? null);
+      });
+      if (unchanged) return;
       const updated = await dataRepository.update<Record<string, any>>('cost_entries', existing.id, entry);
       data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
     } else {
       const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', entry);
       data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
     }
+  }
+
+  useEffect(() => {
+    if (synchronizingLiveSubcontractCosts.current || data.wirEntries.length === 0) return;
+    const synchronizeLiveSubcontractCosts = async () => {
+      synchronizingLiveSubcontractCosts.current = true;
+      try {
+        // These rows were previously generated from subcontractor invoices.
+        // They represent the same WIR work and would double-count the cost,
+        // so only generated rows are replaced; manual expense rows are kept.
+        for (const entry of data.costEntries.filter((item: any) => item.source_type === 'subcontractor_invoice')) {
+          await dataRepository.delete('cost_entries', entry.id);
+          data.applyLocalMutation('cost_entries', { type: 'delete', id: entry.id });
+        }
+        for (const wir of data.wirEntries) await syncSubcontractWirCost({ type: 'update', row: wir });
+      } finally {
+        synchronizingLiveSubcontractCosts.current = false;
+      }
+    };
+    void synchronizeLiveSubcontractCosts().catch((error) =>
+      console.error('Could not synchronize live subcontractor costs.', error),
+    );
+  }, [data.wirEntries, data.contracts, data.boqItems, data.boqHeaders, data.projects, data.costEntries]);
+
+  useEffect(() => {
+    if (synchronizingCostControl.current) return;
+    const synchronizeCostControl = async () => {
+      const entriesByItem = new Map<string, Record<string, any>[]>();
+      const committedByItem = new Map<string, number>();
+      const scheduleValuesByItem = new Map<string, { budget: number; planned: number }>();
+      for (const entry of data.costEntries as Record<string, any>[]) {
+        // The Cost Control table is by the main BOQ item. Entries without an
+        // item remain valid expenses but cannot be assigned to a BOQ control
+        // line until the user selects the relevant main item.
+        if (!entry.project_id || !entry.contract_id || !entry.boq_item_id) continue;
+        // Cost Control keeps one row per main BOQ item and aggregates every
+        // expense type assigned to that item.
+        const key = `${entry.project_id}|${entry.contract_id}|${entry.boq_item_id}`;
+        entriesByItem.set(key, [...(entriesByItem.get(key) || []), entry]);
+      }
+      for (const wir of data.wirEntries as Record<string, any>[]) {
+        const wirContract = data.contracts.find((contract: any) => contract.id === wir.contract_id) as any;
+        if (!wirContract?.project_id) continue;
+        const mainContractId = wirContract.parent_main_contract_id || wirContract.id;
+        const selectedItem = data.boqItems.find((item: any) => item.id === wir.boq_item_id) as any;
+        const mainItem = selectedItem?.main_boq_item_id
+          ? data.boqItems.find((item: any) => item.id === selectedItem.main_boq_item_id) as any
+          : selectedItem;
+        if (!mainItem?.id) continue;
+        const key = `${wirContract.project_id}|${mainContractId}|${mainItem.id}`;
+        const earnedValue = (Number(wir.quantity) || 0) * (Number(mainItem.unit_rate) || 0);
+        committedByItem.set(key, (committedByItem.get(key) || 0) + earnedValue);
+      }
+      for (const schedule of data.schedules as Record<string, any>[]) {
+        const scheduleContract = data.contracts.find((contract: any) => contract.id === schedule.contract_id) as any;
+        if (!scheduleContract?.project_id) continue;
+        const selectedItem = data.boqItems.find((item: any) => item.id === schedule.boq_item_id) as any;
+        const mainItemId = selectedItem?.main_boq_item_id || selectedItem?.id;
+        if (!mainItemId) continue;
+        const key = `${scheduleContract.project_id}|${scheduleContract.parent_main_contract_id || scheduleContract.id}|${mainItemId}`;
+        const previous = scheduleValuesByItem.get(key) || { budget: 0, planned: 0 };
+        scheduleValuesByItem.set(key, {
+          budget: previous.budget + (Number(schedule.budget) || 0),
+          planned: previous.planned + (Number(schedule.planned_value) || 0),
+        });
+      }
+      const knownKeys = new Set(entriesByItem.keys());
+      committedByItem.forEach((_value, key) => knownKeys.add(key));
+      scheduleValuesByItem.forEach((_value, key) => knownKeys.add(key));
+      for (const cost of data.costs as Record<string, any>[]) {
+        if (cost.project_id && cost.contract_id && cost.boq_item_id) {
+          knownKeys.add(`${cost.project_id}|${cost.contract_id}|${cost.boq_item_id}`);
+        }
+      }
+      if (knownKeys.size === 0) return;
+
+      synchronizingCostControl.current = true;
+      try {
+        for (const key of knownKeys) {
+          const entries = entriesByItem.get(key) || [];
+          const [projectId, contractId, boqItemId] = key.split('|');
+          const matchingControls = (data.costs as Record<string, any>[]).filter((cost) =>
+            cost.project_id === projectId && cost.contract_id === contractId && cost.boq_item_id === boqItemId,
+          );
+          // Historical versions could create more than one control row for
+          // the same item. The first is retained; the rest are removed as
+          // obsolete generated duplicates during this repair.
+          const existing = matchingControls[0];
+          const latest = entries[entries.length - 1];
+          const categories = [...new Set(entries.map((entry) => entry.cost_type || 'Other'))];
+          const costCategory = categories.length > 1 ? 'Multiple Cost Types' : (categories[0] || existing?.category || 'Other');
+          const mainItem = data.boqItems.find((item: any) => item.id === boqItemId) as any;
+          const mainHeader = data.boqHeaders.find((header: any) => header.id === mainItem?.boq_header_id) as any;
+          const mainContract = data.contracts.find((contract: any) => contract.id === contractId) as any;
+          const actual = Math.round(entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0) * 100) / 100;
+          const committed = Math.round((committedByItem.get(key) || 0) * 100) / 100;
+          const scheduleValues = scheduleValuesByItem.get(key);
+          const budget = Math.round((scheduleValues?.budget ?? (Number(existing?.budget) || 0)) * 100) / 100;
+          const planned = Math.round((scheduleValues?.planned ?? (Number(existing?.planned) || 0)) * 100) / 100;
+          const cpi = actual > 0 ? committed / actual : null;
+          const spi = planned > 0 ? committed / planned : null;
+          const costState = actual <= budget ? 'Under Budget' : 'Over Budget';
+          const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
+          const evmStatus = `${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`;
+          const control = {
+            project_id: projectId,
+            project_code: latest?.project_code || existing?.project_code || '',
+            contract_id: contractId,
+            main_contract_id: contractId,
+            boq_header_id: mainItem?.boq_header_id || latest?.boq_header_id || existing?.boq_header_id || null,
+            boq_item_id: boqItemId,
+            item_code: mainItem?.item_code || latest?.boq_item_code || existing?.item_code || '',
+            boq_item_code: mainItem?.item_code || latest?.boq_item_code || existing?.boq_item_code || '',
+            boq_item_name: mainItem?.item_name || mainItem?.description || latest?.boq_item_name || existing?.boq_item_name || '',
+            // These describe the controlled main-contract BOQ line, never
+            // the latest expense supplier/subcontractor.
+            company_name: mainContract?.contractor || mainHeader?.company_name || existing?.company_name || '',
+            // Do not let the latest entry overwrite the classification when
+            // the same BOQ item has more than one type of expense.
+            category: costCategory,
+            description: mainItem?.description || mainItem?.item_name || existing?.description || '',
+            budget,
+            planned,
+            // Earned work: all WIR quantities at the main-contract BOQ rate.
+            // Subcontract work is therefore loaded at the main rate here.
+            committed,
+            actual,
+            status: evmStatus,
+            cost_cpi: cpi,
+            schedule_spi: spi,
+            notes: existing?.notes || '',
+          };
+          if (existing) {
+            const changed = Object.entries(control).some(([field, value]) => (existing[field] ?? null) !== (value ?? null));
+            if (changed) {
+              const updated = await dataRepository.update<Record<string, any>>('costs', existing.id, control);
+              data.applyLocalMutation('costs', { type: 'update', row: updated });
+            }
+          } else {
+            const inserted = await dataRepository.insert<Record<string, any>>('costs', control);
+            data.applyLocalMutation('costs', { type: 'insert', row: inserted });
+          }
+          for (const duplicate of matchingControls.slice(1)) {
+            await dataRepository.delete('costs', duplicate.id);
+            data.applyLocalMutation('costs', { type: 'delete', id: duplicate.id });
+          }
+        }
+      } finally {
+        synchronizingCostControl.current = false;
+      }
+    };
+    void synchronizeCostControl().catch((error) =>
+      console.error('Could not synchronize cost control.', error),
+    );
+  }, [data.costEntries, data.wirEntries, data.schedules, data.boqItems, data.boqHeaders, data.contracts]);
+
+  useEffect(() => {
+    if (synchronizingProjectFinancials.current || data.projects.length === 0) return;
+    const synchronizeProjectFinancials = async () => {
+      synchronizingProjectFinancials.current = true;
+      try {
+        for (const project of data.projects as Record<string, any>[]) {
+          const budget = Math.round((data.schedules as Record<string, any>[])
+            .filter((schedule) => schedule.project_id === project.id)
+            .reduce((sum, schedule) => sum + (Number(schedule.budget) || 0), 0) * 100) / 100;
+          const spent = Math.round((data.costs as Record<string, any>[])
+            .filter((cost) => cost.project_id === project.id)
+            .reduce((sum, cost) => sum + (Number(cost.actual) || 0), 0) * 100) / 100;
+          if ((Number(project.budget) || 0) === budget && (Number(project.spent) || 0) === spent) continue;
+          const updated = await dataRepository.update<Record<string, any>>('projects', project.id, { budget, spent });
+          data.applyLocalMutation('projects', { type: 'update', row: updated });
+        }
+      } finally {
+        synchronizingProjectFinancials.current = false;
+      }
+    };
+    void synchronizeProjectFinancials().catch((error) =>
+      console.error('Could not synchronize project financial values.', error),
+    );
+  }, [data.projects, data.schedules, data.costs]);
+
+  // A main contract creates and owns its project. Keeping their reporting
+  // dates aligned prevents WIRs from being excluded when either record is
+  // updated later.
+  async function syncMainContractProjectDates(mutation: { type: string; row?: Record<string, any> }) {
+    if (mutation.type !== 'update' || !mutation.row) return;
+    const contract = mutation.row;
+    if (contract.parent_main_contract_id || !contract.project_id) return;
+    const project = data.projects.find((item: any) => item.id === contract.project_id) as Record<string, any> | undefined;
+    if (!project) return;
+    const patch: Record<string, any> = {};
+    if ((project.start_date || null) !== (contract.start_date || null)) patch.start_date = contract.start_date || null;
+    if ((project.end_date || null) !== (contract.end_date || null)) patch.end_date = contract.end_date || null;
+    if (Object.keys(patch).length === 0) return;
+    const updatedProject = await dataRepository.update<Record<string, any>>('projects', project.id, patch);
+    data.applyLocalMutation('projects', { type: 'update', row: updatedProject });
+  }
+
+  async function createInvoiceFromWir(
+    invoiceTable: 'client_invoices' | 'subcontractor_invoices',
+    draft: Record<string, any>,
+  ): Promise<Record<string, any>[]> {
+    const contract = data.contracts.find((item: any) => item.id === draft.contract_id) as any;
+    if (!contract) throw new Error('Select a contract before creating the invoice.');
+    if (!draft.from_date || !draft.to_date || !draft.result) {
+      throw new Error('Select From Date, To Date, and WIR Result.');
+    }
+    if (String(draft.from_date) > String(draft.to_date)) throw new Error('From Date cannot be after To Date.');
+    const isSubcontract = Boolean(contract.parent_main_contract_id);
+    if (invoiceTable === 'client_invoices' && isSubcontract) throw new Error('Client invoices are created from main-contract WIRs only.');
+    if (invoiceTable === 'subcontractor_invoices' && !isSubcontract) throw new Error('Subcontractor invoices are created from subcontract WIRs only.');
+
+    const matchingWirs = data.wirEntries.filter((wir: any) =>
+      wir.contract_id === contract.id &&
+      wir.result === draft.result &&
+      String(wir.inspection_date || '') >= String(draft.from_date) &&
+      String(wir.inspection_date || '') <= String(draft.to_date),
+    );
+    if (matchingWirs.length === 0) throw new Error('No WIR records match the selected contract, date range, and result.');
+
+    const groups = new Map<string, any[]>();
+    matchingWirs.forEach((wir: any) => {
+      if (!wir.boq_item_id) return;
+      groups.set(wir.boq_item_id, [...(groups.get(wir.boq_item_id) || []), wir]);
+    });
+    if (groups.size === 0) throw new Error('The selected WIR records do not contain BOQ items.');
+
+    const project = data.projects.find((item: any) => item.id === contract.project_id) as any;
+    const rows = [...groups.entries()].map(([boqItemId, wirs]) => {
+      const item = data.boqItems.find((entry: any) => entry.id === boqItemId) as any;
+      if (!item) throw new Error('A WIR references a missing BOQ item.');
+      const firstWir = wirs[0];
+      const quantity = wirs.reduce((sum: number, wir: any) => sum + (Number(wir.quantity) || 0), 0);
+      const unitRate = invoiceTable === 'client_invoices'
+        ? (Number(firstWir.unit_price) || 0)
+        : (Number(item.unit_rate) || 0);
+      return {
+        invoice_number: draft.invoice_number,
+        project_id: contract.project_id,
+        project_code: project?.project_code || draft.project_code || '',
+        contract_id: contract.id,
+        main_contract_id: isSubcontract ? contract.parent_main_contract_id : contract.id,
+        boq_header_id: item.boq_header_id || null,
+        boq_item_id: item.id,
+        boq_code: item.boq_code || '',
+        boq_item_code: item.item_code || '',
+        item_desc: item.item_name || item.description || '',
+        unit: item.unit || '',
+        quantity,
+        unit_rate: unitRate,
+        amount: Math.round(quantity * unitRate * 100) / 100,
+        invoice_date: draft.to_date,
+        source_from_date: draft.from_date,
+        source_to_date: draft.to_date,
+        source_wir_result: draft.result,
+        status: 'Generated',
+        payment_status: 'Unpaid',
+        ...(invoiceTable === 'client_invoices'
+          ? { client: contract.client || '' }
+          : { subcontractor: contract.contractor || '' }),
+      };
+    });
+    const inserted = await dataRepository.insertMany<Record<string, any>>(invoiceTable, rows);
+    await consolidateInvoiceTracking(invoiceTable, inserted);
+    return inserted;
+  }
+
+  async function consolidateInvoiceTracking(
+    invoiceTable: 'client_invoices' | 'subcontractor_invoices',
+    invoiceRows: Record<string, any>[],
+  ): Promise<void> {
+    if (invoiceRows.length === 0) return;
+    const trackingTable = invoiceTable === 'client_invoices'
+      ? 'client_invoice_tracking'
+      : 'subcontractor_invoice_tracking';
+    const invoiceNumber = invoiceRows[0].invoice_number;
+    const existingTracking = await dataRepository.list<Record<string, any>>(trackingTable);
+    for (const trackingRow of existingTracking.filter((row) => row.invoice_number === invoiceNumber)) {
+      await dataRepository.delete(trackingTable, trackingRow.id);
+    }
+    const totalWorkValue = invoiceRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const first = invoiceRows[0];
+    await dataRepository.insert<Record<string, any>>(trackingTable, {
+      id: crypto.randomUUID(),
+      invoice_id: null,
+      invoice_number: invoiceNumber,
+      project_id: first.project_id,
+      project_code: first.project_code || '',
+      contract_id: first.contract_id,
+      invoice_date: first.invoice_date || null,
+      due_date: null,
+      status: 'Generated',
+      payment_status: 'Unpaid',
+      payment_date: null,
+      total_work_value: totalWorkValue,
+      notes: '',
+    });
+  }
+
+  async function deleteInvoiceGroup(
+    invoiceTable: 'client_invoices' | 'subcontractor_invoices',
+    invoiceRow: Record<string, any>,
+  ): Promise<Record<string, any>[]> {
+    const invoiceRows = (invoiceTable === 'client_invoices' ? data.clientInvoices : data.subInvoices)
+      .filter((row: any) => row.invoice_number === invoiceRow.invoice_number) as Record<string, any>[];
+    for (const row of invoiceRows) await dataRepository.delete(invoiceTable, row.id);
+    const trackingTable = invoiceTable === 'client_invoices'
+      ? 'client_invoice_tracking'
+      : 'subcontractor_invoice_tracking';
+    const trackingRows = await dataRepository.list<Record<string, any>>(trackingTable);
+    for (const row of trackingRows.filter((tracking) => tracking.invoice_number === invoiceRow.invoice_number)) {
+      await dataRepository.delete(trackingTable, row.id);
+    }
+    if (invoiceTable === 'client_invoices') await data.reloadInvoiceTracking('client_invoice_tracking');
+    else await data.reloadInvoiceTracking('subcontractor_invoice_tracking');
+    return invoiceRows;
   }
 
   function renderView() {
@@ -474,18 +849,167 @@ export default function App() {
     if (!config) return null;
     const tableName = TABLE_NAMES[activeView];
     const title = VIEW_TITLES[activeView];
-    const rawViewData = (data as any)[activeView] || [];
-    const viewData = activeView === 'contracts'
-      ? rawViewData.map((contract: any) => {
+    // The navigation key is "boq", while the loaded state is named
+    // "boqHeaders". Reading the navigation key made successfully saved BOQs
+    // look as if they had disappeared.
+    const rawViewData = activeView === 'boq'
+      ? data.boqHeaders
+      : activeView === 'boqItems'
+        ? data.boqItems
+      : activeView === 'wir'
+          ? data.wirEntries
+          : activeView === 'schedule'
+            ? data.schedules
+          : activeView === 'subinvoices'
+            ? data.subInvoices
+            : activeView === 'clientinvoices'
+              ? data.clientInvoices
+              : (data as any)[activeView] || [];
+    const contractsWithModifiedValue = data.contracts.map((contract: any) => {
         const approvedVariationValue = data.variations
           .filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved')
           .reduce((sum: number, variation: any) => sum + (Number(variation.cost_impact) || 0), 0);
         return {
           ...contract,
+          contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
+          project_code: contract.project_code || data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
           modified_contract_value: (Number(contract.contract_value) || 0) + approvedVariationValue,
         };
-      })
-      : rawViewData;
+      });
+    const contractById = new Map(contractsWithModifiedValue.map((contract: any) => [contract.id, contract]));
+    const headersWithContractContext = data.boqHeaders.map((header: any) => {
+      const contract = contractById.get(header.contract_id) as any;
+      return {
+        ...header,
+        contract_role: contract?.contract_role || 'Main Contract',
+        company_name: header.company_name || contract?.contractor || '',
+      };
+    });
+    const headerById = new Map(headersWithContractContext.map((header: any) => [header.id, header]));
+    const mainBoqItemById = new Map(data.boqItems
+      .filter((item: any) => !contractById.get((headerById.get(item.boq_header_id) as any)?.contract_id)?.parent_main_contract_id)
+      .map((item: any) => [item.id, item]));
+    // One live WIR projection is shared by WIR, Progress, and Projects. This
+    // prevents a copied historical price from breaking downstream totals when
+    // the linked BOQ item or parent-main-item relationship is updated.
+    const derivedWirs = data.wirEntries.map((wir: any) => {
+      const contract = contractById.get(wir.contract_id) as any;
+      const selectedItem = data.boqItems.find((item: any) => item.id === wir.boq_item_id) as any;
+      const mainItem = mainBoqItemById.get(selectedItem?.main_boq_item_id) || selectedItem;
+      const unitPrice = Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
+      const itemAmount = Math.round((Number(wir.quantity) || 0) * unitPrice * 100) / 100;
+      const mainItemValue = (Number(mainItem?.quantity) || 0) * (Number(mainItem?.unit_rate) || 0);
+      return {
+        ...wir,
+        company_name: contract?.contractor || wir.company_name || '',
+        contract_role: contract?.contract_role || 'Main Contract',
+        unit_price: unitPrice,
+        item_amount: itemAmount,
+        completion_pct: mainItemValue > 0 ? Math.round(itemAmount / mainItemValue * 10000) / 100 : 0,
+      };
+    });
+    const viewData = activeView === 'contracts'
+      ? contractsWithModifiedValue
+      : activeView === 'boq'
+        ? headersWithContractContext.map((header: any) => ({
+          ...header,
+          total_value: data.boqItems
+            .filter((item: any) => item.boq_header_id === header.id)
+            .reduce((sum: number, item: any) => sum + ((Number(item.quantity) || 0) * (Number(item.unit_rate) || 0)), 0),
+          }))
+        : activeView === 'boqItems'
+          ? rawViewData.map((item: any) => {
+            const header = headerById.get(item.boq_header_id) as any;
+            return {
+              ...item,
+              project_id: item.project_id || header?.project_id || null,
+              contract_id: item.contract_id || header?.contract_id || null,
+              company_name: item.company_name || header?.company_name || '',
+              contract_role: header?.contract_role || 'Main Contract',
+            };
+          })
+        : activeView === 'variations'
+          ? rawViewData.map((variation: any) => {
+            const contract = contractById.get(variation.contract_id) as any;
+            return { ...variation, contractor: contract?.contractor || '', contract_role: contract?.contract_role || 'Main Contract' };
+          })
+        : activeView === 'wir'
+          ? derivedWirs
+        : activeView === 'schedule'
+          ? rawViewData.map((schedule: any) => {
+            const scheduleContract = contractById.get(schedule.contract_id) as any;
+            const mainContractId = scheduleContract?.parent_main_contract_id || schedule.contract_id;
+            const scheduleItem = data.boqItems.find((item: any) => item.id === schedule.boq_item_id) as any;
+            const mainItemId = scheduleItem?.main_boq_item_id || scheduleItem?.id;
+            const mainItem = mainItemId ? data.boqItems.find((item: any) => item.id === mainItemId) as any : null;
+            const earnedWorkValue = derivedWirs
+              .filter((wir: any) => {
+                const wirContract = contractById.get(wir.contract_id) as any;
+                const wirItem = data.boqItems.find((item: any) => item.id === wir.boq_item_id) as any;
+                return (wirContract?.parent_main_contract_id || wir.contract_id) === mainContractId &&
+                  (wirItem?.main_boq_item_id || wirItem?.id) === mainItemId;
+              })
+              .reduce((sum: number, wir: any) => sum + ((Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate) || 0)), 0);
+            const costControl = data.costs.find((cost: any) =>
+              cost.project_id === schedule.project_id &&
+              cost.contract_id === mainContractId &&
+              cost.boq_item_id === mainItemId,
+            ) as any;
+            const earned = Math.round(earnedWorkValue * 100) / 100;
+            const actualCost = Number(costControl?.actual) || 0;
+            const plannedValue = Number(schedule.planned_value) || 0;
+            const budget = Number(schedule.budget) || 0;
+            const cpi = actualCost > 0 ? earned / actualCost : null;
+            const spi = plannedValue > 0 ? earned / plannedValue : null;
+            const costState = actualCost <= budget ? 'Under Budget' : 'Over Budget';
+            const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
+            return {
+              ...schedule,
+              budget,
+              // Same rule as Cost Control: main and subcontract WIRs are
+              // valued at the linked main-contract BOQ item rate.
+              earned_work_value: earned,
+              actual_cost: actualCost,
+              cost_cpi: cpi,
+              schedule_spi: spi,
+              status: `${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
+            };
+          })
+        : activeView === 'progress'
+          ? contractsWithModifiedValue.map((contract: any) => ({
+            id: `progress-${contract.id}`,
+            project_id: contract.project_id,
+            contract_id: contract.id,
+            company_name: contract.contractor || '',
+            // The main contract is the authoritative source of the project
+            // reporting period because it creates the project.
+            start_date: contract.start_date || null,
+            end_date: contract.end_date || null,
+            contract_value: contract.modified_contract_value,
+            contract_role: contract.contract_role,
+          }))
+        : activeView === 'projects'
+          ? rawViewData.map((project: any) => {
+            const mainContract = contractsWithModifiedValue.find((contract: any) =>
+              contract.project_id === project.id && !contract.parent_main_contract_id,
+            );
+            const today = new Date().toISOString().slice(0, 10);
+            const projectWirs = derivedWirs.filter((wir: any) => {
+              const wirContract = contractsWithModifiedValue.find((contract: any) => contract.id === wir.contract_id);
+              return wirContract &&
+                String(wir.inspection_date || '') <= today &&
+                (wirContract.id === mainContract?.id || wirContract.parent_main_contract_id === mainContract?.id);
+            });
+            const completedValue = projectWirs.reduce((sum: number, wir: any) =>
+              sum + (Number(wir.item_amount) || ((Number(wir.quantity) || 0) * (Number(wir.unit_price) || 0))), 0);
+            const contractValue = Number(mainContract?.modified_contract_value) || 0;
+            return {
+              ...project,
+              total_value: contractValue,
+              progress: contractValue > 0 ? Math.round(completedValue / contractValue * 10000) / 100 : 0,
+            };
+          })
+          : rawViewData;
     const navItem = NAV_ITEMS.find((n) => n.key === activeView);
     const projectCodeBackedTables = new Set([
       'costs', 'cost_entries', 'progress_entries', 'schedules', 'boq_headers',
@@ -507,15 +1031,41 @@ export default function App() {
     }));
     relationshipOptions.contract_id = data.contracts.map((contract) => ({
       value: contract.id,
-      label: `${contract.contract_number || contract.id} - ${contract.title}`,
+      // Contract Code selectors must show the business code only. Project
+      // names remain available in their own column and are never persisted as
+      // an identifier.
+      label: contract.contract_number || contract.id,
       data: {
         project_id: contract.project_id,
         project_code: projectById.get(contract.project_id)?.project_code,
         client: contract.client,
         company_name: contract.company || contract.contractor,
         contractor: contract.contractor,
+        contract_number: contract.contract_number,
+        contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
+        variation_number: (() => {
+          const prefix = `${contract.contract_number || 'CNT'}-VO-`;
+          const existing = data.variations
+            .filter((variation: any) => variation.contract_id === contract.id)
+            .map((variation: any) => Number(String(variation.variation_number || '').replace(prefix, '')) || 0);
+          return `${prefix}${String(Math.max(0, ...existing) + 1).padStart(3, '0')}`;
+        })(),
       },
     }));
+    if (activeView === 'wir') {
+      relationshipOptions.company_name = data.contracts.map((contract: any) => ({
+        value: contract.id,
+        label: contract.contractor || contract.contract_number || contract.id,
+        data: {
+          contract_id: contract.id,
+          project_id: contract.project_id,
+          project_code: projectById.get(contract.project_id)?.project_code,
+          contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
+          contract_number: contract.contract_number,
+          company_name: contract.contractor || '',
+        },
+      }));
+    }
     if (activeView === 'clientinvoices') {
       relationshipOptions.contract_id = relationshipOptions.contract_id.filter((option) => {
         const contract = data.contracts.find((item) => item.id === option.value);
@@ -537,8 +1087,22 @@ export default function App() {
         project_code: header.project_code,
         boq_code: header.boq_code,
         company_name: header.company_name,
+        contract_role: contractById.get(header.contract_id)?.contract_role || 'Main Contract',
       },
     }));
+    relationshipOptions.main_boq_item_id = data.boqItems
+      .filter((item: any) => mainBoqItemById.has(item.id))
+      .map((item: any) => ({
+        value: item.id,
+        label: `${item.item_code || item.id} - ${item.item_name || item.description}`,
+        data: {
+          project_id: item.project_id,
+          unit: item.unit,
+          main_boq_item_code: item.item_code,
+          main_unit_rate: item.unit_rate,
+          main_boq_item_value: (Number(item.quantity) || 0) * (Number(item.unit_rate) || 0),
+        },
+      }));
     relationshipOptions.boq_item_id = data.boqItems.map((item) => ({
       value: item.id,
       label: `${item.item_code || item.id} - ${item.item_name || item.description}`,
@@ -556,21 +1120,64 @@ export default function App() {
         item_description: item.description,
         unit: item.unit,
         unit_rate: item.unit_rate,
-        unit_price: item.unit_rate,
-        quantity: item.quantity,
+        unit_price: (() => {
+          const itemHeader = data.boqHeaders.find((header) => header.id === item.boq_header_id);
+          const itemContract = data.contracts.find((contract) => contract.id === itemHeader?.contract_id);
+          const mainContract = itemContract?.parent_main_contract_id
+            ? data.contracts.find((contract) => contract.id === itemContract.parent_main_contract_id)
+            : itemContract;
+          const mainHeaderIds = new Set(data.boqHeaders.filter((header) => header.contract_id === mainContract?.id).map((header) => header.id));
+          const mainItem = item.main_boq_item_id
+            ? mainBoqItemById.get(item.main_boq_item_id)
+            : data.boqItems.find((candidate) => Boolean(candidate.boq_header_id) && mainHeaderIds.has(candidate.boq_header_id as string) &&
+              (candidate.item_code === item.item_code || candidate.item_name === item.item_name));
+          return mainItem?.unit_rate ?? item.unit_rate;
+        })(),
+        main_boq_item_id: item.main_boq_item_id || null,
+        main_boq_item_value: (() => {
+          const mainItem = item.main_boq_item_id ? mainBoqItemById.get(item.main_boq_item_id) : item;
+          return (Number(mainItem?.quantity) || 0) * (Number(mainItem?.unit_rate) || 0);
+        })(),
       },
     }));
+    if (activeView === 'costs' || activeView === 'costEntries' || activeView === 'schedule') {
+      const mainContractIds = new Set(data.contracts
+        .filter((contract: any) => !contract.parent_main_contract_id)
+        .map((contract) => contract.id));
+      // Costs are always loaded to the project/main-contract scope. A
+      // subcontract is represented through its live WIR-derived cost entry.
+      relationshipOptions.contract_id = relationshipOptions.contract_id
+        .filter((option) => mainContractIds.has(option.value));
+      relationshipOptions.boq_item_id = relationshipOptions.boq_item_id
+        .filter((option) => mainContractIds.has(option.data?.contract_id));
+    }
+    if (activeView === 'schedule') {
+      relationshipOptions.project_id = data.projects.map((project) => ({
+        value: project.id,
+        label: project.project_code || project.id,
+        data: { project_code: project.project_code },
+      }));
+    }
     if (activeView === 'contracts') {
-      relationshipOptions.parent_main_contract_id = data.contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => ({
+      relationshipOptions.parent_main_contract_id = data.contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => {
+        const prefix = `${contract.contract_number || 'CNT'}-SUB-`;
+        const existingSuffixes = data.contracts
+          .filter((child) => child.parent_main_contract_id === contract.id)
+          .map((child) => Number(String(child.contract_number || '').replace(prefix, '')) || 0);
+        const nextChildNumber = Math.max(0, ...existingSuffixes) + 1;
+        return {
         value: contract.id,
-        label: `${contract.contract_number || contract.id} - ${contract.title}`,
+        label: contract.contract_number || contract.id,
         data: {
           project_id: contract.project_id,
+          project_code: projectById.get(contract.project_id)?.project_code,
           client: contract.client,
-          company: contract.company,
           contractor: contract.contractor,
+          project_name: contract.project_name,
+          contract_number: `${prefix}${String(nextChildNumber).padStart(3, '0')}`,
         },
-      }));
+      };
+      });
     }
     if (activeView === 'subinvoices') {
       autoFillOptions.subcontractor = [...new Set(data.subInvoices.map((r: any) => r.subcontractor).filter(Boolean))];
@@ -597,25 +1204,77 @@ export default function App() {
         filters={config.filters}
         projects={data.projects as Project[]}
         showProjectFilter={config.showProjectFilter}
-        projectPickerInForm={tableName !== 'contracts'}
+        showProjectColumn={tableName !== 'contracts'}
+        projectPickerInForm={!['contracts', 'boq_headers', 'boq_items', 'client_invoices', 'subcontractor_invoices'].includes(tableName)}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
         contracts={data.contracts}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);
+          if (tableName === 'contracts') {
+            void syncMainContractProjectDates(mutation).catch((error) =>
+              alert(`Failed to synchronize project dates: ${error.message || 'Unknown error'}`),
+            );
+          }
           if (tableName === 'client_invoices') void data.reloadInvoiceTracking('client_invoice_tracking');
-          if (tableName === 'subcontractor_invoices') {
-            void data.reloadInvoiceTracking('subcontractor_invoice_tracking');
-            void syncSubcontractInvoiceCost(mutation).catch((error) => alert(`Failed to sync subcontractor cost: ${error.message || 'Unknown error'}`));
+          if (tableName === 'subcontractor_invoices') void data.reloadInvoiceTracking('subcontractor_invoice_tracking');
+          if (tableName === 'wir_entries') {
+            if (mutation.type === 'insertMany') {
+              mutation.rows.forEach((row) => void syncSubcontractWirCost({ type: 'insert', row }).catch((error) => alert(`Failed to synchronize subcontractor cost: ${error.message || 'Unknown error'}`)));
+            } else {
+              void syncSubcontractWirCost(mutation).catch((error) => alert(`Failed to synchronize subcontractor cost: ${error.message || 'Unknown error'}`));
+            }
           }
         }}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
-        canAdd={tableName !== 'projects'}
-        onInsert={tableName === 'contracts' ? async (contractRow) => {
-          if (contractRow.parent_main_contract_id) {
-            return dataRepository.insert<Record<string, any>>('contracts', contractRow);
+        canAdd={tableName !== 'projects' && tableName !== 'progress_entries'}
+        progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
+        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : undefined}
+        onInsert={tableName === 'schedules' ? async (scheduleRow) => {
+          const contract = data.contracts.find((item: any) => item.id === scheduleRow.contract_id) as any;
+          if (!contract || contract.parent_main_contract_id) {
+            throw new Error('Select a main contract before saving the schedule activity.');
+          }
+          const item = data.boqItems.find((candidate: any) => candidate.id === scheduleRow.boq_item_id) as any;
+          if (!item) throw new Error('Select a BOQ item for the selected main contract.');
+          const header = data.boqHeaders.find((candidate: any) => candidate.id === item.boq_header_id) as any;
+          if (header?.contract_id !== contract.id) {
+            throw new Error('The selected BOQ item does not belong to the selected main contract.');
+          }
+          const start = scheduleRow.start_date ? new Date(`${scheduleRow.start_date}T00:00:00`) : null;
+          const end = scheduleRow.end_date ? new Date(`${scheduleRow.end_date}T00:00:00`) : null;
+          const calculatedDuration = start && end
+            ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
+            : Number(scheduleRow.duration_days) || 0;
+          return dataRepository.insert<Record<string, any>>('schedules', {
+            ...scheduleRow,
+            project_id: contract.project_id,
+            project_code: projectById.get(contract.project_id)?.project_code || scheduleRow.project_code || '',
+            boq_header_id: item.boq_header_id || null,
+            boq_code: header?.boq_code || item.boq_code || '',
+            boq_item_code: item.item_code || '',
+            boq_item_name: item.item_name || item.description || '',
+            duration_days: calculatedDuration,
+            budget: Number(scheduleRow.budget) || 0,
+            planned_value: Number(scheduleRow.planned_value) || 0,
+          });
+        } : tableName === 'contracts' ? async (contractRow) => {
+          // Project Code is entered with a contract because the main contract
+          // creates the project. It belongs to Projects, not Contracts.
+          // Modified Contract Value is calculated from variations and is not
+          // a stored contract field.
+          const { project_code: enteredProjectCode, modified_contract_value: _modifiedValue, ...contractRecord } = contractRow;
+          const isSubcontract = contractRow.contract_role === 'Subcontract';
+          if (isSubcontract && !contractRow.parent_main_contract_id) {
+            throw new Error('Select the main contract for this subcontract.');
+          }
+          if (!isSubcontract && contractRow.parent_main_contract_id) {
+            throw new Error('A main contract cannot have a parent contract. Select Subcontract first.');
+          }
+          if (isSubcontract) {
+            return dataRepository.insert<Record<string, any>>("contracts", contractRecord);
           }
           const projectName = String(contractRow.project_name || '').trim();
           if (!projectName) throw new Error('Project Name is required when creating a main contract.');
@@ -627,13 +1286,12 @@ export default function App() {
             status: contractRow.status || 'Planning',
             start_date: contractRow.start_date || null,
             end_date: contractRow.end_date || null,
-            client_contract_type: contractRow.client_contract_type || '',
-            company_contract_type: contractRow.company_contract_type || '',
+            project_code: enteredProjectCode || '',
           }, data.projects as Record<string, any>[]);
           const project = await dataRepository.insert<Record<string, any>>('projects', projectDraft);
           try {
             const contract = await dataRepository.insert<Record<string, any>>('contracts', {
-              ...contractRow,
+              ...contractRecord,
               project_id: project.id,
             });
             data.applyLocalMutation('projects', { type: 'insert', row: project });
@@ -642,7 +1300,20 @@ export default function App() {
             await dataRepository.delete('projects', project.id);
             throw error;
           }
-        } : undefined}
+        } : tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
+          ? async (invoiceDraft) => createInvoiceFromWir(tableName, invoiceDraft)
+          : undefined}
+        onDeleteGroup={tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
+          ? async (invoiceRow) => deleteInvoiceGroup(tableName, invoiceRow)
+          : undefined}
+        deleteGroupKey={tableName === 'client_invoices' || tableName === 'subcontractor_invoices' ? 'invoice_number' : undefined}
+        addButtonLabel={tableName === 'client_invoices' || tableName === 'subcontractor_invoices' ? 'Create Invoice' : undefined}
+        submitLabel={tableName === 'client_invoices' || tableName === 'subcontractor_invoices' ? 'Save Invoice' : undefined}
+        createDraft={tableName === 'contracts' ? () => ({
+          contract_role: 'Main Contract',
+          ...createCodeDraft('contracts', data.contracts as Record<string, any>[]),
+          ...createCodeDraft('projects', data.projects as Record<string, any>[]),
+        }) : undefined}
       />
     );
   }

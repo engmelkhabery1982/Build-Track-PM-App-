@@ -75,15 +75,52 @@ export class SqliteRepository implements DataRepository {
     const database = await this.database();
     const now = new Date().toISOString();
     const record = { ...row, id: (row as any).id || createId(), created_at: (row as any).created_at || now } as Record<string, any>;
-    await database.execute(
-      `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        record.id, record.created_at, nullableId(record.project_id), nullableId(record.contract_id),
-        nullableId(record.parent_main_project_id), nullableId(record.parent_main_contract_id),
-        nullableId(record.boq_header_id), nullableId(record.boq_item_id), JSON.stringify(record),
-      ],
-    );
+    // The first desktop release created compact schemas for Projects and
+    // Contracts. Keep their write shape compatible with both that database
+    // and the newer migration, while relationships remain in the payload.
+    if (tableName === "projects") {
+      await database.execute(
+        "INSERT INTO projects (id, created_at, payload) VALUES ($1, $2, $3)",
+        [record.id, record.created_at, JSON.stringify(record)],
+      );
+    } else if (tableName === "contracts") {
+      await database.execute(
+        `INSERT INTO contracts (id, created_at, project_id, parent_main_contract_id, payload)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id),
+          nullableId(record.parent_main_contract_id), JSON.stringify(record),
+        ],
+      );
+    } else if (tableName === "boq_headers") {
+      await database.execute(
+        `INSERT INTO boq_headers (id, created_at, project_id, contract_id, payload)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id),
+          nullableId(record.contract_id), JSON.stringify(record),
+        ],
+      );
+    } else if (tableName === "boq_items") {
+      await database.execute(
+        `INSERT INTO boq_items (id, created_at, project_id, boq_header_id, payload)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id),
+          nullableId(record.boq_header_id), JSON.stringify(record),
+        ],
+      );
+    } else {
+      await database.execute(
+        `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id), nullableId(record.contract_id),
+          nullableId(record.parent_main_project_id), nullableId(record.parent_main_contract_id),
+          nullableId(record.boq_header_id), nullableId(record.boq_item_id), JSON.stringify(record),
+        ],
+      );
+    }
     return record as T;
   }
 
@@ -98,17 +135,54 @@ export class SqliteRepository implements DataRepository {
     const existing = this.unpack<T>(await this.findStored(id, tableName));
     const record = { ...existing, ...patch, id } as Record<string, any>;
     const database = await this.database();
-    await database.execute(
-      `UPDATE ${tableName}
-       SET project_id = $1, contract_id = $2, parent_main_project_id = $3, parent_main_contract_id = $4,
-           boq_header_id = $5, boq_item_id = $6, payload = $7
-       WHERE id = $8`,
-      [
-        nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.parent_main_project_id),
-        nullableId(record.parent_main_contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id),
-        JSON.stringify(record), id,
-      ],
-    );
+    if (tableName === "projects") {
+      await database.execute(
+        "UPDATE projects SET payload = $1 WHERE id = $2",
+        [JSON.stringify(record), id],
+      );
+    } else if (tableName === "contracts") {
+      await database.execute(
+        `UPDATE contracts
+         SET project_id = $1, parent_main_contract_id = $2, payload = $3
+         WHERE id = $4`,
+        [
+          nullableId(record.project_id), nullableId(record.parent_main_contract_id),
+          JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "boq_headers") {
+      await database.execute(
+        `UPDATE boq_headers
+         SET project_id = $1, contract_id = $2, payload = $3
+         WHERE id = $4`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id),
+          JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "boq_items") {
+      await database.execute(
+        `UPDATE boq_items
+         SET project_id = $1, boq_header_id = $2, payload = $3
+         WHERE id = $4`,
+        [
+          nullableId(record.project_id), nullableId(record.boq_header_id),
+          JSON.stringify(record), id,
+        ],
+      );
+    } else {
+      await database.execute(
+        `UPDATE ${tableName}
+         SET project_id = $1, contract_id = $2, parent_main_project_id = $3, parent_main_contract_id = $4,
+             boq_header_id = $5, boq_item_id = $6, payload = $7
+         WHERE id = $8`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.parent_main_project_id),
+          nullableId(record.parent_main_contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id),
+          JSON.stringify(record), id,
+        ],
+      );
+    }
     return record as T;
   }
 

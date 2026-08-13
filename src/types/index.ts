@@ -59,6 +59,7 @@ export interface Cost {
   boq_item_name: string;
   category: string;
   description: string;
+  budget: number;
   planned: number;
   actual: number;
   committed: number;
@@ -160,8 +161,11 @@ export interface Schedule {
   start_date: string | null;
   end_date: string | null;
   duration_days: number;
+  budget: number;
   planned_value: number;
   progress: number;
+  earned_work_value?: number;
+  actual_cost?: number;
   predecessors: string;
   predecessor_item: string;
   critical_path: boolean;
@@ -226,6 +230,8 @@ export interface BOQItem {
   unit_rate: number;
   amount: number;
   boq_header_id: string | null;
+  /** Required for subcontractor items; links to the priced main BOQ item. */
+  main_boq_item_id?: string | null;
   item_code_locked: boolean;
   last_modified: string;
   notes: string;

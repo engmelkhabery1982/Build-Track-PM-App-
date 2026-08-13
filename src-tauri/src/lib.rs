@@ -135,6 +135,22 @@ pub fn run() {
       BEGIN DELETE FROM subcontractor_invoice_tracking WHERE id = OLD.id; END;
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 3,
+    description: "complete_local_relation_columns",
+    sql: r#"
+      ALTER TABLE projects ADD COLUMN project_id TEXT;
+      ALTER TABLE projects ADD COLUMN contract_id TEXT;
+      ALTER TABLE projects ADD COLUMN parent_main_project_id TEXT;
+      ALTER TABLE projects ADD COLUMN parent_main_contract_id TEXT;
+      ALTER TABLE projects ADD COLUMN boq_header_id TEXT;
+      ALTER TABLE projects ADD COLUMN boq_item_id TEXT;
+      ALTER TABLE contracts ADD COLUMN contract_id TEXT;
+      ALTER TABLE contracts ADD COLUMN parent_main_project_id TEXT;
+      ALTER TABLE contracts ADD COLUMN boq_header_id TEXT;
+      ALTER TABLE contracts ADD COLUMN boq_item_id TEXT;
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()
