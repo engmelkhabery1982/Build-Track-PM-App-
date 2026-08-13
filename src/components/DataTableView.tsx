@@ -1277,6 +1277,10 @@ export function DataTableView({
   }
 
   function selectCell(rowId: string, columnKey: string, event: React.MouseEvent<HTMLTableCellElement>) {
+    // A click inside a table cell does not automatically focus its scroll
+    // container. Without this, Excel shortcuts and arrow navigation never
+    // reach handleGridKeyDown in a desktop WebView.
+    scrollRef.current?.focus({ preventScroll: true });
     const cellId = `${rowId}:${columnKey}`;
     if (event.shiftKey && selectionAnchor.current) {
       const anchorRow = sortedData.findIndex((row) => row.id === selectionAnchor.current!.rowId);
@@ -1340,7 +1344,14 @@ export function DataTableView({
     try {
       await navigator.clipboard.writeText(text);
       setClipboardNotice(`Copied ${selectedCells.size} cell${selectedCells.size === 1 ? '' : 's'}.`);
-    } catch { setClipboardNotice('Clipboard access was blocked by the operating system.'); }
+    } catch {
+      // Fallback for older Windows WebViews which block navigator.clipboard.
+      const area = document.createElement('textarea');
+      area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+      document.body.appendChild(area); area.select();
+      const copied = document.execCommand('copy'); area.remove();
+      setClipboardNotice(copied ? `Copied ${selectedCells.size} cell${selectedCells.size === 1 ? '' : 's'}.` : 'Clipboard access was blocked by the operating system.');
+    }
   }
 
   async function pasteSelectedCells() {
