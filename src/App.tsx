@@ -364,7 +364,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
-  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
@@ -408,6 +408,7 @@ export default function App() {
   const synchronizingLiveSubcontractCosts = useRef(false);
   const synchronizingCostControl = useRef(false);
   const synchronizingProjectFinancials = useRef(false);
+  const normalizingScheduleActivities = useRef(false);
 
   // Repair/synchronize existing records as soon as the local database has
   // loaded. Earlier records may have been saved before the date relationship
@@ -434,6 +435,40 @@ export default function App() {
       );
     }
   }, [data.contracts, data.projects, data.applyLocalMutation]);
+
+  // Older planning rows stored Budget and Planned Value independently. An
+  // activity now has one financial truth: planned quantity × main BOQ rate.
+  // Where an old row has no quantity, preserve its historical Planned Value
+  // by deriving the missing quantity from the main BOQ rate.
+  useEffect(() => {
+    if (normalizingScheduleActivities.current || data.schedules.length === 0 || data.boqItems.length === 0) return;
+    const normalizeScheduleActivities = async () => {
+      normalizingScheduleActivities.current = true;
+      try {
+        for (const activity of data.schedules as Record<string, any>[]) {
+          const item = data.boqItems.find((candidate: any) => candidate.id === activity.boq_item_id) as Record<string, any> | undefined;
+          if (!item) continue;
+          const rate = Number(item.unit_rate) || 0;
+          if (rate <= 0) continue;
+          const storedQuantity = Number(activity.planned_quantity) || 0;
+          const storedValue = Number(activity.planned_value) || 0;
+          const plannedQuantity = storedQuantity > 0 ? storedQuantity : (storedValue > 0 ? storedValue / rate : 0);
+          const plannedValue = Math.round(plannedQuantity * rate * 100) / 100;
+          const patch: Record<string, any> = {};
+          if (Number(activity.planned_quantity) !== plannedQuantity) patch.planned_quantity = plannedQuantity;
+          if (Number(activity.unit_rate) !== rate) patch.unit_rate = rate;
+          if (Number(activity.planned_value) !== plannedValue) patch.planned_value = plannedValue;
+          if (Number(activity.budget) !== plannedValue) patch.budget = plannedValue;
+          if (Object.keys(patch).length === 0) continue;
+          const updated = await dataRepository.update<Record<string, any>>('schedules', activity.id, patch);
+          data.applyLocalMutation('schedules', { type: 'update', row: updated });
+        }
+      } finally {
+        normalizingScheduleActivities.current = false;
+      }
+    };
+    void normalizeScheduleActivities().catch((error) => console.error('Could not normalize schedule activities.', error));
+  }, [data.schedules, data.boqItems, data.applyLocalMutation]);
 
   const groups = ['Overview', 'Planning', 'Financial', 'Operations'];
 

@@ -431,8 +431,14 @@ export function DataTableView({
     });
   }, [displayData, sortField, sortDir, columns]);
 
+  const scheduleBOQIds = useMemo(() => new Set(
+    displayData.map((row) => String(row.boq_item_id || '')).filter(Boolean),
+  ), [displayData]);
+  const hasSingleScheduleBOQ = tableName !== 'schedules' || scheduleBOQIds.size === 1;
+
   const columnSums = useMemo(() => {
     const sums: Record<string, number> = {};
+    if (tableName === 'schedules' && !hasSingleScheduleBOQ) return sums;
     columns.forEach((col) => {
       const shouldSum = tableName === 'boq_items'
         ? col.key === 'amount'
@@ -448,7 +454,7 @@ export function DataTableView({
       }
     });
     return sums;
-  }, [displayData, columns, tableName, contracts]);
+  }, [displayData, columns, tableName, contracts, hasSingleScheduleBOQ]);
 
   const projectMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -1057,14 +1063,14 @@ export function DataTableView({
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
   const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
-    (tableName === 'boq_items' ? c.key === 'amount' : tableName === 'wir_entries' ? c.key === 'item_amount' : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices') ? c.key === 'amount' : tableName === 'schedules' ? c.type === 'money' : true));
+    (tableName === 'boq_items' ? c.key === 'amount' : tableName === 'wir_entries' ? c.key === 'item_amount' : (tableName === 'client_invoices' || tableName === 'subcontractor_invoices') ? c.key === 'amount' : tableName === 'schedules' ? hasSingleScheduleBOQ && c.type === 'money' : true));
   const scheduleSpanDays = useMemo(() => {
-    if (tableName !== 'schedules') return 0;
+    if (tableName !== 'schedules' || !hasSingleScheduleBOQ) return 0;
     const starts = displayData.map((row) => String(row.start_date || '')).filter(Boolean).sort();
     const ends = displayData.map((row) => String(row.end_date || '')).filter(Boolean).sort();
     if (!starts.length || !ends.length) return 0;
     return Math.max(1, Math.ceil((new Date(`${ends[ends.length - 1]}T00:00:00`).getTime() - new Date(`${starts[0]}T00:00:00`).getTime()) / 86400000));
-  }, [tableName, displayData]);
+  }, [tableName, displayData, hasSingleScheduleBOQ]);
   const selectedNumericValues = useMemo(() => {
     const values: number[] = [];
     selectedCells.forEach((cellId) => {
@@ -1344,7 +1350,8 @@ export function DataTableView({
         {/* Summary bar — Excel-like status bar with Count, Sum, Average */}
         <div className="mb-3 flex items-center gap-2 flex-wrap text-xs bg-neutral-100 rounded-lg px-3 py-2">
           <span className="font-semibold text-neutral-700">Count: <span className="text-primary-600">{displayData.length}</span></span>
-          <span className="text-neutral-300">|</span>
+          {tableName === 'schedules' && !hasSingleScheduleBOQ && <><span className="text-neutral-300">|</span><span className="text-neutral-500">Totals are shown only after filtering to one BOQ item.</span></>}
+          {(tableName !== 'schedules' || hasSingleScheduleBOQ) && <span className="text-neutral-300">|</span>}
           {numericCols.map((col) => (
             <span key={`sum-${col.key}`} className="inline-flex items-center gap-1">
               <span className="text-neutral-500">Σ {col.label}:</span>
@@ -1479,7 +1486,9 @@ export function DataTableView({
                     {showProjectColumn && <td className="px-2 py-2 text-xs font-bold text-neutral-700 border border-neutral-300"></td>}
                     {columns.map((col, ci) => (
                       <td key={col.key} className="px-2 py-2 text-xs font-bold text-neutral-800 border border-neutral-300 whitespace-nowrap">
-                        {columnSums[col.key] !== undefined
+                        {tableName === 'schedules' && !hasSingleScheduleBOQ
+                          ? (ci === 0 ? 'FILTER ONE BOQ ITEM FOR TOTALS' : '')
+                          : columnSums[col.key] !== undefined
                           ? (col.type === 'money' ? fmtMoney(columnSums[col.key]) : columnSums[col.key].toLocaleString())
                           : (ci === 0 ? 'SUM' : '')
                         }
