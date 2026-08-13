@@ -1842,7 +1842,7 @@ export function DataTableView({
                       </div>
                     </th>
                   ))}
-                  <th className="sticky right-0 z-20 text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print">Actions</th>
+                  <th className="text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 no-print">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1914,7 +1914,7 @@ export function DataTableView({
                           </td>
                         );
                       })}
-                      <td className="sticky right-0 z-10 px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 bg-inherit shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print">
+                      <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
                           {getCodeControl(tableName) && (
