@@ -1050,9 +1050,15 @@ export default function App() {
             const summaryEnd = isSummaryRow && childActivities.length > 0
               ? childEndDates[childEndDates.length - 1] || schedule.end_date
               : schedule.end_date;
-            const summaryDuration = summaryStart && summaryEnd
-              ? Math.max(1, Math.ceil((new Date(`${summaryEnd}T00:00:00`).getTime() - new Date(`${summaryStart}T00:00:00`).getTime()) / 86400000))
+            const summaryDuration = isSummaryRow && childActivities.length > 0
+              ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.duration_days) || 0), 0)
               : (Number(schedule.duration_days) || 0);
+            const calendarSpan = summaryStart && summaryEnd
+              ? Math.max(0, Math.ceil((new Date(`${summaryEnd}T00:00:00`).getTime() - new Date(`${summaryStart}T00:00:00`).getTime()) / 86400000))
+              : 0;
+            const calendarGapDays = isSummaryRow && childActivities.length > 0
+              ? calendarSpan - summaryDuration
+              : 0;
             const revisedFinish = scheduleContract?.revised_end_date || scheduleContract?.end_date;
             const dateAlert = revisedFinish && schedule.end_date && String(schedule.end_date) > revisedFinish
               ? `⚠ Delayed: finishes after revised contract end (${revisedFinish})`
@@ -1080,7 +1086,7 @@ export default function App() {
               actual_cost: actualCost,
               cost_cpi: cpi,
               schedule_spi: spi,
-              status: `${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
+              status: `${calendarGapDays !== 0 ? `Calendar ${calendarGapDays > 0 ? 'gap' : 'overlap'}: ${Math.abs(calendarGapDays)} day(s) | ` : ''}${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
             };
           })
         : activeView === 'progress'

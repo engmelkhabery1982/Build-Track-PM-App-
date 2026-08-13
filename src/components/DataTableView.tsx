@@ -1434,8 +1434,10 @@ export function DataTableView({
                     </td>
                   </tr>
                 ) : (
-                  sortedData.map((row, rowIndex) => (
-                    <tr key={row.id} className={`border-b border-neutral-200 ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
+                  sortedData.map((row, rowIndex) => {
+                    const isScheduleSummary = tableName === 'schedules' && row.is_summary_row === true;
+                    return (
+                    <tr key={row.id} className={`border-b border-neutral-200 ${isScheduleSummary ? 'bg-primary-50 font-semibold border-y-2 border-primary-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
                       {showProjectColumn && (
                         <td className="px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200">{projectMap[row.project_id] || '—'}</td>
                       )}
@@ -1452,7 +1454,7 @@ export function DataTableView({
                             className={`px-2 py-1.5 whitespace-nowrap border border-neutral-200 text-sm ${
                               isEditing ? 'p-0' : ''
                             } ${
-                              isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : canEdit ? 'hover:bg-primary-50/30 cursor-cell' : 'bg-neutral-50 cursor-default'
+                              isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : isScheduleSummary ? 'bg-primary-50 text-primary-950 font-semibold' : canEdit ? 'hover:bg-primary-50/30 cursor-cell' : 'bg-neutral-50 cursor-default'
                             }`}
                           >
                             {isEditing ? (
@@ -1483,7 +1485,8 @@ export function DataTableView({
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
               {sortedData.length > 0 && (
