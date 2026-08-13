@@ -379,6 +379,7 @@ const VARIATION_COLUMNS: ColumnDef[] = [
 
 const DOC_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
   { key: 'document_name', label: 'Name', type: 'text', editable: true },
   { key: 'document_type', label: 'Type', type: 'status', editable: true, options: DOC_TYPES },
   { key: 'category', label: 'Category', type: 'text', editable: true },
@@ -386,7 +387,9 @@ const DOC_COLUMNS: ColumnDef[] = [
   { key: 'status', label: 'Status', type: 'status', editable: true, options: DOC_STATUSES },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
   { key: 'upload_date', label: 'Upload Date', type: 'date', editable: true },
-  { key: 'file_reference', label: 'File Ref', type: 'text', editable: true },
+  { key: 'related_record_type', label: 'Related Record Type', type: 'status', editable: true, options: ['RFI', 'Submittal', 'NCR', 'Punch Item', 'Variation', 'WIR', 'Other'] },
+  { key: 'related_record_reference', label: 'Related Record #', type: 'text', editable: true },
+  { key: 'file_reference', label: 'Local File / URL Reference', type: 'text', editable: true },
 ];
 
 const WIR_COLUMNS: ColumnDef[] = [

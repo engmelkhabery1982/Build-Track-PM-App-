@@ -422,6 +422,8 @@ export interface DocumentEntry {
   status: string;
   responsible: string;
   file_reference: string;
+  related_record_type?: string;
+  related_record_reference?: string;
   notes: string;
   created_at: string;
 }
