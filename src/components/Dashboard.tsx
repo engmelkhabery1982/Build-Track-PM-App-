@@ -6,7 +6,7 @@ import { addCalendarDays, schedulePlannedValueToDate } from '@/utils/schedulePla
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
-  Variation, DocumentEntry,
+  Variation, DocumentEntry, WIREntry,
 } from '@/types';
 
 interface DashboardProps {
@@ -26,6 +26,7 @@ interface DashboardProps {
   clientInvoices: ClientInvoice[];
   variations: Variation[];
   documents: DocumentEntry[];
+  wirEntries: WIREntry[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -70,7 +71,7 @@ type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procure
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -102,6 +103,7 @@ export function Dashboard({
   const fClientInv = pid === 'all' ? clientInvoices : clientInvoices.filter((c) => c.project_id === pid);
   const fVariations = pid === 'all' ? variations : variations.filter((v) => v.project_id === pid);
   const fDocuments = pid === 'all' ? documents : documents.filter((d) => d.project_id === pid);
+  const fWirs = pid === 'all' ? wirEntries : wirEntries.filter((wir) => wir.project_id === pid);
 
   const selectedProject = pid !== 'all' ? projects.find((p) => p.id === pid) : null;
 
@@ -321,55 +323,38 @@ export function Dashboard({
 
   const sCurve = useMemo(() => {
     if (fSchedules.length === 0) return [];
-    const sorted = [...fSchedules]
-      .map((s) => ({
-        date: s.start_date || s.end_date || '',
-        end: s.end_date || s.start_date || '',
-        progress: s.progress || 0,
-        duration: s.duration_days || 1,
-      }))
-      .filter((s) => s.date)
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    if (sorted.length === 0) return [];
-
-    const projectStart = sorted[0].date;
-    const projectEnd = sorted[sorted.length - 1].end;
-    if (!projectEnd) return [];
+    const activityRows = fSchedules.filter((schedule: any) => String(schedule.activity || '').trim());
+    const datedSchedules = activityRows.length > 0 ? activityRows : fSchedules;
+    const dates = [
+      ...datedSchedules.flatMap((schedule) => [schedule.start_date, schedule.end_date]),
+      ...fWirs.map((wir) => wir.inspection_date),
+      ...costEntries.filter((entry) => pid === 'all' || entry.project_id === pid).map((entry) => entry.date),
+    ].filter((date): date is string => Boolean(date)).sort();
+    if (dates.length === 0) return [];
+    const projectStart = dates[0];
+    const projectEnd = dates[dates.length - 1];
 
     const startMs = new Date(projectStart).getTime();
     const endMs = new Date(projectEnd).getTime();
     const totalDays = Math.max(Math.ceil((endMs - startMs) / 86400000), 1);
-    const totalActivities = sorted.length;
-
-    const points: { label: string; planned: number; actual: number; date: string }[] = [];
+    const rateForWir = (wir: WIREntry) => {
+      const item = boqItems.find((candidate) => candidate.id === wir.boq_item_id);
+      const mainItem = item?.main_boq_item_id ? boqItems.find((candidate) => candidate.id === item.main_boq_item_id) : item;
+      return Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
+    };
+    const points: { label: string; planned: number; earned: number; actual: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
     for (let i = 0; i <= numPoints; i++) {
       const dayOffset = (i / numPoints) * totalDays;
       const currentDate = new Date(startMs + dayOffset * 86400000);
       const dateStr = currentDate.toISOString().slice(0, 10);
-      const elapsedFrac = i / numPoints;
-      const planned = Math.round(elapsedFrac * 100);
-
-      let actual = 0;
-      sorted.forEach((s) => {
-        const sStart = new Date(s.date).getTime();
-        const sEnd = new Date(s.end).getTime();
-        const sDuration = Math.max(Math.ceil((sEnd - sStart) / 86400000), 1);
-        const sProgressFrac = s.progress / 100;
-        const activityEndDay = Math.ceil((sEnd - startMs) / 86400000);
-        if (dayOffset >= activityEndDay) {
-          actual += sProgressFrac * 100;
-        } else if (dayOffset >= Math.ceil((sStart - startMs) / 86400000)) {
-          const withinActivity = (dayOffset - Math.ceil((sStart - startMs) / 86400000)) / sDuration;
-          actual += Math.min(withinActivity, 1) * sProgressFrac * 100;
-        }
-      });
-      actual = totalActivities > 0 ? Math.round((actual / totalActivities) * 100) : 0;
-      points.push({ label: dateStr, planned, actual: Math.min(actual, 100), date: dateStr });
+      const planned = datedSchedules.reduce((sum, schedule) => sum + schedulePlannedValueToDate(schedule as Record<string, any>, dateStr), 0);
+      const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
+      const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+      points.push({ label: dateStr, planned, earned, actual, date: dateStr });
     }
     return points;
-  }, [fSchedules]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
@@ -1079,11 +1064,12 @@ export function Dashboard({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-primary-600" />
-                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — Planned vs Actual Progress</h3>
+                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV &amp; Actual Cost</h3>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">Planned</span></span>
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-success-500" /><span className="text-neutral-600">Actual</span></span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-violet-500" /><span className="text-neutral-600">EV</span></span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-success-500" /><span className="text-neutral-600">AC</span></span>
                   </div>
                 </div>
                 <SCurveChart data={sCurve} />

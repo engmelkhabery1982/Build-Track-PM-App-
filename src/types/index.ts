@@ -457,7 +457,7 @@ export interface WIREntry {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'projects' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'projects' | 'portfolio' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'

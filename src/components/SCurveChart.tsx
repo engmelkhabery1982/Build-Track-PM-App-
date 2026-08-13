@@ -3,8 +3,15 @@ import { useMemo } from 'react';
 interface SCurvePoint {
   label: string;
   planned: number;
+  earned: number;
   actual: number;
   date: string;
+}
+
+function compactValue(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
 }
 
 export function SCurveChart({ data }: { data: SCurvePoint[] }) {
@@ -21,7 +28,8 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   }, [data]);
 
   const xScale = (i: number) => (i / Math.max(data.length - 1, 1)) * chartW;
-  const yScale = (v: number) => chartH - (v / 100) * chartH;
+  const maximum = Math.max(...data.flatMap((point) => [point.planned, point.earned, point.actual]), 1);
+  const yScale = (v: number) => chartH - (Math.max(0, v) / maximum) * chartH;
 
   const plannedPath = data
     .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.planned).toFixed(1)}`)
@@ -30,11 +38,14 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   const actualPath = data
     .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.actual).toFixed(1)}`)
     .join(' ');
+  const earnedPath = data
+    .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.earned).toFixed(1)}`)
+    .join(' ');
 
   const plannedArea = `${plannedPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
   const actualArea = `${actualPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
 
-  const gridLines = [0, 25, 50, 75, 100];
+  const gridLines = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <div className="w-full overflow-x-auto">
@@ -55,12 +66,12 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
           {gridLines.map((g) => (
             <g key={g}>
               <line
-                x1={0} y1={yScale(g)} x2={chartW} y2={yScale(g)}
+                x1={0} y1={chartH - g * chartH} x2={chartW} y2={chartH - g * chartH}
                 stroke="#e5e5e5" strokeWidth={1}
                 strokeDasharray={g === 0 ? '0' : '4 4'}
               />
-              <text x={-8} y={yScale(g) + 4} textAnchor="end" className="fill-neutral-400" style={{ fontSize: 10 }}>
-                {g}%
+              <text x={-8} y={chartH - g * chartH + 4} textAnchor="end" className="fill-neutral-400" style={{ fontSize: 10 }}>
+                {compactValue(maximum * g)}
               </text>
             </g>
           ))}
@@ -89,11 +100,13 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
           {/* Actual area + line */}
           <path d={actualArea} fill="url(#actualGrad)" />
           <path d={actualPath} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeLinejoin="round" />
+          <path d={earnedPath} fill="none" stroke="#8b5cf6" strokeWidth={2.5} strokeLinejoin="round" strokeDasharray="6 4" />
 
           {/* Data points */}
           {data.map((d, i) => (
             <g key={i}>
               <circle cx={xScale(i)} cy={yScale(d.planned)} r={2.5} fill="#0ea5e9" />
+              <circle cx={xScale(i)} cy={yScale(d.earned)} r={2.5} fill="#8b5cf6" />
               <circle cx={xScale(i)} cy={yScale(d.actual)} r={2.5} fill="#22c55e" />
             </g>
           ))}

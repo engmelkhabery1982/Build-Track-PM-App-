@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -11,7 +11,7 @@ type IconType = React.ComponentType<{ size?: number | string; className?: string
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Home' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Projects' },
-  { key: 'tasks', label: 'Project Portfolio', icon: CheckSquare, group: 'Projects' },
+  { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Projects' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Progress' },
   { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Progress' },
   { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Progress' },
@@ -32,6 +32,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Operations' },
   { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Operations' },
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Operations' },
+  { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Operations' },
 ];
 
 const PROJECT_STATUSES = ['Planning', 'In Progress', 'On Hold', 'Completed', 'Delayed'];
@@ -970,8 +971,61 @@ export default function App() {
           clientInvoices={data.clientInvoices}
           variations={data.variations}
           documents={data.documents}
+          wirEntries={data.wirEntries}
           onNavigate={setActiveView}
         />
+      );
+    }
+
+    if (activeView === 'portfolio') {
+      const money = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      const portfolioRows = data.projects.map((project: any) => {
+        const mainContract = data.contracts.find((contract: any) => contract.project_id === project.id && !contract.parent_main_contract_id) as Record<string, any> | undefined;
+        const contractIds = new Set(data.contracts
+          .filter((contract: any) => contract.project_id === project.id || contract.parent_main_contract_id === mainContract?.id)
+          .map((contract: any) => contract.id));
+        const approvedVariations = data.variations.filter((variation: any) => variation.contract_id === mainContract?.id && variation.status === 'Approved');
+        const variationValue = approvedVariations.reduce((sum: number, variation: any) => sum + (Number(variation.cost_impact) || 0), 0);
+        const timeImpact = approvedVariations.reduce((sum: number, variation: any) => sum + (Number(variation.time_impact_days) || 0), 0);
+        const originalValue = Number(mainContract?.contract_value) || 0;
+        const modifiedValue = originalValue + variationValue;
+        const costs = data.costs.filter((cost: any) => cost.project_id === project.id);
+        const actualCost = costs.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
+        const earnedValue = costs.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
+        const plannedValue = costs.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
+        const subcontractCount = Math.max(0, contractIds.size - (mainContract ? 1 : 0));
+        const revisedEnd = addCalendarDays(mainContract?.end_date || project.end_date, timeImpact) || mainContract?.end_date || project.end_date;
+        return { project, mainContract, variationValue, originalValue, modifiedValue, actualCost, earnedValue, plannedValue, subcontractCount, revisedEnd };
+      });
+      const totals = portfolioRows.reduce((sum, row) => ({
+        originalValue: sum.originalValue + row.originalValue,
+        variationValue: sum.variationValue + row.variationValue,
+        modifiedValue: sum.modifiedValue + row.modifiedValue,
+        plannedValue: sum.plannedValue + row.plannedValue,
+        earnedValue: sum.earnedValue + row.earnedValue,
+        actualCost: sum.actualCost + row.actualCost,
+      }), { originalValue: 0, variationValue: 0, modifiedValue: 0, plannedValue: 0, earnedValue: 0, actualCost: 0 });
+      const openProject = (projectId: string) => { setWorkspaceProjectId(projectId); setActiveView('projects'); };
+      return (
+        <div className="h-full overflow-y-auto p-4 sm:p-6 space-y-5">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary-600">Project Portfolio</p>
+            <h2 className="mt-1 text-2xl font-bold text-neutral-900">Executive project register</h2>
+            <p className="mt-1 text-sm text-neutral-500">One row per main contract/project. Values are calculated from contracts, approved variations, schedule, WIR and cost-control records.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            {[
+              ['Original contracts', totals.originalValue], ['Approved variations', totals.variationValue], ['Modified contracts', totals.modifiedValue],
+              ['Planned value to date', totals.plannedValue], ['Earned value', totals.earnedValue], ['Actual cost', totals.actualCost],
+            ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs text-neutral-500">{label}</p><p className="mt-1 text-lg font-bold text-neutral-900">{money(Number(value))}</p></div>)}
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
+            <table className="min-w-[1220px] w-full text-sm"><thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500"><tr><th className="px-4 py-3">Project</th><th className="px-4 py-3">Main contract</th><th className="px-4 py-3">Original</th><th className="px-4 py-3">Variations</th><th className="px-4 py-3">Modified</th><th className="px-4 py-3">Start</th><th className="px-4 py-3">Revised finish</th><th className="px-4 py-3">PV / EV / AC</th><th className="px-4 py-3">Progress</th><th className="px-4 py-3">Subcontracts</th></tr></thead><tbody>
+              {portfolioRows.map((row) => { const progress = row.modifiedValue > 0 ? Math.min(100, row.earnedValue / row.modifiedValue * 100) : 0; return <tr key={row.project.id} onClick={() => openProject(row.project.id)} className="cursor-pointer border-b border-neutral-100 hover:bg-primary-50"><td className="px-4 py-3"><p className="font-semibold text-neutral-900">{row.project.name}</p><p className="text-xs text-neutral-500">{row.project.project_code}</p></td><td className="px-4 py-3"><p className="font-medium text-neutral-800">{row.mainContract?.contract_number || '—'}</p><p className="max-w-48 truncate text-xs text-neutral-500">{row.mainContract?.title || 'No main contract'}</p></td><td className="px-4 py-3">{money(row.originalValue)}</td><td className="px-4 py-3 text-primary-700">{money(row.variationValue)}</td><td className="px-4 py-3 font-semibold">{money(row.modifiedValue)}</td><td className="px-4 py-3">{row.mainContract?.start_date || row.project.start_date || '—'}</td><td className="px-4 py-3">{row.revisedEnd || '—'}</td><td className="px-4 py-3 text-xs"><p>PV {money(row.plannedValue)}</p><p>EV {money(row.earnedValue)}</p><p>AC {money(row.actualCost)}</p></td><td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-20 overflow-hidden rounded-full bg-neutral-100"><div className="h-full bg-primary-600" style={{ width: `${progress}%` }} /></div><span>{progress.toFixed(1)}%</span></div></td><td className="px-4 py-3">{row.subcontractCount}</td></tr>; })}
+              {portfolioRows.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-neutral-500">No projects have been generated from main contracts yet.</td></tr>}
+            </tbody></table>
+          </div>
+        </div>
       );
     }
 
