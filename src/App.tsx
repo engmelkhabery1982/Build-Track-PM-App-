@@ -413,6 +413,7 @@ const VIEW_TITLES: Record<string, string> = {
 export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [workspaceProjectId, setWorkspaceProjectId] = useState('');
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
   const synchronizingCostControl = useRef(false);
@@ -974,6 +975,112 @@ export default function App() {
       );
     }
 
+    if (activeView === 'projects') {
+      const selectedProject = data.projects.find((project: any) => project.id === workspaceProjectId) || data.projects[0];
+      if (!selectedProject) {
+        return (
+          <div className="p-6">
+            <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center">
+              <FolderKanban size={34} className="mx-auto mb-3 text-neutral-400" />
+              <h2 className="text-lg font-semibold text-neutral-800">No project workspace yet</h2>
+              <p className="mt-1 text-sm text-neutral-500">Create a main contract first. The project workspace is generated from that contract.</p>
+              <button onClick={() => setActiveView('contracts')} className="mt-5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">Open Contracts</button>
+            </div>
+          </div>
+        );
+      }
+
+      const mainContract = data.contracts.find((contract: any) =>
+        contract.project_id === selectedProject.id && !contract.parent_main_contract_id,
+      ) as Record<string, any> | undefined;
+      const relatedContracts = data.contracts.filter((contract: any) =>
+        contract.project_id === selectedProject.id || contract.parent_main_contract_id === mainContract?.id,
+      ) as Record<string, any>[];
+      const relatedContractIds = new Set(relatedContracts.map((contract) => contract.id));
+      const approvedVariations = data.variations.filter((variation: any) =>
+        variation.contract_id === mainContract?.id && variation.status === 'Approved',
+      );
+      const approvedVariationValue = approvedVariations.reduce((sum: number, variation: any) => sum + (Number(variation.cost_impact) || 0), 0);
+      const originalValue = Number(mainContract?.contract_value) || 0;
+      const modifiedValue = originalValue + approvedVariationValue;
+      const relatedWirs = data.wirEntries.filter((wir: any) => relatedContractIds.has(wir.contract_id));
+      const approvedWirs = relatedWirs.filter((wir: any) => wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved');
+      const completedValue = approvedWirs.reduce((sum: number, wir: any) => sum + (Number(wir.item_amount) || (Number(wir.quantity) || 0) * (Number(wir.unit_price) || 0)), 0);
+      const projectCosts = data.costs.filter((cost: any) => cost.project_id === selectedProject.id);
+      const plannedCost = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
+      const actualCost = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
+      const committedValue = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
+      const projectCash = data.cashFlow.filter((entry: any) => entry.project_id === selectedProject.id || relatedContractIds.has(entry.contract_id));
+      const cashIn = projectCash.reduce((sum: number, entry: any) => sum + (Number(entry.inflow) || 0), 0);
+      const cashOut = projectCash.reduce((sum: number, entry: any) => sum + (Number(entry.outflow) || 0), 0);
+      const activityCount = data.schedules.filter((activity: any) => activity.project_id === selectedProject.id && activity.activity).length;
+      const boqCount = data.boqItems.filter((item: any) => item.project_id === selectedProject.id).length;
+      const money = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      const progress = modifiedValue > 0 ? Math.min(100, (completedValue / modifiedValue) * 100) : 0;
+      const sections: { label: string; value: string; description: string; view: ViewKey; icon: IconType; tone: string }[] = [
+        { label: 'Commercial', value: money(modifiedValue), description: `${approvedVariations.length} approved variation(s)`, view: 'contracts', icon: FileSignature, tone: 'text-primary-600 bg-primary-50' },
+        { label: 'Progress', value: `${progress.toFixed(1)}%`, description: `${approvedWirs.length} approved inspection request(s)`, view: 'progress', icon: TrendingUp, tone: 'text-emerald-600 bg-emerald-50' },
+        { label: 'Cost control', value: money(actualCost), description: `Actual | committed ${money(committedValue)}`, view: 'costs', icon: DollarSign, tone: 'text-amber-600 bg-amber-50' },
+        { label: 'Cash position', value: money(cashIn - cashOut), description: `In ${money(cashIn)} | Out ${money(cashOut)}`, view: 'cashflow', icon: Banknote, tone: 'text-violet-600 bg-violet-50' },
+      ];
+      const workspaceTabs: { label: string; view: ViewKey; icon: IconType }[] = [
+        { label: 'Contracts', view: 'contracts', icon: FileSignature },
+        { label: 'BOQ', view: 'boqItems', icon: ListOrdered },
+        { label: 'Schedule', view: 'schedule', icon: CalendarClock },
+        { label: 'Inspection & Progress', view: 'wir', icon: FileCheck2 },
+        { label: 'Cost', view: 'costs', icon: DollarSign },
+        { label: 'Cash Flow', view: 'cashflow', icon: Banknote },
+        { label: 'Operations', view: 'procurement', icon: Package },
+      ];
+
+      return (
+        <div className="p-4 sm:p-6 space-y-5 overflow-y-auto h-full">
+          <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary-600">Project Workspace</p>
+              <h2 className="mt-1 text-2xl font-bold text-neutral-900">{selectedProject.name || selectedProject.project_code}</h2>
+              <p className="mt-1 text-sm text-neutral-500">One project context for commercial, delivery, cost, cash and field operations.</p>
+            </div>
+            <label className="block text-sm font-medium text-neutral-700">
+              Active project
+              <select value={selectedProject.id} onChange={(event) => setWorkspaceProjectId(event.target.value)} className="mt-1 block min-w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100">
+                {data.projects.map((project: any) => <option key={project.id} value={project.id}>{project.project_code || project.id} — {project.name}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {sections.map((section) => {
+              const Icon = section.icon;
+              return <button key={section.label} onClick={() => setActiveView(section.view)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm transition hover:border-primary-300 hover:shadow-md">
+                <div className={`mb-3 inline-flex rounded-lg p-2 ${section.tone}`}><Icon size={19} /></div>
+                <p className="text-xs font-medium text-neutral-500">{section.label}</p>
+                <p className="mt-1 text-xl font-bold text-neutral-900">{section.value}</p>
+                <p className="mt-1 truncate text-xs text-neutral-500">{section.description}</p>
+              </button>;
+            })}
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between"><div><h3 className="font-semibold text-neutral-900">Project control summary</h3><p className="text-xs text-neutral-500">Calculated from linked local records</p></div><span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">{selectedProject.status || 'Planning'}</span></div>
+              <div className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+                <div><p className="text-neutral-500">Original contract</p><p className="mt-1 font-semibold text-neutral-900">{money(originalValue)}</p></div>
+                <div><p className="text-neutral-500">Modified contract</p><p className="mt-1 font-semibold text-neutral-900">{money(modifiedValue)}</p></div>
+                <div><p className="text-neutral-500">Planned cost</p><p className="mt-1 font-semibold text-neutral-900">{money(plannedCost)}</p></div>
+                <div><p className="text-neutral-500">Completed work</p><p className="mt-1 font-semibold text-neutral-900">{money(completedValue)}</p></div>
+                <div><p className="text-neutral-500">BOQ items</p><p className="mt-1 font-semibold text-neutral-900">{boqCount}</p></div>
+                <div><p className="text-neutral-500">Activities</p><p className="mt-1 font-semibold text-neutral-900">{activityCount}</p></div>
+              </div>
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-primary-600" style={{ width: `${progress}%` }} /></div>
+              <div className="mt-2 flex justify-between text-xs text-neutral-500"><span>Delivery progress</span><span>{progress.toFixed(1)}%</span></div>
+            </section>
+            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-neutral-900">Open a work area</h3><p className="mt-1 text-xs text-neutral-500">All areas preserve the same project relationship.</p><div className="mt-4 grid grid-cols-2 gap-2">{workspaceTabs.map((tab) => { const Icon = tab.icon; return <button key={tab.view} onClick={() => setActiveView(tab.view)} className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm text-neutral-700 hover:border-primary-300 hover:bg-primary-50"><Icon size={16} className="text-primary-600" />{tab.label}</button>; })}</div></section>
+          </div>
+        </div>
+      );
+    }
+
     const config = VIEW_CONFIGS[activeView];
     if (!config) return null;
     const tableName = TABLE_NAMES[activeView];
@@ -1181,29 +1288,7 @@ export default function App() {
             contract_value: contract.modified_contract_value,
             contract_role: contract.contract_role,
           }))
-        : activeView === 'projects'
-          ? rawViewData.map((project: any) => {
-            const mainContract = contractsWithModifiedValue.find((contract: any) =>
-              contract.project_id === project.id && !contract.parent_main_contract_id,
-            );
-            const today = new Date().toISOString().slice(0, 10);
-            const projectWirs = derivedWirs.filter((wir: any) => {
-              const wirContract = contractsWithModifiedValue.find((contract: any) => contract.id === wir.contract_id);
-              return wirContract &&
-                String(wir.inspection_date || '') <= today &&
-                (wirContract.id === mainContract?.id || wirContract.parent_main_contract_id === mainContract?.id);
-            });
-            const completedValue = projectWirs.reduce((sum: number, wir: any) =>
-              sum + (Number(wir.item_amount) || ((Number(wir.quantity) || 0) * (Number(wir.unit_price) || 0))), 0);
-            const contractValue = Number(mainContract?.modified_contract_value) || 0;
-            return {
-              ...project,
-              total_value: contractValue,
-              end_date: mainContract?.revised_end_date || project.end_date,
-              progress: contractValue > 0 ? Math.round(completedValue / contractValue * 10000) / 100 : 0,
-            };
-          })
-          : rawViewData;
+        : rawViewData;
     const navItem = NAV_ITEMS.find((n) => n.key === activeView);
     const projectCodeBackedTables = new Set([
       'costs', 'cost_entries', 'progress_entries', 'schedules', 'boq_headers',
