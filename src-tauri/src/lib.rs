@@ -287,6 +287,18 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_pmo_snapshots_project_date ON pmo_snapshots(project_id, created_at DESC);
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 9,
+    description: "add_local_user_accounts",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS app_users (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_app_users_username ON app_users(json_extract(payload, '$.username'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

@@ -15,6 +15,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
   { key: 'reportingPeriods', label: 'Reporting Periods', icon: CalendarClock, group: 'Executive' },
   { key: 'snapshots', label: 'PMO Snapshots', icon: FileCheck2, group: 'Executive' },
+  { key: 'users', label: 'Users & Roles', icon: Building2, group: 'Executive' },
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
@@ -109,6 +110,9 @@ const REPORTING_PERIOD_COLUMNS: ColumnDef[] = [
 ];
 const SNAPSHOT_COLUMNS: ColumnDef[] = [
   { key: 'snapshot_name', label: 'Snapshot Name', type: 'text', editable: true }, { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true }, { key: 'data_date', label: 'Data Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved', 'Archived'] }, { key: 'planned_value', label: 'PV', type: 'money', editable: false }, { key: 'earned_value', label: 'EV', type: 'money', editable: false }, { key: 'actual_cost', label: 'AC', type: 'money', editable: false }, { key: 'cpi', label: 'CPI', type: 'number', editable: false }, { key: 'spi', label: 'SPI', type: 'number', editable: false }, { key: 'eac', label: 'EAC', type: 'money', editable: false }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const USER_COLUMNS: ColumnDef[] = [
+  { key: 'username', label: 'Username', type: 'text', editable: true }, { key: 'display_name', label: 'Display Name', type: 'text', editable: true }, { key: 'role', label: 'Role', type: 'status', editable: true, options: ['PMO Admin', 'Project Manager', 'Commercial Manager', 'Site Engineer', 'Executive Viewer'] }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Disabled'] }, { key: 'last_login_at', label: 'Last Login', type: 'date', editable: false },
 ];
 
 const GOVERNANCE_COLUMNS: ColumnDef[] = [
@@ -457,6 +461,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   baselines: { columns: BASELINE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Approved', 'Superseded'] }], showProjectFilter: true, dateRangeColumn: 'baseline_date' },
   reportingPeriods: { columns: REPORTING_PERIOD_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'Locked', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   snapshots: { columns: SNAPSHOT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Approved', 'Archived'] }], showProjectFilter: true, dateRangeColumn: 'data_date' },
+  users: { columns: USER_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['PMO Admin', 'Project Manager', 'Commercial Manager', 'Site Engineer', 'Executive Viewer'] }, { key: 'status', label: 'Status', options: ['Active', 'Disabled'] }] },
   governance: { columns: GOVERNANCE_COLUMNS, filters: [{ key: 'record_type', label: 'Type', options: ['Risk', 'Issue', 'Decision', 'Opportunity'] }, { key: 'status', label: 'Status', options: ['Open', 'Mitigating', 'Escalated', 'Approved', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'due_date' },
   approvals: { columns: APPROVAL_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }], showProjectFilter: true, dateRangeColumn: 'requested_date' },
   auditLog: { columns: AUDIT_COLUMNS, filters: [{ key: 'action', label: 'Action', options: ['Insert', 'Update', 'Delete'] }, { key: 'entity_type', label: 'Entity', options: [] }], showProjectFilter: true, dateRangeColumn: 'created_at' },
@@ -488,7 +493,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -498,7 +503,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1267,6 +1272,8 @@ export default function App() {
           ? data.reportingPeriods
           : activeView === 'snapshots'
             ? data.snapshots
+            : activeView === 'users'
+              ? data.users
           : activeView === 'governance'
             ? data.governanceRegister
             : activeView === 'approvals'
