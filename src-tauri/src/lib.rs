@@ -15,6 +15,19 @@ fn save_excel_download(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>)
   Ok(target.display().to_string())
 }
 
+#[tauri::command]
+fn save_document_attachment(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
+  if bytes.len() > 25 * 1024 * 1024 { return Err("Attachment exceeds the 25 MB local limit.".to_string()); }
+  let safe_name = std::path::Path::new(&file_name).file_name().and_then(|name| name.to_str()).filter(|name| !name.is_empty()).ok_or_else(|| "Invalid file name.".to_string())?;
+  let directory = app.path().app_data_dir().map_err(|error| error.to_string())?.join("attachments");
+  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+  let target = directory.join(format!("{}_{}", chrono_like_timestamp(), safe_name));
+  fs::write(&target, bytes).map_err(|error| error.to_string())?;
+  Ok(target.display().to_string())
+}
+
+fn chrono_like_timestamp() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis()).unwrap_or(0) }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let migrations = vec![tauri_plugin_sql::Migration {
@@ -307,7 +320,7 @@ pub fn run() {
         .add_migrations("sqlite:buildtrack.db", migrations)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![save_excel_download])
+    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

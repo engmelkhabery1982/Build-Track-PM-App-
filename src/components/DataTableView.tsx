@@ -1162,6 +1162,12 @@ export function DataTableView({
     const isLockedCode = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
     const isReadOnly = (col.editable === false && col.key !== 'project_id') || isLockedCode;
 
+    if (tableName === 'documents' && col.key === 'file_reference') {
+      return <div className="space-y-2"><input value={row[col.key] || ''} onChange={(event) => setRow({ ...row, [col.key]: event.target.value })} placeholder="Local path or URL" className="w-full text-sm px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400" />
+        <input type="file" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { if ('__TAURI_INTERNALS__' in window) { const { invoke } = await import('@tauri-apps/api/core'); const bytes = Array.from(new Uint8Array(await file.arrayBuffer())); const path = await invoke<string>('save_document_attachment', { fileName: file.name, bytes }); setRow({ ...row, [col.key]: path }); } else setRow({ ...row, [col.key]: file.name }); } catch (error: any) { alert(`Could not attach file: ${error.message || 'Unknown error'}`); } }} className="block w-full text-xs text-neutral-600" />
+      </div>;
+    }
+
     if (col.type === 'boolean') {
       return (
         <select
