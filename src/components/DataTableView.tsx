@@ -779,7 +779,25 @@ export function DataTableView({
 
   function handlePrint() { window.print(); }
 
-  function downloadExcelTemplate() {
+  async function saveWorkbook(workbook: XLSX.WorkBook, fileName: string): Promise<void> {
+    const bytes = new Uint8Array(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
+    if ('__TAURI_INTERNALS__' in window) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const savedPath = await invoke<string>('save_excel_download', { fileName, bytes: Array.from(bytes) });
+      alert(`Excel file saved to:\n${savedPath}`);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const download = document.createElement('a');
+    download.href = url;
+    download.download = fileName;
+    document.body.appendChild(download);
+    download.click();
+    download.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function downloadExcelTemplate() {
     const headerRow: Record<string, string> = {};
     columns.forEach((c) => { headerRow[c.label] = ''; });
     if (showProjectFilter) headerRow['Project'] = '';
@@ -787,7 +805,11 @@ export function DataTableView({
     ws['!freeze'] = { xSplit: 0, ySplit: 1 };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, `${tableName}_template.xlsx`);
+    try {
+      await saveWorkbook(wb, `${tableName}_template.xlsx`);
+    } catch (error: any) {
+      alert(`Could not save the template: ${error.message || 'Unknown error'}`);
+    }
   }
 
   function startInlineEdit(id: string, key: string, value: any) {
@@ -885,7 +907,7 @@ export function DataTableView({
 
   function startEdit(row: Record<string, any>) { setEditingId(row.id); setEditRow({ ...row }); }
 
-  function exportExcel() {
+  async function exportExcel() {
     const exportedRows = displayData.map((row) => {
       const exported: Record<string, any> = {};
       if (showProjectColumn) exported.Project = projectMap[row.project_id] || '';
@@ -896,7 +918,11 @@ export function DataTableView({
     ws['!freeze'] = { xSplit: 0, ySplit: 1 };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Export');
-    XLSX.writeFile(wb, `${tableName}_export.xlsx`);
+    try {
+      await saveWorkbook(wb, `${tableName}_export.xlsx`);
+    } catch (error: any) {
+      alert(`Could not export the Excel file: ${error.message || 'Unknown error'}`);
+    }
   }
 
   function selectCell(rowId: string, columnKey: string, event: React.MouseEvent<HTMLTableCellElement>) {

@@ -1,3 +1,20 @@
+use std::fs;
+use tauri::Manager;
+
+#[tauri::command]
+fn save_excel_download(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
+  let safe_name = std::path::Path::new(&file_name)
+    .file_name()
+    .and_then(|name| name.to_str())
+    .filter(|name| !name.is_empty())
+    .ok_or_else(|| "Invalid file name.".to_string())?;
+  let directory = app.path().download_dir().map_err(|error| error.to_string())?;
+  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+  let target = directory.join(safe_name);
+  fs::write(&target, bytes).map_err(|error| error.to_string())?;
+  Ok(target.display().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let migrations = vec![tauri_plugin_sql::Migration {
@@ -159,6 +176,7 @@ pub fn run() {
         .add_migrations("sqlite:buildtrack.db", migrations)
         .build(),
     )
+    .invoke_handler(tauri::generate_handler![save_excel_download])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

@@ -156,7 +156,9 @@ export function Dashboard({
     const criticalPathCount = fSchedules.filter((s) => s.critical_path).length;
     const delayedSchedules = fSchedules.filter((s) => s.status === 'Delayed').length;
     const completedSchedules = fSchedules.filter((s) => s.status === 'Completed').length;
-    const totalContractValue = primaryContracts.reduce((s, c) => s + (c.contract_value || 0), 0);
+    // Dashboard contract values always come from main contracts. BOQ rows are
+    // operational detail and must never be used as a second contract total.
+    const totalContractValue = primaryContracts.reduce((s, c) => s + (Number(c.contract_value) || 0), 0);
     const activeContracts = primaryContracts.filter((c) => c.status === 'Active').length;
     const totalBOQAmount = fBOQ.reduce((s, b) => s + (b.amount || 0), 0);
     const totalInflow = fCashFlow.reduce((s, c) => s + (c.inflow || 0), 0);
@@ -168,9 +170,15 @@ export function Dashboard({
     const clientInvoiceTotal = fClientInv.reduce((s, i) => s + (i.amount || 0), 0);
     const clientInvoicePaid = fClientInv.reduce((s, i) => s + (i.paid_amount || 0), 0);
     const clientOutstanding = clientInvoiceTotal - clientInvoicePaid;
-    const variationCostImpact = fVariations.reduce((s, v) => s + (v.cost_impact || 0), 0);
-    const pendingVariations = fVariations.filter((v) => v.status === 'Pending' || v.status === 'Submitted').length;
-    const approvedVariations = fVariations.filter((v) => v.status === 'Approved').length;
+    const mainContractIds = new Set(primaryContracts.map((contract) => contract.id));
+    const mainVariations = fVariations.filter((variation) => !variation.contract_id || mainContractIds.has(variation.contract_id));
+    const variationCostImpact = mainVariations.reduce((s, v) => s + (Number(v.cost_impact) || 0), 0);
+    const approvedVariationCostImpact = mainVariations
+      .filter((variation) => variation.status === 'Approved')
+      .reduce((s, variation) => s + (Number(variation.cost_impact) || 0), 0);
+    const modifiedContractValue = totalContractValue + approvedVariationCostImpact;
+    const pendingVariations = mainVariations.filter((v) => v.status === 'Pending' || v.status === 'Submitted').length;
+    const approvedVariations = mainVariations.filter((v) => v.status === 'Approved').length;
     const currentDocs = fDocuments.filter((d) => d.status === 'Current').length;
     const underReviewDocs = fDocuments.filter((d) => d.status === 'Under Review').length;
     const approvedDocs = fDocuments.filter((d) => d.status === 'Approved').length;
@@ -186,11 +194,11 @@ export function Dashboard({
       openSafety, closedSafety, investigatingSafety, highSeverity, safetyByType,
       deliveredProcurement, pendingProcurement, orderedProcurement, partialProcurement, requestedProcurement, totalProcurementValue,
       totalWorkers, avgPercentComplete,
-      criticalPathCount, delayedSchedules, completedSchedules, totalContractValue, activeContracts,
+      criticalPathCount, delayedSchedules, completedSchedules, totalContractValue, modifiedContractValue, activeContracts,
       totalBOQAmount, totalInflow, totalOutflow, netCashFlow,
       subInvoiceTotal, subInvoicePaid, subOutstanding,
       clientInvoiceTotal, clientInvoicePaid, clientOutstanding,
-      variationCostImpact, pendingVariations, approvedVariations,
+      variationCostImpact, approvedVariationCostImpact, pendingVariations, approvedVariations,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
   }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
@@ -434,8 +442,8 @@ export function Dashboard({
       view: 'procurement' as ViewKey,
     },
     {
-      label: 'Contracts',
-      value: fmtMoney(stats.totalContractValue),
+      label: 'Modified Contract Value',
+      value: fmtMoney(stats.modifiedContractValue),
       sub: `${stats.activeContracts} active · ${fContracts.length} total`,
       icon: FileSignature,
       color: 'from-primary-500 to-primary-600',
@@ -755,13 +763,13 @@ export function Dashboard({
               </button>
               <button onClick={() => onNavigate('contracts')} className="bg-white rounded-xl border border-neutral-200 p-4 shadow-sm hover:shadow-md transition-all text-left hover:border-primary-300 group">
                 <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center group-hover:scale-110 transition-transform mb-2"><FileSignature size={17} className="text-primary-600" /></div>
-                <p className="text-lg font-bold text-neutral-900">{fmtMoney(stats.totalContractValue)}</p>
-                <p className="text-xs text-neutral-400">Contracts</p>
+                <p className="text-lg font-bold text-neutral-900">{fmtMoney(stats.modifiedContractValue)}</p>
+                <p className="text-xs text-neutral-400">Modified Contracts</p>
               </button>
               <button onClick={() => onNavigate('boq')} className="bg-white rounded-xl border border-neutral-200 p-4 shadow-sm hover:shadow-md transition-all text-left hover:border-primary-300 group">
                 <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center group-hover:scale-110 transition-transform mb-2"><ClipboardList size={17} className="text-primary-600" /></div>
-                <p className="text-lg font-bold text-neutral-900">{fmtMoney(stats.totalBOQAmount)}</p>
-                <p className="text-xs text-neutral-400">BOQ</p>
+                <p className="text-lg font-bold text-neutral-900">{fmtMoney(stats.totalContractValue)}</p>
+                <p className="text-xs text-neutral-400">Original Contract Value</p>
               </button>
               <button onClick={() => onNavigate('cashflow')} className="bg-white rounded-xl border border-neutral-200 p-4 shadow-sm hover:shadow-md transition-all text-left hover:border-primary-300 group">
                 <div className="w-9 h-9 rounded-lg bg-success-50 flex items-center justify-center group-hover:scale-110 transition-transform mb-2"><Banknote size={17} className="text-success-600" /></div>
@@ -993,7 +1001,9 @@ export function Dashboard({
               <button onClick={() => onNavigate('variations')} className="bg-white rounded-xl border border-neutral-200 p-5 shadow-sm hover:shadow-md transition-all text-left hover:border-primary-300 group">
                 <div className="flex items-center gap-2 mb-4"><div className="w-9 h-9 rounded-lg bg-accent-50 flex items-center justify-center group-hover:scale-110 transition-transform"><GitBranch size={17} className="text-accent-600" /></div><h3 className="text-sm font-semibold text-neutral-700">Variations</h3></div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Cost Impact</span><span className="text-sm font-semibold text-neutral-800">{fmtMoney(stats.variationCostImpact)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">All Change Orders</span><span className="text-sm font-semibold text-neutral-800">{fmtMoney(stats.variationCostImpact)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Approved Impact</span><span className="text-sm font-semibold text-success-600">{fmtMoney(stats.approvedVariationCostImpact)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Modified Contract Value</span><span className="text-sm font-semibold text-primary-700">{fmtMoney(stats.modifiedContractValue)}</span></div>
                   <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Pending</span><span className="text-sm font-semibold text-warning-600">{stats.pendingVariations}</span></div>
                   <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Approved</span><span className="text-sm font-semibold text-success-600">{stats.approvedVariations}</span></div>
                 </div>
