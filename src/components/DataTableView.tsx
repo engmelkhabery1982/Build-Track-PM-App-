@@ -1568,12 +1568,12 @@ export function DataTableView({
 
       {/* Add Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
-          {minimizedModal === 'add' ? (
-            <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
+        minimizedModal === 'add' ? (
+          <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
               <Plus size={16} /> Add {title}
-            </button>
-          ) : (
+          </button>
+        ) : (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
           <div data-draggable onMouseDown={(e) => startDrag('add', e)} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={addModalStyle}>
             <div className="flex items-center justify-between mb-4 cursor-move select-none">
               <h3 className="text-lg font-semibold text-neutral-900">Add {title}</h3>
@@ -1597,18 +1597,18 @@ export function DataTableView({
               </button>
             </div>
           </div>
-          )}
         </div>
+        )
       )}
 
       {/* Edit Modal */}
       {editingId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
-          {minimizedModal === 'edit' ? (
-            <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
+        minimizedModal === 'edit' ? (
+          <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
               <FileText size={16} /> Edit {title}
-            </button>
-          ) : (
+          </button>
+        ) : (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
           <div data-draggable onMouseDown={(e) => startDrag('edit', e)} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={editModalStyle}>
             <div className="flex items-center justify-between mb-4 cursor-move select-none">
               <h3 className="text-lg font-semibold text-neutral-900">Edit {title}</h3>
@@ -1632,8 +1632,8 @@ export function DataTableView({
               </button>
             </div>
           </div>
-          )}
         </div>
+        )
       )}
 
       {/* Delete Confirmation */}
