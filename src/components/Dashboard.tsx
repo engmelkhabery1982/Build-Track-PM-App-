@@ -146,6 +146,8 @@ export function Dashboard({
     // WIR-derived committed value in Cost Control. Project progress is a
     // presentation percentage and must not be used to calculate money.
     const totalPlannedWork = fSchedules
+      .filter((schedule) => !(!String(schedule.activity || '').trim() && fSchedules
+        .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim())))
       .reduce((s, schedule) => s + schedulePlannedValueToDate(schedule as Record<string, any>), 0);
     const totalEarnedWork = fCosts.reduce((s, cost) => s + (Number(cost.committed) || 0), 0);
     const costVariance = totalPlannedCosts - totalActualCosts;

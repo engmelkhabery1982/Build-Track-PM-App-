@@ -601,6 +601,11 @@ export default function App() {
         committedByItem.set(key, (committedByItem.get(key) || 0) + earnedValue);
       }
       for (const schedule of data.schedules as Record<string, any>[]) {
+        const hasChildActivities = !String(schedule.activity || '').trim() && (data.schedules as Record<string, any>[])
+          .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim());
+        // A blank-activity row is the BOQ summary. Its figures are derived
+        // from children and must never be counted again in Cost Control.
+        if (hasChildActivities) continue;
         const scheduleContract = data.contracts.find((contract: any) => contract.id === schedule.contract_id) as any;
         if (!scheduleContract?.project_id) continue;
         const selectedItem = data.boqItems.find((item: any) => item.id === schedule.boq_item_id) as any;
@@ -713,6 +718,8 @@ export default function App() {
         for (const project of data.projects as Record<string, any>[]) {
           const budget = Math.round((data.schedules as Record<string, any>[])
             .filter((schedule) => schedule.project_id === project.id)
+            .filter((schedule) => !(!String(schedule.activity || '').trim() && (data.schedules as Record<string, any>[])
+              .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim())))
             .reduce((sum, schedule) => sum + scheduleBudget(schedule), 0) * 100) / 100;
           const spent = Math.round((data.costs as Record<string, any>[])
             .filter((cost) => cost.project_id === project.id)
@@ -998,15 +1005,20 @@ export default function App() {
             // One BOQ item can be split across many activities. Allocate the
             // item-level EV and actual cost by PV-to-date so activity rows
             // add up to the BOQ/control total without duplication.
-            const activitiesForItem = data.schedules
+            const itemRows = data.schedules
               .filter((activity: any) => activity.project_id === schedule.project_id && activity.boq_item_id === schedule.boq_item_id);
+            const childActivities = itemRows.filter((activity: any) => String(activity.activity || '').trim());
+            const isSummaryRow = !String(schedule.activity || '').trim();
+            const activitiesForItem = childActivities.length > 0 ? childActivities : itemRows;
             const reportDate = new Date().toISOString().slice(0, 10);
             // EV and AC are allocated only among activities which have a PV
             // at the report date. Budget is never used as the allocation key.
             const itemPVToDate = activitiesForItem
               .reduce((sum: number, activity: any) => sum + schedulePlannedValueToDate(activity, reportDate), 0);
             const activityPVToDate = schedulePlannedValueToDate(schedule, reportDate);
-            const allocation = itemPVToDate > 0 ? activityPVToDate / itemPVToDate : 0;
+            const allocation = isSummaryRow && childActivities.length > 0
+              ? 1
+              : itemPVToDate > 0 ? activityPVToDate / itemPVToDate : 0;
             const earnedWorkValue = derivedWirs
               .filter((wir: any) => {
                 const wirContract = contractById.get(wir.contract_id) as any;
@@ -1022,8 +1034,25 @@ export default function App() {
             ) as any;
             const earned = Math.round(earnedWorkValue * allocation * 100) / 100;
             const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
-            const budget = scheduleBudget(schedule);
-            const plannedValue = schedulePlannedValueToDate(schedule);
+            const budget = isSummaryRow && childActivities.length > 0
+              ? childActivities.reduce((sum: number, activity: any) => sum + scheduleBudget(activity), 0)
+              : scheduleBudget(schedule);
+            const plannedValue = isSummaryRow && childActivities.length > 0
+              ? childActivities.reduce((sum: number, activity: any) => sum + schedulePlannedValueToDate(activity), 0)
+              : schedulePlannedValueToDate(schedule);
+            const summaryQuantity = isSummaryRow && childActivities.length > 0
+              ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0)
+              : plannedQuantity;
+            const summaryStart = isSummaryRow && childActivities.length > 0
+              ? childActivities.map((activity: any) => String(activity.start_date || '')).filter(Boolean).sort()[0] || schedule.start_date
+              : schedule.start_date;
+            const childEndDates = childActivities.map((activity: any) => String(activity.end_date || '')).filter(Boolean).sort();
+            const summaryEnd = isSummaryRow && childActivities.length > 0
+              ? childEndDates[childEndDates.length - 1] || schedule.end_date
+              : schedule.end_date;
+            const summaryDuration = summaryStart && summaryEnd
+              ? Math.max(1, Math.ceil((new Date(`${summaryEnd}T00:00:00`).getTime() - new Date(`${summaryStart}T00:00:00`).getTime()) / 86400000))
+              : (Number(schedule.duration_days) || 0);
             const revisedFinish = scheduleContract?.revised_end_date || scheduleContract?.end_date;
             const dateAlert = revisedFinish && schedule.end_date && String(schedule.end_date) > revisedFinish
               ? `⚠ Delayed: finishes after revised contract end (${revisedFinish})`
@@ -1036,9 +1065,14 @@ export default function App() {
             const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
             return {
               ...schedule,
+              is_summary_row: isSummaryRow,
+              activity: isSummaryRow ? `BOQ Total — ${schedule.boq_item_name || mainItem?.item_name || ''}` : schedule.activity,
+              start_date: summaryStart,
+              end_date: summaryEnd,
+              duration_days: summaryDuration,
               unit_rate: Number(mainItem?.unit_rate) || Number(schedule.unit_rate) || 0,
               budget,
-              planned_quantity: plannedQuantity,
+              planned_quantity: summaryQuantity,
               planned_value: plannedValue,
               // Same rule as Cost Control: main and subcontract WIRs are
               // valued at the linked main-contract BOQ item rate.
@@ -1292,6 +1326,10 @@ export default function App() {
         dateWarning={tableName === 'schedules' ? (activity) => {
           const contract = contractsWithModifiedValue.find((row: any) => row.id === activity.contract_id) as any;
           const revisedEnd = contract?.revised_end_date || contract?.end_date;
+          const boqSummary = data.schedules.find((row: any) => row.boq_item_id === activity.boq_item_id && !String(row.activity || '').trim() && row.id !== activity.id) as any;
+          if (boqSummary?.end_date && activity.end_date && String(activity.end_date) > String(boqSummary.end_date)) {
+            return `Activity finish ${activity.end_date} is later than the current BOQ finish ${boqSummary.end_date}; the BOQ total row will be extended and the item is delayed against its former plan.`;
+          }
           return revisedEnd && activity.end_date && String(activity.end_date) > String(revisedEnd)
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
             : null;

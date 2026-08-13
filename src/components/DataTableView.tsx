@@ -450,6 +450,7 @@ export function DataTableView({
           : (col.type === 'number' || col.type === 'money');
       if (shouldSum) {
         sums[col.key] = displayData
+          .filter((row) => tableName !== 'schedules' || row.is_summary_row === true)
           .filter((row) => !['contracts', 'boq_headers', 'boq_items', 'variations'].includes(tableName) || row.contract_role !== 'Subcontract')
           .reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
       }
