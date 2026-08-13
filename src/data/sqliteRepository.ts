@@ -4,6 +4,7 @@ const TABLES = new Set([
   "projects", "tasks", "costs", "cost_entries", "procurement", "safety",
   "progress_entries", "schedules", "contracts", "boq_headers", "boq_items",
   "schedule_distributions",
+  "project_baselines", "reporting_periods", "governance_register",
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
   "client_invoice_tracking", "subcontractor_invoice_tracking",

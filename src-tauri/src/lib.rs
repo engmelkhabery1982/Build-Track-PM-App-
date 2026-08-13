@@ -183,6 +183,40 @@ pub fn run() {
       );
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 5,
+    description: "add_pmo_governance_registers",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS project_baselines (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS reporting_periods (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS governance_register (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_baselines_project ON project_baselines(project_id);
+      CREATE INDEX IF NOT EXISTS idx_reporting_periods_project ON reporting_periods(project_id);
+      CREATE INDEX IF NOT EXISTS idx_governance_register_project ON governance_register(project_id);
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

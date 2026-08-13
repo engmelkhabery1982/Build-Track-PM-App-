@@ -12,6 +12,8 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
+  { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
+  { key: 'reportingPeriods', label: 'Reporting Periods', icon: CalendarClock, group: 'Executive' },
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
@@ -30,6 +32,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
   { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Field & Governance' },
+  { key: 'governance', label: 'Risk, Issue & Decision Register', icon: ShieldAlert, group: 'Field & Governance' },
   { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Field & Governance' },
   { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Field & Governance' },
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Field & Governance' },
@@ -72,6 +75,47 @@ const PROJECT_COLUMNS: ColumnDef[] = [
   { key: 'contractor', label: 'Contractor', type: 'text', editable: true },
   { key: 'start_date', label: 'Start Date', type: 'date', editable: true },
   { key: 'end_date', label: 'End Date', type: 'date', editable: true },
+];
+
+const BASELINE_COLUMNS: ColumnDef[] = [
+  { key: 'baseline_number', label: 'Baseline #', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'baseline_date', label: 'Approval Date', type: 'date', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved', 'Superseded'] },
+  { key: 'original_contract_value', label: 'Original Contract', type: 'money', editable: true },
+  { key: 'approved_variation_value', label: 'Approved Variations', type: 'money', editable: true },
+  { key: 'modified_contract_value', label: 'Modified Contract', type: 'money', editable: true },
+  { key: 'planned_budget', label: 'Planned Budget', type: 'money', editable: true },
+  { key: 'planned_start_date', label: 'Planned Start', type: 'date', editable: true },
+  { key: 'planned_end_date', label: 'Planned Finish', type: 'date', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
+const REPORTING_PERIOD_COLUMNS: ColumnDef[] = [
+  { key: 'period_name', label: 'Period Name', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'start_date', label: 'Period Start', type: 'date', editable: true },
+  { key: 'end_date', label: 'Period End', type: 'date', editable: true },
+  { key: 'data_date', label: 'Data Date', type: 'date', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'Locked', 'Closed'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
+const GOVERNANCE_COLUMNS: ColumnDef[] = [
+  { key: 'reference_number', label: 'Reference #', type: 'text', editable: true },
+  { key: 'record_type', label: 'Record Type', type: 'status', editable: true, options: ['Risk', 'Issue', 'Decision', 'Opportunity'] },
+  { key: 'title', label: 'Title', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'category', label: 'Category', type: 'text', editable: true, options: ['Commercial', 'Cost', 'Schedule', 'Quality', 'Safety', 'Procurement', 'Design', 'Stakeholder', 'Other'] },
+  { key: 'probability', label: 'Probability', type: 'status', editable: true, options: ['Low', 'Medium', 'High', 'Critical'] },
+  { key: 'impact', label: 'Impact', type: 'status', editable: true, options: ['Low', 'Medium', 'High', 'Critical'] },
+  { key: 'exposure_value', label: 'Exposure Value', type: 'money', editable: true },
+  { key: 'owner', label: 'Owner', type: 'text', editable: true },
+  { key: 'due_date', label: 'Due Date', type: 'date', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'Mitigating', 'Escalated', 'Approved', 'Closed'] },
+  { key: 'action_plan', label: 'Action / Decision', type: 'text', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
@@ -368,6 +412,9 @@ const TRACKING_COLUMNS: ColumnDef[] = [
 
 const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]; showProjectFilter?: boolean; dateRangeColumn?: string }> = {
   projects: { columns: PROJECT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROJECT_STATUSES }, { key: 'category', label: 'Category', options: ['Residential', 'Commercial', 'Industrial', 'Infrastructure', 'Renovation'] }], dateRangeColumn: 'start_date' },
+  baselines: { columns: BASELINE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Approved', 'Superseded'] }], showProjectFilter: true, dateRangeColumn: 'baseline_date' },
+  reportingPeriods: { columns: REPORTING_PERIOD_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'Locked', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  governance: { columns: GOVERNANCE_COLUMNS, filters: [{ key: 'record_type', label: 'Type', options: ['Risk', 'Issue', 'Decision', 'Opportunity'] }, { key: 'status', label: 'Status', options: ['Open', 'Mitigating', 'Escalated', 'Approved', 'Closed'] }], showProjectFilter: true, dateRangeColumn: 'due_date' },
   tasks: { columns: TASK_COLUMNS, filters: [{ key: 'status', label: 'Status', options: TASK_STATUSES }, { key: 'priority', label: 'Priority', options: PRIORITIES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   costs: { columns: COST_COLUMNS, filters: [{ key: 'category', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -392,7 +439,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', governance: 'governance_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -402,7 +449,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', governance: 'Risk, Issue & Decision Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1148,6 +1195,12 @@ export default function App() {
     // look as if they had disappeared.
     const rawViewData = activeView === 'boq'
       ? data.boqHeaders
+      : activeView === 'baselines'
+        ? data.baselines
+        : activeView === 'reportingPeriods'
+          ? data.reportingPeriods
+          : activeView === 'governance'
+            ? data.governanceRegister
       : activeView === 'boqItems'
         ? data.boqItems
         : activeView === 'wir'

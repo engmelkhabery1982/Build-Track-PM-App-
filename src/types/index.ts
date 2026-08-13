@@ -426,6 +426,58 @@ export interface DocumentEntry {
   created_at: string;
 }
 
+/** Frozen, approved control point. It is never recalculated after approval. */
+export interface ProjectBaseline {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  baseline_number: string;
+  baseline_date: string | null;
+  status: 'Draft' | 'Approved' | 'Superseded' | string;
+  original_contract_value: number;
+  approved_variation_value: number;
+  modified_contract_value: number;
+  planned_budget: number;
+  planned_start_date: string | null;
+  planned_end_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface ReportingPeriod {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  period_name: string;
+  start_date: string | null;
+  end_date: string | null;
+  data_date: string | null;
+  status: 'Open' | 'Locked' | 'Closed' | string;
+  notes: string;
+  created_at: string;
+}
+
+/** One action-oriented register for risks, issues, decisions and opportunities. */
+export interface GovernanceRegisterEntry {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  reference_number: string;
+  record_type: 'Risk' | 'Issue' | 'Decision' | 'Opportunity' | string;
+  title: string;
+  category: string;
+  probability: string;
+  impact: string;
+  exposure_value: number;
+  owner: string;
+  due_date: string | null;
+  status: string;
+  action_plan: string;
+  notes: string;
+  created_at: string;
+}
+
 export interface WIREntry {
   id: string;
   project_id: string;
@@ -457,7 +509,7 @@ export interface WIREntry {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'projects' | 'portfolio' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
