@@ -132,6 +132,11 @@ export function Dashboard({
     const totalPlannedCosts = fCosts.reduce((s, c) => s + (c.planned || 0), 0);
     const totalActualCosts = fCosts.reduce((s, c) => s + (c.actual || 0), 0);
     const totalCommittedCosts = fCosts.reduce((s, c) => s + (c.committed || 0), 0);
+    // EVM has authoritative sources: PV from Schedule and EV from the
+    // WIR-derived committed value in Cost Control. Project progress is a
+    // presentation percentage and must not be used to calculate money.
+    const totalPlannedWork = fSchedules.reduce((s, schedule) => s + (Number(schedule.planned_value) || 0), 0);
+    const totalEarnedWork = fCosts.reduce((s, cost) => s + (Number(cost.committed) || 0), 0);
     const costVariance = totalPlannedCosts - totalActualCosts;
 
     const openSafety = fSafety.filter((s) => s.status === 'Open').length;
@@ -190,7 +195,7 @@ export function Dashboard({
       delayedTasks, completedTasks, inProgressTasks, notStartedTasks,
       avgProgress, budgetUtilization,
       byStatus, byCategory, taskStatusCounts, taskPriorityCounts,
-      totalPlannedCosts, totalActualCosts, totalCommittedCosts, costVariance,
+      totalPlannedCosts, totalActualCosts, totalCommittedCosts, totalPlannedWork, totalEarnedWork, costVariance,
       openSafety, closedSafety, investigatingSafety, highSeverity, safetyByType,
       deliveredProcurement, pendingProcurement, orderedProcurement, partialProcurement, requestedProcurement, totalProcurementValue,
       totalWorkers, avgPercentComplete,
@@ -204,9 +209,9 @@ export function Dashboard({
   }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments]);
 
   const evm = useMemo(() => {
-    const BAC = stats.totalBudget || stats.totalPlannedCosts || 0;
-    const PV = stats.totalPlannedCosts > 0 ? stats.totalPlannedCosts : BAC * (stats.avgProgress / 100);
-    const EV = BAC * (stats.avgProgress / 100);
+    const BAC = stats.totalBudget || stats.totalPlannedWork || 0;
+    const PV = stats.totalPlannedWork;
+    const EV = stats.totalEarnedWork;
     const AC = stats.totalActualCosts > 0 ? stats.totalActualCosts : stats.totalSpent;
     const CV = EV - AC;
     const SV = EV - PV;
