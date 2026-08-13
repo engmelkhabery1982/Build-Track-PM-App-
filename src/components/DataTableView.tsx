@@ -804,6 +804,7 @@ export function DataTableView({
         ? await onInsert(prepared)
         : await dataRepository.insert<Record<string, any>>(tableName, prepared);
       setShowAdd(false);
+      setMinimizedModal(null);
       setNewRow({});
       if (Array.isArray(inserted)) onMutated({ type: 'insertMany', rows: inserted });
       else onMutated({ type: 'insert', row: inserted });
@@ -828,6 +829,7 @@ export function DataTableView({
       assertRelationshipScope({ ...data.find((row) => row.id === editingId), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, editingId, patch);
       setEditingId(null);
+      setMinimizedModal(null);
       setEditRow({});
       onMutated({ type: 'update', row: updated });
       const warning = dateWarning?.(updated);
@@ -1039,7 +1041,7 @@ export function DataTableView({
     }
   }
 
-  function startEdit(row: Record<string, any>) { setEditingId(row.id); setEditRow({ ...row }); }
+  function startEdit(row: Record<string, any>) { setMinimizedModal(null); setEditingId(row.id); setEditRow({ ...row }); }
 
   async function exportExcel() {
     const exportedRows = displayData.map((row) => {
@@ -1275,9 +1277,13 @@ export function DataTableView({
 
   const [dragState, setDragState] = useState<{ modal: 'add' | 'edit' | null; offsetX: number; offsetY: number }>({ modal: null, offsetX: 0, offsetY: 0 });
   const [modalPosition, setModalPosition] = useState<Record<'add' | 'edit', { x: number; y: number } | null>>({ add: null, edit: null });
+  const [minimizedModal, setMinimizedModal] = useState<'add' | 'edit' | null>(null);
 
   function startDrag(modal: 'add' | 'edit', e: React.MouseEvent) {
     const target = e.currentTarget as HTMLElement;
+    // Form controls keep their native behaviour. Any other point on the
+    // dialog can be used as a drag handle, not just its title bar.
+    if ((e.target as HTMLElement).closest('input, textarea, select, button, a, [data-no-drag]')) return;
     const modalEl = target.closest('[data-draggable]') as HTMLElement;
     if (!modalEl) return;
     const modalRect = modalEl.getBoundingClientRect();
@@ -1329,7 +1335,7 @@ export function DataTableView({
             <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
               <Download size={15} /> Export
             </button>
-            {canAdd && <button onClick={() => { setNewRow(createDraft ? createDraft() : createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+            {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createDraft ? createDraft() : createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> {addButtonLabel}
             </button>}
           </div>
@@ -1562,11 +1568,19 @@ export function DataTableView({
 
       {/* Add Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowAdd(false)}>
-          <div data-draggable className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={addModalStyle} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 cursor-move select-none" onMouseDown={(e) => startDrag('add', e)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
+          {minimizedModal === 'add' ? (
+            <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
+              <Plus size={16} /> Add {title}
+            </button>
+          ) : (
+          <div data-draggable onMouseDown={(e) => startDrag('add', e)} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={addModalStyle}>
+            <div className="flex items-center justify-between mb-4 cursor-move select-none">
               <h3 className="text-lg font-semibold text-neutral-900">Add {title}</h3>
-              <button onClick={() => setShowAdd(false)} className="text-neutral-400 hover:text-neutral-600"><X size={20} /></button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setMinimizedModal('add')} className="text-neutral-400 hover:text-neutral-600" title="Minimize">—</button>
+                <button onClick={() => { setMinimizedModal(null); setShowAdd(false); }} className="text-neutral-400 hover:text-neutral-600" title="Close"><X size={20} /></button>
+              </div>
             </div>
             <div className="space-y-3">
               {allColsForForm.map((col) => (
@@ -1577,22 +1591,31 @@ export function DataTableView({
               ))}
             </div>
             <div className="flex items-center justify-end gap-2 mt-5">
-              <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
+              <button onClick={() => { setMinimizedModal(null); setShowAdd(false); }} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
               <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} {submitLabel}
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
 
       {/* Edit Modal */}
       {editingId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in" onClick={() => setEditingId(null)}>
-          <div data-draggable className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={editModalStyle} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 cursor-move select-none" onMouseDown={(e) => startDrag('edit', e)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
+          {minimizedModal === 'edit' ? (
+            <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">
+              <FileText size={16} /> Edit {title}
+            </button>
+          ) : (
+          <div data-draggable onMouseDown={(e) => startDrag('edit', e)} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto scrollbar-thin p-6" style={editModalStyle}>
+            <div className="flex items-center justify-between mb-4 cursor-move select-none">
               <h3 className="text-lg font-semibold text-neutral-900">Edit {title}</h3>
-              <button onClick={() => setEditingId(null)} className="text-neutral-400 hover:text-neutral-600"><X size={20} /></button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setMinimizedModal('edit')} className="text-neutral-400 hover:text-neutral-600" title="Minimize">—</button>
+                <button onClick={() => { setMinimizedModal(null); setEditingId(null); }} className="text-neutral-400 hover:text-neutral-600" title="Close"><X size={20} /></button>
+              </div>
             </div>
             <div className="space-y-3">
               {allColsForForm.map((col) => (
@@ -1603,12 +1626,13 @@ export function DataTableView({
               ))}
             </div>
             <div className="flex items-center justify-end gap-2 mt-5">
-              <button onClick={() => setEditingId(null)} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
+              <button onClick={() => { setMinimizedModal(null); setEditingId(null); }} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
               <button onClick={handleEdit} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : null} Save Changes
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
 
