@@ -753,6 +753,7 @@ export function DataTableView({
       const otherActivities = data.filter((activity) =>
         activity.id !== record.id &&
         activity.boq_item_id === item.id &&
+        activity.is_summary_row !== true &&
         String(activity.activity || '').trim(),
       );
       const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + plannedQuantity;
