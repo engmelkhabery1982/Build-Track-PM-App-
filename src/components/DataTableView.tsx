@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
@@ -13,6 +13,11 @@ import {
 } from '@/data';
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
+
+// XLSX is sizeable. It is used only for the explicit template/import/export
+// actions, so loading it on demand keeps the desktop app responsive at start.
+let xlsxModule: Promise<typeof import('xlsx')> | undefined;
+const getXlsx = () => xlsxModule ||= import('xlsx');
 
 export interface ColumnDef {
   key: string;
@@ -885,6 +890,7 @@ export function DataTableView({
     setImporting(true);
     setImportResult(null);
     try {
+      const XLSX = await getXlsx();
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -975,6 +981,7 @@ export function DataTableView({
   function handlePrint() { window.print(); }
 
   async function saveWorkbook(workbook: XLSX.WorkBook, fileName: string): Promise<void> {
+    const XLSX = await getXlsx();
     const bytes = new Uint8Array(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
     if ('__TAURI_INTERNALS__' in window) {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -993,6 +1000,7 @@ export function DataTableView({
   }
 
   async function downloadExcelTemplate() {
+    const XLSX = await getXlsx();
     const headerRow: Record<string, string> = {};
     columns.forEach((c) => { headerRow[c.label] = ''; });
     if (showProjectFilter) headerRow['Project'] = '';
@@ -1124,6 +1132,7 @@ export function DataTableView({
   function startEdit(row: Record<string, any>) { setMinimizedModal(null); setEditingId(row.id); setEditRow({ ...row }); }
 
   async function exportExcel() {
+    const XLSX = await getXlsx();
     const exportedRows = displayData.map((row) => {
       const exported: Record<string, any> = {};
       if (showProjectColumn) exported.Project = projectMap[row.project_id] || '';
