@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -10,6 +10,7 @@ import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedul
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
   { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
+  { key: 'alerts', label: 'PMO Alerts', icon: Bell, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
   { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
@@ -1124,6 +1125,29 @@ export default function App() {
           onNavigate={setActiveView}
         />
       );
+    }
+
+    if (activeView === 'alerts') {
+      const today = new Date().toISOString().slice(0, 10);
+      const alerts: { severity: 'Critical' | 'Warning' | 'Info'; title: string; detail: string; view: ViewKey }[] = [];
+      const delayedActivities = data.schedules.filter((row: any) => row.status === 'Delayed' || (row.end_date && row.end_date < today && row.status !== 'Completed'));
+      if (delayedActivities.length) alerts.push({ severity: 'Critical', title: 'Schedule delay requires action', detail: `${delayedActivities.length} activity(s) are delayed or past their finish date.`, view: 'schedule' });
+      const overdueTasks = data.tasks.filter((row: any) => row.end_date && row.end_date < today && row.status !== 'Completed');
+      if (overdueTasks.length) alerts.push({ severity: 'Critical', title: 'Overdue tasks', detail: `${overdueTasks.length} task(s) have passed their due date.`, view: 'tasks' });
+      const overBudget = data.costs.filter((row: any) => (Number(row.actual) || 0) > (Number(row.budget) || Number(row.planned) || 0));
+      if (overBudget.length) alerts.push({ severity: 'Critical', title: 'Cost overrun detected', detail: `${overBudget.length} BOQ cost-control line(s) exceed the approved budget.`, view: 'costs' });
+      const pendingApprovals = data.approvals.filter((row: any) => ['Submitted', 'Returned'].includes(row.status));
+      if (pendingApprovals.length) alerts.push({ severity: 'Warning', title: 'Approval decisions pending', detail: `${pendingApprovals.length} approval request(s) require review or resubmission.`, view: 'approvals' });
+      const openRfis = data.rfis.filter((row: any) => row.status !== 'Closed');
+      if (openRfis.length) alerts.push({ severity: 'Warning', title: 'Open RFIs', detail: `${openRfis.length} RFI(s) remain open and may affect delivery.`, view: 'rfi' });
+      const qualityOpen = data.quality.filter((row: any) => row.status !== 'Closed');
+      if (qualityOpen.length) alerts.push({ severity: 'Warning', title: 'Quality items remain open', detail: `${qualityOpen.length} NCR / punch item(s) need closure.`, view: 'quality' });
+      const overdueClientInvoices = data.clientInvoices.filter((row: any) => row.due_date && row.due_date < today && !['Paid', 'Closed'].includes(row.payment_status));
+      if (overdueClientInvoices.length) alerts.push({ severity: 'Warning', title: 'Client collections overdue', detail: `${overdueClientInvoices.length} client invoice(s) are past their due date.`, view: 'clientinvoices' });
+      const unreviewedDocs = data.documents.filter((row: any) => row.status === 'Under Review');
+      if (unreviewedDocs.length) alerts.push({ severity: 'Info', title: 'Documents under review', detail: `${unreviewedDocs.length} document(s) are waiting for a review decision.`, view: 'documents' });
+      const styles = { Critical: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Info: 'border-primary-200 bg-primary-50 text-primary-700' };
+      return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><Bell size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">PMO Alerts</h2><p className="mt-1 text-sm text-neutral-500">Live exceptions generated from schedule, cost, commercial and field-control records.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{alerts.length} open</span></div></div><div className="space-y-3">{alerts.length ? alerts.map((alert, index) => <button key={`${alert.title}-${index}`} onClick={() => setActiveView(alert.view)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[alert.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{alert.title}</p><p className="mt-1 text-sm opacity-90">{alert.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>) : <div className="rounded-xl border border-success-200 bg-success-50 p-8 text-center text-success-700"><FileCheck2 className="mx-auto mb-2" size={26} /><p className="font-semibold">No active PMO alerts</p><p className="mt-1 text-sm">All monitored records are currently within their control state.</p></div>}</div></div></div>;
     }
 
     if (activeView === 'portfolio') {
