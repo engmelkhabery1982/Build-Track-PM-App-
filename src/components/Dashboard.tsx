@@ -6,7 +6,7 @@ import { addCalendarDays, distributedPlannedValueToDate, schedulePlannedValueToD
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
-  Variation, DocumentEntry, WIREntry, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry,
+  Variation, DocumentEntry, WIREntry, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, RFIEntry, SubmittalEntry, QualityEntry,
 } from '@/types';
 
 interface DashboardProps {
@@ -31,6 +31,9 @@ interface DashboardProps {
   reportingPeriods: ReportingPeriod[];
   governanceRegister: GovernanceRegisterEntry[];
   scheduleDistributions: Record<string, any>[];
+  rfis: RFIEntry[];
+  submittals: SubmittalEntry[];
+  quality: QualityEntry[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -75,7 +78,7 @@ type DashboardTab = 'overview' | 'financials' | 'schedule' | 'safety' | 'procure
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -111,6 +114,9 @@ export function Dashboard({
   const fBaselines = pid === 'all' ? baselines : baselines.filter((baseline) => baseline.project_id === pid);
   const fReportingPeriods = pid === 'all' ? reportingPeriods : reportingPeriods.filter((period) => period.project_id === pid);
   const fGovernance = pid === 'all' ? governanceRegister : governanceRegister.filter((entry) => entry.project_id === pid);
+  const fRfis = pid === 'all' ? rfis : rfis.filter((entry) => entry.project_id === pid);
+  const fSubmittals = pid === 'all' ? submittals : submittals.filter((entry) => entry.project_id === pid);
+  const fQuality = pid === 'all' ? quality : quality.filter((entry) => entry.project_id === pid);
 
   const selectedProject = pid !== 'all' ? projects.find((p) => p.id === pid) : null;
 
@@ -210,6 +216,9 @@ export function Dashboard({
     const openReportingPeriods = fReportingPeriods.filter((period) => period.status === 'Open').length;
     const openGovernanceItems = fGovernance.filter((entry) => entry.status !== 'Closed').length;
     const criticalGovernanceItems = fGovernance.filter((entry) => entry.status !== 'Closed' && (entry.impact === 'Critical' || entry.probability === 'Critical')).length;
+    const openRfis = fRfis.filter((entry) => entry.status !== 'Closed').length;
+    const pendingSubmittals = fSubmittals.filter((entry) => !['Approved', 'Approved as Noted', 'Rejected'].includes(entry.status)).length;
+    const openQualityItems = fQuality.filter((entry) => entry.status !== 'Closed').length;
     const currentDocs = fDocuments.filter((d) => d.status === 'Current').length;
     const underReviewDocs = fDocuments.filter((d) => d.status === 'Under Review').length;
     const approvedDocs = fDocuments.filter((d) => d.status === 'Approved').length;
@@ -231,9 +240,10 @@ export function Dashboard({
       clientInvoiceTotal, clientInvoicePaid, clientOutstanding,
       variationCostImpact, approvedVariationCostImpact, totalVariations: mainVariations.length, pendingVariations, approvedVariations,
       approvedBaselines, openReportingPeriods, openGovernanceItems, criticalGovernanceItems,
+      openRfis, pendingSubmittals, openQualityItems,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance]);
+  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality]);
 
   const evm = useMemo(() => {
     const BAC = stats.totalBudget || stats.totalPlannedWork || 0;
@@ -285,6 +295,12 @@ export function Dashboard({
       items.push({ severity: 'medium', icon: ShieldAlert, text: `${stats.openSafety} open safety issue${stats.openSafety > 1 ? 's' : ''} need${stats.openSafety > 1 ? '' : 's'} resolution`, view: 'safety' });
     if (stats.pendingVariations > 0)
       items.push({ severity: 'medium', icon: GitBranch, text: `${stats.pendingVariations} variation${stats.pendingVariations > 1 ? 's' : ''} pending approval — cost impact: ${fmtMoney(stats.variationCostImpact)}`, view: 'variations' });
+    if (stats.openRfis > 0)
+      items.push({ severity: 'medium', icon: FileText, text: `${stats.openRfis} open RFI${stats.openRfis > 1 ? 's' : ''} may affect field progress`, view: 'rfi' });
+    if (stats.pendingSubmittals > 0)
+      items.push({ severity: 'medium', icon: ClipboardList, text: `${stats.pendingSubmittals} submittal${stats.pendingSubmittals > 1 ? 's' : ''} awaiting review or resubmission`, view: 'submittals' });
+    if (stats.openQualityItems > 0)
+      items.push({ severity: 'medium', icon: CheckCircle2, text: `${stats.openQualityItems} open NCR / punch item${stats.openQualityItems > 1 ? 's' : ''} require closure`, view: 'quality' });
     if (stats.subOutstanding > 0)
       items.push({ severity: 'medium', icon: Receipt, text: `${fmtMoney(stats.subOutstanding)} outstanding subcontractor invoice payments`, view: 'subinvoices' });
     if (stats.clientOutstanding > 0)

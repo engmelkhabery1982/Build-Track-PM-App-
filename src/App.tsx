@@ -1064,6 +1064,9 @@ export default function App() {
           reportingPeriods={data.reportingPeriods}
           governanceRegister={data.governanceRegister}
           scheduleDistributions={data.scheduleDistributions}
+          rfis={data.rfis}
+          submittals={data.submittals}
+          quality={data.quality}
           onNavigate={setActiveView}
         />
       );
