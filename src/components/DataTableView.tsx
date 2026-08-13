@@ -895,15 +895,57 @@ export function DataTableView({
         e.target.value = '';
         return;
       }
+      const normalizeHeader = (value: unknown) => String(value || '')
+        .toLowerCase().trim().replace(/[\s_\-\/]+/g, ' ');
       const labelToKey: Record<string, string> = {};
-      columns.forEach((c) => { labelToKey[c.label.toLowerCase()] = c.key; });
+      columns.forEach((c) => { labelToKey[normalizeHeader(c.label)] = c.key; });
       if (showProjectFilter) labelToKey['project'] = 'project_id';
+      // Primavera P6 and MS Project exports use different column names. Keep
+      // this import adapter deliberately limited to fields that have a clear
+      // equivalent in our schedule model; it does not invent relationships.
+      if (tableName === 'schedules') {
+        Object.assign(labelToKey, {
+          'activity id': 'activity_code', 'activity name': 'activity', 'task name': 'activity',
+          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'start date': 'start_date',
+          'finish': 'end_date', 'finish date': 'end_date', 'end date': 'end_date',
+          'original duration': 'duration_days', 'planned duration': 'duration_days',
+          'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
+          'planned cost': 'budget', 'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
+          'resource names': 'responsible', 'calendar name': 'calendar_name',
+          'primary constraint': 'notes', 'predecessors': 'predecessor_item',
+        });
+      }
+      if (tableName === 'schedule_distributions') {
+        Object.assign(labelToKey, {
+          'activity id': 'schedule_id', 'activity name': 'activity_name', 'start': 'period_start',
+          'finish': 'period_end', 'finish date': 'period_end', 'end': 'period_end',
+          'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
+          'budgeted total cost': 'planned_value', 'planned cost': 'planned_value',
+        });
+      }
+      const resolveRelationship = (key: string, value: any) => {
+        if (value === '' || value === null || value === undefined) return value;
+        const options = relationshipOptions?.[key];
+        if (!options?.length) return value;
+        const search = String(value).trim().toLowerCase();
+        const direct = options.find((option) => String(option.value).toLowerCase() === search);
+        const label = options.find((option) => String(option.label).trim().toLowerCase() === search);
+        // P6 files normally contain only the displayed activity/contract code,
+        // while application labels often include a description after it.
+        const codedLabel = options.find((option) => String(option.label).trim().toLowerCase().startsWith(`${search} `)
+          || String(option.label).trim().toLowerCase().startsWith(`${search} —`)
+          || String(option.label).trim().toLowerCase().startsWith(`${search} -`));
+        return (direct || label || codedLabel)?.value || value;
+      };
       const mapped = rows.map((r) => {
         const out: Record<string, any> = {};
         for (const [k, v] of Object.entries(r)) {
-          const key = labelToKey[k.toString().toLowerCase().trim()] || k;
+          const key = labelToKey[normalizeHeader(k)] || k;
           out[key] = v;
         }
+        ['project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
+          out[key] = resolveRelationship(key, out[key]);
+        });
         return coerceTypes(out);
       });
       const BATCH = 500;
