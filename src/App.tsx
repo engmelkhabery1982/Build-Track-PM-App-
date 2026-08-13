@@ -5,6 +5,7 @@ import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import type { ViewKey, Project } from '@/types';
+import { scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -163,7 +164,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
   { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
   { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: true },
-  { key: 'planned_value', label: 'Total Planned Value', type: 'money', editable: false },
+  { key: 'planned_value', label: 'Planned Value to Date', type: 'money', editable: false },
   { key: 'earned_work_value', label: 'Earned Work Value', type: 'money', editable: false },
   { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
   { key: 'predecessor_item', label: 'Predecessor Activity', type: 'select', editable: true },
@@ -605,9 +606,10 @@ export default function App() {
         if (!mainItemId) continue;
         const key = `${scheduleContract.project_id}|${scheduleContract.parent_main_contract_id || scheduleContract.id}|${mainItemId}`;
         const previous = scheduleValuesByItem.get(key) || { budget: 0, planned: 0 };
-        const activityPlannedValue = Number(schedule.planned_value) || 0;
+        const activityBudget = scheduleBudget(schedule);
+        const activityPlannedValue = schedulePlannedValueToDate(schedule);
         scheduleValuesByItem.set(key, {
-          budget: previous.budget + (Number(schedule.budget) || 0),
+          budget: previous.budget + activityBudget,
           planned: previous.planned + activityPlannedValue,
         });
       }
@@ -709,7 +711,7 @@ export default function App() {
         for (const project of data.projects as Record<string, any>[]) {
           const budget = Math.round((data.schedules as Record<string, any>[])
             .filter((schedule) => schedule.project_id === project.id)
-            .reduce((sum, schedule) => sum + (Number(schedule.budget) || 0), 0) * 100) / 100;
+            .reduce((sum, schedule) => sum + scheduleBudget(schedule), 0) * 100) / 100;
           const spent = Math.round((data.costs as Record<string, any>[])
             .filter((cost) => cost.project_id === project.id)
             .reduce((sum, cost) => sum + (Number(cost.actual) || 0), 0) * 100) / 100;
@@ -994,10 +996,10 @@ export default function App() {
             const itemPlannedQuantity = activitiesForItem
               .reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0);
             const itemPlannedValue = activitiesForItem
-              .reduce((sum: number, activity: any) => sum + (Number(activity.planned_value) || 0), 0);
+              .reduce((sum: number, activity: any) => sum + scheduleBudget(activity), 0);
             const allocation = itemPlannedQuantity > 0
               ? plannedQuantity / itemPlannedQuantity
-              : itemPlannedValue > 0 ? (Number(schedule.planned_value) || 0) / itemPlannedValue : 0;
+              : itemPlannedValue > 0 ? scheduleBudget(schedule) / itemPlannedValue : 0;
             const earnedWorkValue = derivedWirs
               .filter((wir: any) => {
                 const wirContract = contractById.get(wir.contract_id) as any;
@@ -1013,8 +1015,8 @@ export default function App() {
             ) as any;
             const earned = Math.round(earnedWorkValue * allocation * 100) / 100;
             const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
-            const plannedValue = Number(schedule.planned_value) || 0;
-            const budget = Number(schedule.budget) || 0;
+            const budget = scheduleBudget(schedule);
+            const plannedValue = schedulePlannedValueToDate(schedule);
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
             const costState = actualCost <= budget ? 'Under Budget' : 'Over Budget';

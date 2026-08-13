@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
+import { schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -135,10 +136,8 @@ export function Dashboard({
     // EVM has authoritative sources: PV from Schedule and EV from the
     // WIR-derived committed value in Cost Control. Project progress is a
     // presentation percentage and must not be used to calculate money.
-    const reportDate = new Date().toISOString().slice(0, 10);
     const totalPlannedWork = fSchedules
-      .filter((schedule) => String(schedule.end_date || schedule.start_date || '') <= reportDate)
-      .reduce((s, schedule) => s + (Number(schedule.planned_value) || 0), 0);
+      .reduce((s, schedule) => s + schedulePlannedValueToDate(schedule as Record<string, any>), 0);
     const totalEarnedWork = fCosts.reduce((s, cost) => s + (Number(cost.committed) || 0), 0);
     const costVariance = totalPlannedCosts - totalActualCosts;
 
