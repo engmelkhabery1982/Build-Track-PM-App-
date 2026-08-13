@@ -26,6 +26,28 @@ fn save_document_attachment(app: tauri::AppHandle, file_name: String, bytes: Vec
   Ok(target.display().to_string())
 }
 
+#[tauri::command]
+fn backup_local_database(app: tauri::AppHandle) -> Result<String, String> {
+  // The SQLite plugin stores the local workspace under the app data directory.
+  // Preserve the WAL companions too, so an active SQLite database can be
+  // restored with its most recent committed transactions intact.
+  let source = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+  if !source.exists() { return Err("The local BuildTrack database has not been created yet.".to_string()); }
+  let directory = app.path().download_dir().map_err(|error| error.to_string())?.join("BuildTrack Backups");
+  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+  let stamp = chrono_like_timestamp();
+  let target = directory.join(format!("buildtrack-backup-{}.sqlite", stamp));
+  fs::copy(&source, &target).map_err(|error| error.to_string())?;
+  for suffix in ["-wal", "-shm"] {
+    let companion = std::path::PathBuf::from(format!("{}{}", source.display(), suffix));
+    if companion.exists() {
+      let companion_target = std::path::PathBuf::from(format!("{}{}", target.display(), suffix));
+      fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
+    }
+  }
+  Ok(target.display().to_string())
+}
+
 fn chrono_like_timestamp() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis()).unwrap_or(0) }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -320,7 +342,7 @@ pub fn run() {
         .add_migrations("sqlite:buildtrack.db", migrations)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment])
+    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

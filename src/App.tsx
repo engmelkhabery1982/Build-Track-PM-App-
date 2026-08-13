@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -1975,6 +1975,7 @@ export default function App() {
         <div className="px-5 py-3 border-t border-neutral-700">
           <p className="truncate text-xs font-medium text-neutral-200">{sessionUser?.display_name || sessionUser?.username || 'Local User'}</p>
           <p className="mb-2 text-[10px] text-neutral-500">{activeRole}</p>
+          <button onClick={async () => { try { if (!('__TAURI_INTERNALS__' in window)) throw new Error('Local backup is available in the desktop app only.'); const { invoke } = await import('@tauri-apps/api/core'); const path = await invoke<string>('backup_local_database'); alert(`Local backup saved to:\n${path}`); } catch (error: any) { alert(`Could not create backup: ${error.message || 'Unknown error'}`); } }} className="mb-2 flex items-center gap-1 text-xs text-primary-300 hover:text-primary-200"><Download size={13} /> Backup local data</button>
           <button onClick={() => { localStorage.removeItem('buildtrack:session-user'); setSessionUserId(''); }} className="mb-2 text-xs text-primary-300 hover:text-primary-200">Sign out</button>
           <p className="text-xs text-neutral-500 text-center">BuildTrack v1.0</p>
         </div>
