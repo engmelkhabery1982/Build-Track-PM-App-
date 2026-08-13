@@ -958,6 +958,47 @@ export function DataTableView({
         });
         return coerceTypes(out);
       });
+      // Spreadsheet imports must meet the same relationship and quantity
+      // rules as manual schedule entry. Otherwise an imported P6/MS Project
+      // export could silently produce activities that do not contribute to
+      // project controls or EVM.
+      if (tableName === 'schedules') {
+        const importedQtyByItem = new Map<string, number>();
+        const existingQtyByItem = new Map<string, number>();
+        const existingActivityCountByItem = new Map<string, number>();
+        const importedActivityCountByItem = new Map<string, number>();
+        data.filter((row) => !row.is_summary_row && String(row.activity || '').trim()).forEach((row) => {
+          existingQtyByItem.set(String(row.boq_item_id || ''), (existingQtyByItem.get(String(row.boq_item_id || '')) || 0) + (Number(row.planned_quantity) || 0));
+          existingActivityCountByItem.set(String(row.boq_item_id || ''), (existingActivityCountByItem.get(String(row.boq_item_id || '')) || 0) + 1);
+        });
+        mapped.forEach((row, index) => {
+          const contract = contracts?.find((candidate) => candidate.id === row.contract_id);
+          const item = boqItems?.find((candidate) => candidate.id === row.boq_item_id);
+          if (!contract || contract.parent_main_contract_id) throw new Error(`Row ${index + 2}: select a valid main Contract Code.`);
+          if (!item) throw new Error(`Row ${index + 2}: BOQ Item Code must match an existing main-contract BOQ item.`);
+          const itemOption = relationshipOptions?.boq_item_id?.find((option) => option.value === item.id);
+          if (item.project_id !== contract.project_id || (itemOption?.data?.contract_id && itemOption.data.contract_id !== contract.id)) {
+            throw new Error(`Row ${index + 2}: the selected BOQ item does not belong to the selected main contract.`);
+          }
+          const quantity = Number(row.planned_quantity) || 0;
+          if (quantity <= 0) throw new Error(`Row ${index + 2}: Planned Qty must be greater than zero.`);
+          if (!String(row.activity || '').trim()) throw new Error(`Row ${index + 2}: Activity is required.`);
+          const imported = (importedQtyByItem.get(item.id) || 0) + quantity;
+          const existing = existingQtyByItem.get(item.id) || 0;
+          if (existing + imported > (Number(item.quantity) || 0) + 0.000001) {
+            throw new Error(`Row ${index + 2}: imported planned quantity exceeds the BOQ quantity for ${item.item_code}.`);
+          }
+          importedQtyByItem.set(item.id, imported);
+          importedActivityCountByItem.set(item.id, (importedActivityCountByItem.get(item.id) || 0) + 1);
+          row.project_id = contract.project_id;
+          row.boq_header_id = item.boq_header_id || null;
+          row.boq_item_name = item.item_name || item.description || '';
+          row.unit_rate = Number(item.unit_rate) || 0;
+          row.budget = Math.round(quantity * row.unit_rate * 100) / 100;
+          row.planned_value = row.budget;
+          if (!row.activity_code) row.activity_code = `${item.item_code || 'ITEM'}-ACT-${String((existingActivityCountByItem.get(item.id) || 0) + (importedActivityCountByItem.get(item.id) || 0)).padStart(3, '0')}`;
+        });
+      }
       const BATCH = 500;
       let success = 0;
       const insertedRows: Record<string, any>[] = [];

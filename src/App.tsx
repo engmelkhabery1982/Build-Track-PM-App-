@@ -100,6 +100,13 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'planned_end_date', label: 'Planned Finish', type: 'date', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
+const BASELINE_FORM_COLUMNS: ColumnDef[] = [
+  { key: 'baseline_number', label: 'Baseline #', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'baseline_date', label: 'Approval Date', type: 'date', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
 
 const REPORTING_PERIOD_COLUMNS: ColumnDef[] = [
   { key: 'period_name', label: 'Period Name', type: 'text', editable: true },
@@ -1858,8 +1865,8 @@ export default function App() {
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
         progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
-        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : undefined}
-        editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : undefined}
+        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
+        editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         onInsert={tableName === 'app_users' ? async (userDraft) => {
           const username = String(userDraft.username || '').trim();
           const password = String(userDraft.initial_password || '');
@@ -1874,6 +1881,22 @@ export default function App() {
             ...safeUser, username, display_name: String(userDraft.display_name || username).trim(),
             role: userDraft.role || 'Project Manager', status: userDraft.status || 'Active',
             password_hash: secured.hash, password_salt: secured.salt, last_login_at: null,
+          });
+        } : tableName === 'project_baselines' ? async (baselineDraft) => {
+          const contract = data.contracts.find((item: any) => item.id === baselineDraft.contract_id) as any;
+          if (!contract || contract.parent_main_contract_id) throw new Error('Select a main contract before creating a baseline.');
+          const approvedVariations = data.variations.filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved');
+          const variationValue = approvedVariations.reduce((sum: number, variation: any) => sum + (Number(variation.cost_impact) || 0), 0);
+          const activities = data.schedules.filter((schedule: any) => schedule.contract_id === contract.id && String(schedule.activity || '').trim());
+          const budget = activities.reduce((sum: number, activity: any) => sum + (Number(activity.budget) || Number(activity.planned_value) || 0), 0);
+          const starts = activities.map((activity: any) => String(activity.start_date || '')).filter(Boolean).sort();
+          const ends = activities.map((activity: any) => String(activity.end_date || '')).filter(Boolean).sort();
+          const original = Number(contract.contract_value) || 0;
+          return dataRepository.insert<Record<string, any>>('project_baselines', {
+            ...baselineDraft, project_id: contract.project_id, status: baselineDraft.status || 'Draft',
+            original_contract_value: original, approved_variation_value: variationValue, modified_contract_value: original + variationValue,
+            planned_budget: budget, planned_start_date: starts[0] || contract.start_date || null,
+            planned_end_date: ends[ends.length - 1] || contract.end_date || null,
           });
         } : tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
           const projectCosts = data.costs.filter((cost: any) => cost.project_id === snapshotDraft.project_id);
@@ -1991,6 +2014,10 @@ export default function App() {
           if (password.length < 8) throw new Error('Reset password must contain at least 8 characters.');
           const secured = await hashPassword(password);
           return dataRepository.update<Record<string, any>>('app_users', id, { ...safePatch, password_hash: secured.hash, password_salt: secured.salt });
+        } : tableName === 'project_baselines' ? async (id, baselinePatch) => {
+          const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;
+          if (existing?.status === 'Approved') throw new Error('An approved baseline is frozen. Create a new revision instead of changing it.');
+          return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
         } : undefined}
         onDeleteGroup={tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
           ? async (invoiceRow) => deleteInvoiceGroup(tableName, invoiceRow)
