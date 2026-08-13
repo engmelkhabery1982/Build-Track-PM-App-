@@ -478,6 +478,17 @@ export interface GovernanceRegisterEntry {
   created_at: string;
 }
 
+export interface ApprovalRequest {
+  id: string; project_id: string; contract_id: string | null; entity_type: string; entity_id: string;
+  request_number: string; title: string; requested_by: string; requested_date: string | null;
+  approver: string; decision_date: string | null; status: string; notes: string; created_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string; project_id: string; contract_id: string | null; entity_type: string; entity_id: string;
+  action: string; actor: string; summary: string; before?: Record<string, any> | null; after?: Record<string, any> | null; created_at: string;
+}
+
 export interface WIREntry {
   id: string;
   project_id: string;
@@ -509,7 +520,7 @@ export interface WIREntry {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'governance' | 'approvals' | 'auditLog' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'

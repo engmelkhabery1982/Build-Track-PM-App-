@@ -217,6 +217,29 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_governance_register_project ON governance_register(project_id);
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 6,
+    description: "add_approval_and_audit_governance",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS approval_requests (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_approvals_project ON approval_requests(project_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id);
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

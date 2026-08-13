@@ -5,6 +5,7 @@ const TABLES = new Set([
   "progress_entries", "schedules", "contracts", "boq_headers", "boq_items",
   "schedule_distributions",
   "project_baselines", "reporting_periods", "governance_register",
+  "approval_requests", "audit_log",
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
@@ -60,6 +61,28 @@ export class SqliteRepository implements DataRepository {
     );
     if (!rows[0]) throw new Error(`Record ${id} was not found in ${tableName}.`);
     return rows[0];
+  }
+
+  private async writeAudit(
+    database: Awaited<ReturnType<SqliteRepository['database']>>,
+    action: 'Insert' | 'Update' | 'Delete',
+    entityType: string,
+    record: Record<string, any>,
+    before?: Record<string, any>,
+  ): Promise<void> {
+    if (entityType === 'audit_log') return;
+    const now = new Date().toISOString();
+    const audit = {
+      id: createId(), created_at: now, project_id: record.project_id || null, contract_id: record.contract_id || null,
+      entity_type: entityType, entity_id: record.id, action, actor: 'Local User',
+      before: before || null, after: action === 'Delete' ? null : record,
+      summary: `${action} ${entityType}`,
+    };
+    await database.execute(
+      `INSERT INTO audit_log (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
+       VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7)`,
+      [audit.id, now, nullableId(audit.project_id), nullableId(audit.contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id), JSON.stringify(audit)],
+    );
   }
 
   async list<T extends DataRow>(tableName: string, options: ListOptions = {}): Promise<T[]> {
@@ -123,6 +146,7 @@ export class SqliteRepository implements DataRepository {
         ],
       );
     }
+    await this.writeAudit(database, 'Insert', tableName, record);
     return record as T;
   }
 
@@ -185,12 +209,15 @@ export class SqliteRepository implements DataRepository {
         ],
       );
     }
+    await this.writeAudit(database, 'Update', tableName, record, existing as Record<string, any>);
     return record as T;
   }
 
   async delete(tableName: string, id: string): Promise<void> {
     assertKnownTable(tableName);
+    const existing = this.unpack<Record<string, any>>(await this.findStored(id, tableName));
     const database = await this.database();
     await database.execute(`DELETE FROM ${tableName} WHERE id = $1`, [id]);
+    await this.writeAudit(database, 'Delete', tableName, existing, existing);
   }
 }
