@@ -1698,6 +1698,21 @@ export default function App() {
         } : undefined}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);
+          if (tableName === 'approval_requests' && (mutation.type === 'insert' || mutation.type === 'update')) {
+            const approval = mutation.row as Record<string, any>;
+            const decision = approval.status === 'Approved' ? 'Approved' : approval.status === 'Rejected' ? 'Rejected' : null;
+            const target = approval.entity_type === 'Variation' ? 'variations'
+              : approval.entity_type === 'Baseline' ? 'project_baselines'
+                : approval.entity_type === 'Submittal' ? 'submittals' : null;
+            if (decision && target && approval.entity_id) {
+              void dataRepository.update<Record<string, any>>(target, approval.entity_id, {
+                status: decision,
+                ...(target === 'variations' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
+              }).then((updated) => data.applyLocalMutation(target, { type: 'update', row: updated })).catch((error) =>
+                alert(`Approval was saved, but the linked ${approval.entity_type} could not be updated: ${error.message || 'Unknown error'}`),
+              );
+            }
+          }
           if (tableName === 'contracts') {
             void syncMainContractProjectDates(mutation).catch((error) =>
               alert(`Failed to synchronize project dates: ${error.message || 'Unknown error'}`),
