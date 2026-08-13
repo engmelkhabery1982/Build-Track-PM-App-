@@ -9,28 +9,28 @@ import { addCalendarDays, scheduleBudget, schedulePlannedValueToDate } from '@/u
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Overview' },
-  { key: 'projects', label: 'Projects', icon: FolderKanban, group: 'Overview' },
-  { key: 'tasks', label: 'Tasks', icon: CheckSquare, group: 'Overview' },
-  { key: 'schedule', label: 'Schedule', icon: CalendarClock, group: 'Planning' },
-  { key: 'progress', label: 'Progress', icon: TrendingUp, group: 'Planning' },
-  { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Financial' },
-  { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Financial' },
-  { key: 'boq', label: 'BOQ', icon: ClipboardList, group: 'Financial' },
-  { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Financial' },
-  { key: 'cashflow', label: 'Cash Flow', icon: Banknote, group: 'Financial' },
-  { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Financial' },
-  { key: 'subinvoices', label: 'Sub Invoices', icon: Receipt, group: 'Financial' },
-  { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Financial' },
-  { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Financial' },
-  { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Financial' },
-  { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Financial' },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Home' },
+  { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Projects' },
+  { key: 'tasks', label: 'Project Portfolio', icon: CheckSquare, group: 'Projects' },
+  { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Progress' },
+  { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Progress' },
+  { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Progress' },
+  { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Progress' },
+  { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Progress' },
+  { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial' },
+  { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial' },
+  { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial' },
+  { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial' },
+  { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial' },
+  { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Commercial' },
+  { key: 'cashflow', label: 'Cash Flow', icon: Banknote, group: 'Commercial' },
+  { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost Control' },
+  { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost Control' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Operations' },
-  { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Operations' },
-  { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Operations' },
-  { key: 'wir', label: 'WIR', icon: FileCheck2, group: 'Operations' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Operations' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Operations' },
+  { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Operations' },
+  { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Operations' },
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Operations' },
 ];
 
@@ -479,7 +479,7 @@ export default function App() {
     void normalizeScheduleActivities().catch((error) => console.error('Could not normalize schedule activities.', error));
   }, [data.schedules, data.boqItems, data.applyLocalMutation]);
 
-  const groups = ['Overview', 'Planning', 'Financial', 'Operations'];
+  const groups = ['Home', 'Projects', 'Planning & Progress', 'Commercial', 'Cost Control', 'Operations'];
 
   async function syncSubcontractWirCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
     const sourceId = mutation.row?.id || mutation.id;
