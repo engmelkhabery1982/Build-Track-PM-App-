@@ -36,7 +36,9 @@ fn backup_local_database(app: tauri::AppHandle) -> Result<String, String> {
   let directory = app.path().download_dir().map_err(|error| error.to_string())?.join("BuildTrack Backups");
   fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
   let stamp = chrono_like_timestamp();
-  let target = directory.join(format!("buildtrack-backup-{}.sqlite", stamp));
+  let backup_directory = directory.join(format!("buildtrack-backup-{}", stamp));
+  fs::create_dir_all(&backup_directory).map_err(|error| error.to_string())?;
+  let target = backup_directory.join("buildtrack.db");
   fs::copy(&source, &target).map_err(|error| error.to_string())?;
   for suffix in ["-wal", "-shm"] {
     let companion = std::path::PathBuf::from(format!("{}{}", source.display(), suffix));
@@ -45,7 +47,30 @@ fn backup_local_database(app: tauri::AppHandle) -> Result<String, String> {
       fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
     }
   }
-  Ok(target.display().to_string())
+  let attachments = app.path().app_data_dir().map_err(|error| error.to_string())?.join("attachments");
+  if attachments.exists() {
+    let attachment_target = backup_directory.join("attachments");
+    copy_directory(&attachments, &attachment_target)?;
+  }
+  fs::write(backup_directory.join("BACKUP_INFO.txt"), format!(
+    "BuildTrack local workspace backup\nCreated (UTC milliseconds): {}\nDatabase: buildtrack.db\nAttachments: {}\n\nRestore only while BuildTrack is closed. Keep this folder intact.",
+    stamp, if attachments.exists() { "included" } else { "none" },
+  )).map_err(|error| error.to_string())?;
+  Ok(backup_directory.display().to_string())
+}
+
+fn copy_directory(source: &std::path::Path, target: &std::path::Path) -> Result<(), String> {
+  fs::create_dir_all(target).map_err(|error| error.to_string())?;
+  for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+    let entry = entry.map_err(|error| error.to_string())?;
+    let destination = target.join(entry.file_name());
+    if entry.file_type().map_err(|error| error.to_string())?.is_dir() {
+      copy_directory(&entry.path(), &destination)?;
+    } else {
+      fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
+    }
+  }
+  Ok(())
 }
 
 fn chrono_like_timestamp() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis()).unwrap_or(0) }
