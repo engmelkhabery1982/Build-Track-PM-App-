@@ -19,6 +19,36 @@ import type { LocalDataMutation } from '@/hooks/useData';
 let xlsxModule: Promise<typeof import('xlsx')> | undefined;
 const getXlsx = () => xlsxModule ||= import('xlsx');
 
+function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
+  const lines = content.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n');
+  const rows: Record<string, any>[] = [];
+  let inTaskTable = false;
+  let fields: string[] = [];
+  for (const line of lines) {
+    if (!line) continue;
+    const cells = line.split('\t');
+    if (cells[0] === '%T') { inTaskTable = cells[1] === 'TASK'; fields = []; continue; }
+    if (!inTaskTable) continue;
+    if (cells[0] === '%F') { fields = cells.slice(1); continue; }
+    if (cells[0] !== '%R' || !fields.length) continue;
+    const source = Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? '']));
+    const activityCode = source.task_code || '';
+    const activity = source.task_name || '';
+    if (!activityCode || !activity) continue;
+    rows.push({
+      'Activity ID': activityCode,
+      'Activity Name': activity,
+      Start: String(source.act_start_date || source.target_start_date || source.early_start_date || '').slice(0, 10),
+      Finish: String(source.act_end_date || source.target_end_date || source.early_end_date || '').slice(0, 10),
+      'Original Duration': source.target_drtn || source.remain_drtn || '',
+      'Planned Qty': source.target_work_qty || source.target_equip_qty || '',
+      Calendar: source.clndr_id || '',
+      Notes: source.task_descr || '',
+    });
+  }
+  return rows;
+}
+
 export interface ColumnDef {
   key: string;
   label: string;
@@ -931,13 +961,13 @@ export function DataTableView({
     setImporting(true);
     setImportResult(null);
     try {
-      const XLSX = await getXlsx();
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const isXer = file.name.toLowerCase().endsWith('.xer');
+      if (isXer && tableName !== 'schedules') throw new Error('Primavera XER files can be imported only from Schedule & Activities.');
+      const rows: Record<string, any>[] = isXer
+        ? parsePrimaveraXerTasks(await file.text())
+        : await (async () => { const XLSX = await getXlsx(); const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }) as Record<string, any>[]; })();
       if (rows.length === 0) {
-        setImportResult({ success: 0, failed: 0, errors: ['The Excel file is empty or has no data rows.'] });
+        setImportResult({ success: 0, failed: 0, errors: [isXer ? 'No TASK activities were found in the Primavera XER file.' : 'The Excel file is empty or has no data rows.'] });
         setImporting(false);
         e.target.value = '';
         return;
@@ -995,6 +1025,19 @@ export function DataTableView({
         });
         return coerceTypes(out);
       });
+      if (isXer) {
+        mapped.forEach((row, index) => {
+          const code = String(row.activity_code || '');
+          const item = boqItems?.filter((candidate) => candidate.item_code && (code === candidate.item_code || code.startsWith(`${candidate.item_code}-`)))
+            .sort((a, b) => String(b.item_code).length - String(a.item_code).length)[0];
+          if (!item) throw new Error(`XER activity ${code} (row ${index + 1}) does not begin with an existing BOQ Item Code. Use the generated ITEMCODE-ACT-### format or import through the Excel mapping template.`);
+          const itemOption = relationshipOptions?.boq_item_id?.find((option) => option.value === item.id);
+          if (!itemOption?.data?.contract_id) throw new Error(`BOQ item ${item.item_code} has no main-contract relationship.`);
+          row.boq_item_id = item.id;
+          row.contract_id = itemOption.data.contract_id;
+          row.project_id = item.project_id;
+        });
+      }
       // Spreadsheet imports must meet the same relationship and quantity
       // rules as manual schedule entry. Otherwise an imported P6/MS Project
       // export could silently produce activities that do not contribute to
@@ -1018,7 +1061,7 @@ export function DataTableView({
             throw new Error(`Row ${index + 2}: the selected BOQ item does not belong to the selected main contract.`);
           }
           const quantity = Number(row.planned_quantity) || 0;
-          if (quantity <= 0) throw new Error(`Row ${index + 2}: Planned Qty must be greater than zero.`);
+          if (quantity <= 0) throw new Error(`${isXer ? `XER activity ${row.activity_code}` : `Row ${index + 2}`}: Planned Qty must be greater than zero. Add target work quantity in Primavera or use the Excel mapping template.`);
           if (!String(row.activity || '').trim()) throw new Error(`Row ${index + 2}: Activity is required.`);
           const imported = (importedQtyByItem.get(item.id) || 0) + quantity;
           const existing = existingQtyByItem.get(item.id) || 0;
@@ -1661,7 +1704,7 @@ export function DataTableView({
               <Plus size={15} /> {addButtonLabel}
             </button>}
           </div>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.xer" onChange={handleImportFile} className="hidden" />
         </div>
 
         {/* Filters bar */}
