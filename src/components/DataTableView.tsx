@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -276,6 +276,8 @@ export function DataTableView({
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [visibleFilterKeys, setVisibleFilterKeys] = useState<string[]>(() => filters?.map((filter) => filter.key) || []);
   const [projectFilter, setProjectFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -298,6 +300,27 @@ export function DataTableView({
   const printableRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedScroll = useRef<number>(0);
+
+  const availableFilters = useMemo(() => columns
+    .filter((column) => !['id', 'created_at', 'notes'].includes(column.key))
+    .map((column) => ({ key: column.key, label: column.label, options: column.options || [] })), [columns]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(`buildtrack:visible-filters:${tableName}`);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) setVisibleFilterKeys(parsed.filter((key) => availableFilters.some((filter) => filter.key === key)));
+    } catch { /* Ignore malformed local preference. */ }
+  }, [tableName, availableFilters]);
+
+  function toggleVisibleFilter(key: string) {
+    setVisibleFilterKeys((current) => {
+      const next = current.includes(key) ? current.filter((value) => value !== key) : [...current, key];
+      window.localStorage.setItem(`buildtrack:visible-filters:${tableName}`, JSON.stringify(next));
+      return next;
+    });
+  }
 
   const filtered = useMemo(() => {
     let result = [...data];
@@ -1357,7 +1380,9 @@ export function DataTableView({
               {projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
             </select>
           )}
-          {filters?.map((f) => {
+          {visibleFilterKeys.map((key) => {
+            const f = availableFilters.find((filter) => filter.key === key);
+            if (!f) return null;
             const opts = f.options.length > 0 ? f.options : getDynamicFilterOptions(f.key);
             return (
               <select key={f.key} value={filterValues[f.key] || 'all'}
@@ -1368,6 +1393,24 @@ export function DataTableView({
               </select>
             );
           })}
+          <div className="relative">
+            <button onClick={() => setShowFilterPicker((shown) => !shown)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg bg-white hover:bg-neutral-100">
+              <SlidersHorizontal size={15} /> Filters
+            </button>
+            {showFilterPicker && (
+              <div className="absolute right-0 top-11 z-30 w-72 max-h-80 overflow-auto rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
+                <p className="mb-2 text-xs font-semibold text-neutral-500">Choose visible filter slicers</p>
+                <div className="space-y-1">
+                  {availableFilters.map((filter) => (
+                    <label key={filter.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                      <input type="checkbox" checked={visibleFilterKeys.includes(filter.key)} onChange={() => toggleVisibleFilter(filter.key)} className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />
+                      {filter.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           {dateRangeColumn && (
             <div className="flex items-center gap-1.5">
               <Calendar size={14} className="text-neutral-400" />

@@ -1379,6 +1379,9 @@ export default function App() {
           if (header?.contract_id !== contract.id) {
             throw new Error('The selected BOQ item does not belong to the selected main contract.');
           }
+          if (!String(scheduleRow.activity || '').trim()) {
+            throw new Error('Activity Name is required. A new Schedule row is always an activity under the selected BOQ item.');
+          }
           const start = scheduleRow.start_date ? new Date(`${scheduleRow.start_date}T00:00:00`) : null;
           const end = scheduleRow.end_date ? new Date(`${scheduleRow.end_date}T00:00:00`) : null;
           const calculatedDuration = start && end
@@ -1394,7 +1397,9 @@ export default function App() {
             throw new Error(`Planned quantity exceeds BOQ quantity: existing activities ${alreadyPlanned.toLocaleString()} + new ${plannedQuantity.toLocaleString()} = ${(alreadyPlanned + plannedQuantity).toLocaleString()}, while BOQ allows ${allowedQuantity.toLocaleString()}.`);
           }
           const plannedValue = Math.round(plannedQuantity * (Number(item.unit_rate) || 0) * 100) / 100;
-          const activityNumber = data.schedules.filter((activity: any) => activity.boq_item_id === item.id).length + 1;
+          const activityNumber = data.schedules
+            .filter((activity: any) => activity.boq_item_id === item.id && String(activity.activity || '').trim())
+            .length + 1;
           const generatedActivityCode = `${item.item_code || 'ITEM'}-ACT-${String(activityNumber).padStart(3, '0')}`;
           return dataRepository.insert<Record<string, any>>('schedules', {
             ...scheduleRow,
@@ -1410,6 +1415,7 @@ export default function App() {
             budget: plannedValue,
             planned_value: plannedValue,
             activity_code: scheduleRow.activity_code || generatedActivityCode,
+            schedule_row_type: 'activity',
           });
         } : tableName === 'contracts' ? async (contractRow) => {
           // Project Code is entered with a contract because the main contract
