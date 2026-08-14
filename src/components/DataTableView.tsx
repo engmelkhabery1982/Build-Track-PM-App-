@@ -825,6 +825,21 @@ export function DataTableView({
     }
     if (tableName === 'schedules') {
       const item = boqItems?.find((candidate) => candidate.id === out.boq_item_id);
+      const start = String(out.start_date || '');
+      const end = String(out.end_date || '');
+      const duration = Number(out.duration_days) || 0;
+      if (start && end) {
+        const days = Math.ceil((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000);
+        if (Number.isFinite(days) && days >= 0) out.duration_days = Math.max(1, days);
+      } else if (start && duration > 0) {
+        const finish = new Date(`${start}T00:00:00`);
+        finish.setDate(finish.getDate() + Math.ceil(duration));
+        out.end_date = finish.toISOString().slice(0, 10);
+      } else if (end && duration > 0) {
+        const begin = new Date(`${end}T00:00:00`);
+        begin.setDate(begin.getDate() - Math.ceil(duration));
+        out.start_date = begin.toISOString().slice(0, 10);
+      }
       const quantity = Number(out.planned_quantity) || 0;
       const rate = Number(item?.unit_rate ?? out.unit_rate) || 0;
       out.unit_rate = rate;
@@ -877,7 +892,7 @@ export function DataTableView({
     setRow(updates);
   }
 
-  function applyRelationshipSelection(row: Record<string, any>, changedKey: string, selectedValue: string | null): Record<string, any> {
+  function applyRelationshipSelection(row: Record<string, any>, changedKey: string, selectedValue: string | null, existingRows: Record<string, any>[] = data): Record<string, any> {
     const selected = relationshipOptions?.[changedKey]?.find((option) => option.value === selectedValue);
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
@@ -900,7 +915,7 @@ export function DataTableView({
       const prefix = selected.data.contract_role === 'Subcontract'
         ? `${contractCode}-BOQ-SUB-`
         : `${contractCode}-BOQ-`;
-      const next = data
+      const next = existingRows
         .filter((item) => item.contract_id === selectedValue)
         .map((item) => Number(String(item.boq_code || '').replace(prefix, '')) || 0)
         .reduce((highest, value) => Math.max(highest, value), 0) + 1;
@@ -911,7 +926,7 @@ export function DataTableView({
     if (tableName === 'boq_items' && changedKey === 'boq_header_id' && selected?.data?.boq_code) {
       const boqCode = String(selected.data.boq_code);
       const prefix = `${boqCode}-ITM-`;
-      const next = data
+      const next = existingRows
         .filter((item) => item.boq_header_id === selectedValue)
         .map((item) => Number(String(item.item_code || '').replace(prefix, '')) || 0)
         .reduce((highest, value) => Math.max(highest, value), 0) + 1;
@@ -921,7 +936,7 @@ export function DataTableView({
     }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);
-      const next = data.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
+      const next = existingRows.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
       if (!updated.activity_code || /^ACT-\d+$/i.test(String(updated.activity_code))) {
         updated.activity_code = `${itemCode}-ACT-${String(next).padStart(3, '0')}`;
       }
@@ -932,7 +947,7 @@ export function DataTableView({
     }
     if (tableName === 'wir_entries' && changedKey === 'company_name' && selected?.data?.contract_number) {
       const prefix = `${String(selected.data.contract_number)}-${selected.data.contract_role === 'Subcontract' ? 'SUB-' : ''}WIR-`;
-      const next = data.filter((item) => item.contract_id === selected?.data?.contract_id)
+      const next = existingRows.filter((item) => item.contract_id === selected?.data?.contract_id)
         .map((item) => Number(String(item.wir_number || '').replace(prefix, '')) || 0)
         .reduce((highest, value) => Math.max(highest, value), 0) + 1;
       if (!updated.wir_number || /^WIR-\d+$/i.test(String(updated.wir_number))) {
@@ -942,7 +957,7 @@ export function DataTableView({
     if ((tableName === 'client_invoices' || tableName === 'subcontractor_invoices') && changedKey === 'contract_id' && selected?.data?.contract_number) {
       const suffix = tableName === 'client_invoices' ? 'INV-CLIENT-' : 'INV-SUB-';
       const prefix = `${String(selected.data.contract_number)}-${suffix}`;
-      const next = data.filter((item) => item.contract_id === selectedValue)
+      const next = existingRows.filter((item) => item.contract_id === selectedValue)
         .map((item) => Number(String(item.invoice_number || '').replace(prefix, '')) || 0)
         .reduce((highest, value) => Math.max(highest, value), 0) + 1;
       if (!updated.invoice_number || /^INV-(CLIENT|SUB)-\d+$/i.test(String(updated.invoice_number))) {
@@ -1272,16 +1287,37 @@ export function DataTableView({
           || String(option.label).trim().toLowerCase().startsWith(`${search} -`));
         return (direct || label || codedLabel)?.value || value;
       };
-      const mapped = rows.map((r) => {
+      const rawMapped = rows.map((r) => {
         const out: Record<string, any> = {};
         for (const [k, v] of Object.entries(r)) {
-          const key = labelToKey[normalizeHeader(k)] || k;
-          out[key] = v;
+          const key = labelToKey[normalizeHeader(k)] || (columns.some((column) => column.key === k) ? k : null);
+          if (key) out[key] = v;
         }
-        ['project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
+        ['project_id', 'company_name', 'contract_id', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
           out[key] = resolveRelationship(key, out[key]);
         });
-        return coerceTypes(out);
+        return out;
+      });
+      const stagedRows: Record<string, any>[] = [];
+      const mapped = rawMapped.map((raw, index) => {
+        let enriched = { ...raw };
+        ['company_name', 'project_id', 'contract_id', 'boq_header_id', 'main_boq_item_id', 'boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
+          if (enriched[key] !== '' && enriched[key] !== null && enriched[key] !== undefined) {
+            enriched = applyRelationshipSelection(enriched, key, String(enriched[key]), [...data, ...stagedRows]);
+          }
+        });
+        const control = getCodeControl(tableName);
+        if (control && !String(enriched[control.codeField] || '').trim()) {
+          enriched = prepareCodeControlledInsert(tableName, enriched, [...data, ...stagedRows]);
+        }
+        enriched = coerceTypes(enriched);
+        try {
+          assertCodeIsUnique(tableName, enriched, [...data, ...stagedRows]);
+        } catch (error: any) {
+          throw new Error(`Row ${index + 2}: ${error.message || 'Duplicate generated code.'}`);
+        }
+        stagedRows.push(enriched);
+        return enriched;
       });
       if (isXer) {
         mapped.forEach((row, index) => {
@@ -1337,19 +1373,22 @@ export function DataTableView({
           if (!row.activity_code) row.activity_code = `${item.item_code || 'ITEM'}-ACT-${String((existingActivityCountByItem.get(item.id) || 0) + (importedActivityCountByItem.get(item.id) || 0)).padStart(3, '0')}`;
         });
       }
-      const BATCH = 500;
       let success = 0;
       const insertedRows: Record<string, any>[] = [];
       const errors: string[] = [];
-      for (let i = 0; i < mapped.length; i += BATCH) {
-        const batch = mapped.slice(i, i + BATCH);
+      // Validate and persist one row at a time. This is deliberately more
+      // conservative than a bulk insert: a single invalid relationship must
+      // not discard hundreds of valid BOQ, schedule or WIR records.
+      for (let i = 0; i < mapped.length; i += 1) {
+        const row = mapped[i];
         try {
-          batch.forEach((row) => { assertRelationshipScope(row); validateRecord?.(row); });
-          const inserted = await dataRepository.insertMany<Record<string, any>>(tableName, batch);
-          success += inserted.length;
-          insertedRows.push(...inserted);
+          assertRelationshipScope(row);
+          validateRecord?.(row);
+          const inserted = await dataRepository.insert<Record<string, any>>(tableName, row);
+          success += 1;
+          insertedRows.push(inserted);
         } catch (error: any) {
-          errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message || 'Failed to import.'}`);
+          errors.push(`Row ${i + 2}: ${error.message || 'Failed to import.'}`);
         }
       }
       setImportResult({ success, failed: mapped.length - success, errors });
@@ -1385,8 +1424,18 @@ export function DataTableView({
   async function downloadExcelTemplate() {
     const XLSX = await getXlsx();
     const headerRow: Record<string, string> = {};
-    columns.forEach((c) => { headerRow[c.label] = ''; });
-    if (showProjectFilter) headerRow['Project'] = '';
+    const codeField = getCodeControl(tableName)?.codeField;
+    const derivedProjectTables = new Set(['boq_headers', 'boq_items', 'schedules', 'wir_entries']);
+    const requiredReadOnlyInputs: Record<string, string[]> = {
+      schedules: ['duration_days'],
+    };
+    columns
+      .filter((column) => column.key !== codeField && !column.key.endsWith('_locked'))
+      .filter((column) => column.editable === true || (requiredReadOnlyInputs[tableName] || []).includes(column.key))
+      .forEach((column) => { headerRow[column.label] = ''; });
+    // Project, contract, BOQ and pricing fields that are derived from a
+    // selected relationship must not be typed again in an import worksheet.
+    if (showProjectFilter && !derivedProjectTables.has(tableName)) headerRow.Project = '';
     const ws = XLSX.utils.json_to_sheet([headerRow]);
     ws['!freeze'] = { xSplit: 0, ySplit: 1 };
     const wb = XLSX.utils.book_new();
