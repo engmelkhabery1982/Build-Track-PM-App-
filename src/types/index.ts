@@ -583,10 +583,23 @@ export interface RateHistory {
   created_at: string;
 }
 
+export interface ReportTemplate {
+  id: string;
+  template_name: string;
+  report_type: 'Client Invoice' | 'Subcontractor Invoice' | 'WIR' | 'Variation Order' | 'Cost Report' | 'Cash Forecast' | string;
+  title: string;
+  subtitle: string;
+  logo_data_url: string;
+  selected_fields: string[];
+  footer_text: string;
+  accent_color: string;
+  created_at: string;
+}
+
 export type ViewKey =
   | 'dashboard' | 'alerts' | 'dataQuality' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
-  | 'parties' | 'partyContacts' | 'rateHistory';
+  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates';

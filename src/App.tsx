@@ -4,6 +4,7 @@ import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
+import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -34,6 +35,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'parties', label: 'Clients, Vendors & Subcontractors', icon: Building2, group: 'Commercial & Cash' },
   { key: 'partyContacts', label: 'Party Contacts', icon: ClipboardList, group: 'Commercial & Cash' },
   { key: 'rateHistory', label: 'Rate History', icon: DollarSign, group: 'Commercial & Cash' },
+  { key: 'reportTemplates', label: 'Report Templates', icon: FileText, group: 'Commercial & Cash' },
   { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost & Resources' },
   { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost & Resources' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
@@ -1369,6 +1371,9 @@ export default function App() {
   }
 
   function renderView() {
+    if (activeView === 'reportTemplates') {
+      return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
+    }
     if (activeView === 'dashboard') {
       return (
         <Dashboard

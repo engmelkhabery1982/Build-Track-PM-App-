@@ -384,6 +384,18 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_rate_history_party_item ON rate_history(json_extract(payload, '$.party_id'), json_extract(payload, '$.item_code'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 11,
+    description: "add_report_templates",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS report_templates (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_report_templates_name ON report_templates(lower(json_extract(payload, '$.template_name')));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

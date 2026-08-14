@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory,
+  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -50,6 +50,7 @@ export function useData() {
   const [parties, setParties] = useState<Party[]>([]);
   const [partyContacts, setPartyContacts] = useState<PartyContact[]>([]);
   const [rateHistory, setRateHistory] = useState<RateHistory[]>([]);
+  const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   const listOptional = useCallback(async <T,>(tableName: string): Promise<T[]> => {
@@ -67,7 +68,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr, pa, pc, rh,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr, pa, pc, rh, rt,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -103,6 +104,7 @@ export function useData() {
         listOptional<Party>('parties'),
         listOptional<PartyContact>('party_contacts'),
         listOptional<RateHistory>('rate_history'),
+        listOptional<ReportTemplate>('report_templates'),
       ]);
 
       setProjects(p);
@@ -137,6 +139,7 @@ export function useData() {
       setEquipment(eq);
       setTracking(tr);
       setParties(pa); setPartyContacts(pc); setRateHistory(rh);
+      setReportTemplates(rt);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -199,6 +202,7 @@ export function useData() {
       case 'parties': apply(setParties); break;
       case 'party_contacts': apply(setPartyContacts); break;
       case 'rate_history': apply(setRateHistory); break;
+      case 'report_templates': apply(setReportTemplates); break;
     }
   }, []);
 
@@ -212,7 +216,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations,
-    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, loading,
+    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }

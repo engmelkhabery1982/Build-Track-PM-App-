@@ -109,6 +109,7 @@ interface DataTableViewProps {
   addButtonLabel?: string;
   submitLabel?: string;
   toolbarAction?: { label: string; title?: string; onClick: () => void | Promise<void> };
+  rowAction?: { label: string; title?: string; onClick: (row: Record<string, any>) => void | Promise<void> };
   progressWirs?: Record<string, any>[];
 }
 
@@ -356,7 +357,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -2108,6 +2109,7 @@ export function DataTableView({
                       })}
                       <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
                         <div className="flex items-center justify-end gap-1">
+                          {rowAction && <button onClick={() => void rowAction.onClick(row)} className="text-xs text-violet-700 hover:text-violet-800 font-medium px-2 py-1 rounded hover:bg-violet-50 transition-colors" title={rowAction.title || rowAction.label}>{rowAction.label}</button>}
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
                           {getCodeControl(tableName) && (
                             <button onClick={() => void toggleCodeLock(row)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors">
