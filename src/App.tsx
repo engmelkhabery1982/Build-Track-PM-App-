@@ -218,6 +218,7 @@ const PROCUREMENT_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'item', label: 'Item', type: 'text', editable: true },
+  { key: 'supplier_party_id', label: 'Supplier Master Record', type: 'select', editable: true },
   { key: 'supplier', label: 'Supplier', type: 'text', editable: true },
   { key: 'quantity', label: 'Qty', type: 'number', editable: true },
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
@@ -827,6 +828,53 @@ export default function App() {
     }
   }
 
+  async function upsertRateHistory(entry: Record<string, any>) {
+    const existing = data.rateHistory.find((row: any) => row.source_type === entry.source_type && row.source_id === entry.source_id) as any;
+    if (existing) {
+      const updated = await dataRepository.update<Record<string, any>>('rate_history', existing.id, entry);
+      data.applyLocalMutation('rate_history', { type: 'update', row: updated });
+    } else {
+      const inserted = await dataRepository.insert<Record<string, any>>('rate_history', entry);
+      data.applyLocalMutation('rate_history', { type: 'insert', row: inserted });
+    }
+  }
+
+  async function syncProcurementRateHistory(procurement: Record<string, any>) {
+    if (!procurement.supplier_party_id || !procurement.id) return;
+    const item = data.boqItems.find((row: any) => row.id === procurement.boq_item_id) as any;
+    const contract = data.contracts.find((row: any) => row.id === procurement.contract_id) as any;
+    await upsertRateHistory({
+      party_id: procurement.supplier_party_id,
+      item_code: item?.item_code || procurement.item || '',
+      item_description: item?.item_name || item?.description || procurement.item || '',
+      unit: procurement.unit || item?.unit || '',
+      unit_rate: Number(procurement.unit_cost) || 0,
+      currency: procurement.currency || 'SAR',
+      effective_date: procurement.delivery_date || procurement.order_date || null,
+      source_project_id: procurement.project_id || contract?.project_id || null,
+      source_contract_id: procurement.contract_id || null,
+      source_reference: procurement.purchase_order_number || procurement.reference_number || procurement.id,
+      source_type: 'procurement', source_id: procurement.id,
+      status: 'Historical', notes: 'Generated from procurement.',
+    });
+  }
+
+  async function syncSubcontractRateHistory(boqItem: Record<string, any>) {
+    const header = data.boqHeaders.find((row: any) => row.id === boqItem.boq_header_id) as any;
+    const subcontract = data.contracts.find((row: any) => row.id === header?.contract_id) as any;
+    if (!subcontract?.parent_main_contract_id || !subcontract.contractor_party_id || !boqItem.id) return;
+    await upsertRateHistory({
+      party_id: subcontract.contractor_party_id,
+      item_code: boqItem.item_code || '', item_description: boqItem.item_name || boqItem.description || '',
+      unit: boqItem.unit || '', unit_rate: Number(boqItem.unit_rate) || 0, currency: 'SAR',
+      effective_date: subcontract.signed_date || subcontract.start_date || null,
+      source_project_id: subcontract.project_id || null, source_contract_id: subcontract.id,
+      source_reference: subcontract.contract_number || subcontract.id,
+      source_type: 'subcontract_boq', source_id: boqItem.id,
+      status: 'Historical', notes: 'Generated from subcontract BOQ rate.',
+    });
+  }
+
   useEffect(() => {
     if (synchronizingLiveSubcontractCosts.current || data.wirEntries.length === 0) return;
     const synchronizeLiveSubcontractCosts = async () => {
@@ -859,6 +907,14 @@ export default function App() {
       void synchronizeOperationalSources().catch((error) => console.error('Could not synchronize operational cost sources.', error));
     }
   }, [data.procurement, data.laborDuty, data.equipment, data.contracts, data.boqItems, data.boqHeaders]);
+
+  useEffect(() => {
+    if (data.parties.length === 0) return;
+    void Promise.all([
+      ...data.procurement.map((row: any) => syncProcurementRateHistory(row)),
+      ...data.boqItems.map((row: any) => syncSubcontractRateHistory(row)),
+    ]).catch((error) => console.error('Could not synchronize master-data rate history.', error));
+  }, [data.parties, data.procurement, data.boqItems, data.boqHeaders, data.contracts]);
 
   useEffect(() => {
     if (synchronizingCostControl.current) return;
@@ -1755,6 +1811,9 @@ export default function App() {
     relationshipOptions.contractor_party_id = data.parties
       .filter((party: any) => ['Subcontractor', 'Supplier', 'Consultant'].includes(party.party_type) && party.status !== 'Inactive')
       .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { contractor: party.legal_name } }));
+    relationshipOptions.supplier_party_id = data.parties
+      .filter((party: any) => party.party_type === 'Supplier' && party.status !== 'Inactive')
+      .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { supplier: party.legal_name } }));
     relationshipOptions.contract_id = data.contracts.map((contract) => ({
       value: contract.id,
       // Contract Code selectors must show the business code only. Project

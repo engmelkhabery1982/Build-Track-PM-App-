@@ -860,6 +860,7 @@ export function DataTableView({
     const selectedParty = relationshipOptions?.party_id?.find((option) => option.value === record.party_id);
     const selectedClientParty = relationshipOptions?.client_party_id?.find((option) => option.value === record.client_party_id);
     const selectedContractorParty = relationshipOptions?.contractor_party_id?.find((option) => option.value === record.contractor_party_id);
+    const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -885,6 +886,7 @@ export function DataTableView({
     if (record.party_id && !selectedParty) throw new Error('Select a valid active party from Master Data.');
     if (record.client_party_id && !selectedClientParty) throw new Error('Select a valid active client from Master Data.');
     if (record.contractor_party_id && !selectedContractorParty) throw new Error('Select a valid active contractor from Master Data.');
+    if (record.supplier_party_id && !selectedSupplierParty) throw new Error('Select a valid active supplier from Master Data.');
     const predecessor = relationshipOptions?.predecessor_item?.find((option) => option.value === record.predecessor_item);
     if (predecessor?.data?.project_id && record.project_id && predecessor.data.project_id !== record.project_id) {
       throw new Error('The predecessor activity belongs to a different project.');
