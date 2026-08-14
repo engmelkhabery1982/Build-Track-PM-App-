@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark, Undo2 } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -394,6 +394,7 @@ export function DataTableView({
   const [activeCell, setActiveCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
+  const [lastUndo, setLastUndo] = useState<{ id: string; before: Record<string, any>; label: string } | null>(null);
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -407,6 +408,20 @@ export function DataTableView({
       top: scrollRef.current.scrollTop,
       left: scrollRef.current.scrollLeft,
     };
+  }
+
+  async function undoLastUpdate() {
+    if (!lastUndo || readOnly) return;
+    setSaving(true);
+    preserveViewport();
+    try {
+      const restored = await dataRepository.update<Record<string, any>>(tableName, lastUndo.id, lastUndo.before);
+      onMutated({ type: 'update', row: restored });
+      setClipboardNotice(`Undid ${lastUndo.label}.`);
+      setLastUndo(null);
+    } catch (error: any) {
+      alert(`Could not undo the last change: ${error.message || 'Unknown error'}`);
+    } finally { setSaving(false); }
   }
 
   const availableFilters = useMemo(() => columns
@@ -1173,6 +1188,7 @@ export function DataTableView({
     setSaving(true);
     preserveViewport();
     try {
+      const before = data.find((row) => row.id === editingId);
       const patch = coerceTypes(editRow);
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
       assertValidHierarchyChange(tableName, data, editingId, patch);
@@ -1185,6 +1201,7 @@ export function DataTableView({
       setMinimizedModal(null);
       setEditRow({});
       onMutated({ type: 'update', row: updated });
+      if (before && !onUpdate) setLastUndo({ id: editingId, before: { ...before }, label: 'form edit' });
       const warning = dateWarning?.(updated);
       if (warning) alert(`Saved with schedule warning: ${warning}`);
     } catch (error: any) {
@@ -1414,6 +1431,7 @@ export function DataTableView({
     setInlineEdit(null);
     setInlineValue(null);
     try {
+      const before = data.find((row) => row.id === id);
       const patch: Record<string, any> = { [key]: val };
       if (tableName === 'boq_items' && (key === 'quantity' || key === 'unit_rate')) {
         const existing = data.find((row) => row.id === id) || {};
@@ -1455,6 +1473,7 @@ export function DataTableView({
       validateRecord?.({ ...data.find((row) => row.id === id), ...patch });
       const updated = await dataRepository.update<Record<string, any>>(tableName, id, patch);
       onMutated({ type: 'update', row: updated });
+      if (before) setLastUndo({ id, before: { ...before }, label: `${col?.label || key} edit` });
     } catch (error: any) {
       alert(`Failed to update: ${error.message || 'Unknown error'}`);
     }
@@ -1713,6 +1732,9 @@ export function DataTableView({
   }
 
   function handleGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault(); void undoLastUpdate(); return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
       event.preventDefault(); searchInputRef.current?.focus(); return;
     }
@@ -2003,6 +2025,7 @@ export function DataTableView({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => void undoLastUpdate()} disabled={!lastUndo || saving || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title={lastUndo ? `Undo ${lastUndo.label}` : 'Undo the last direct edit'}><Undo2 size={15} /> Undo</button>
             <button onClick={() => void copySelectedCells()} disabled={selectedCells.size === 0} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Copy selected cells (Ctrl+C)"><Copy size={15} /> Copy</button>
             <button onClick={() => void pasteSelectedCells()} disabled={selectedCells.size === 0} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Paste starting at selected cell (Ctrl+V)"><ClipboardPaste size={15} /> Paste</button>
             <button onClick={() => void fillDownSelectedCells()} disabled={selectedCells.size < 2} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title="Copy the top selected value down through the selected range"><ArrowDownToLine size={15} /> Fill Down</button>
@@ -2156,7 +2179,7 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+D fills down, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+D fills down, Ctrl+Z undoes the last direct edit, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
         <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 shadow-sm">
           <div className="w-16 shrink-0 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center text-xs font-semibold text-primary-700" title={activeCellInfo?.column.label || 'Select a cell'}>
             {activeCellInfo ? `${excelColumnName(activeCellInfo.columnIndex)}${activeCellInfo.rowIndex + 1}` : '—'}
