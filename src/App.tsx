@@ -1370,6 +1370,43 @@ export default function App() {
     return dataRepository.update<Record<string, any>>(trackingTable, trackingId, patch);
   }
 
+  function previewInvoiceWithTemplate(invoiceTable: 'client_invoices' | 'subcontractor_invoices', invoiceRow: Record<string, any>) {
+    const reportType = invoiceTable === 'client_invoices' ? 'Client Invoice' : 'Subcontractor Invoice';
+    const templates = data.reportTemplates.filter((template: any) => template.report_type === reportType) as Record<string, any>[];
+    if (templates.length === 0) { alert(`Create a ${reportType} template first in Report Templates.`); return; }
+    let template = templates[0];
+    if (templates.length > 1) {
+      const choices = templates.map((item, index) => `${index + 1}. ${item.template_name}`).join('\n');
+      const choice = Number(window.prompt(`Choose a template:\n${choices}`, '1'));
+      if (!Number.isInteger(choice) || choice < 1 || choice > templates.length) return;
+      template = templates[choice - 1];
+    }
+    const rows = (invoiceTable === 'client_invoices' ? data.clientInvoices : data.subInvoices)
+      .filter((row: any) => row.invoice_number === invoiceRow.invoice_number) as Record<string, any>[];
+    if (rows.length === 0) { alert('Invoice lines could not be found.'); return; }
+    const contract = data.contracts.find((item: any) => item.id === invoiceRow.contract_id) as any;
+    const project = data.projects.find((item: any) => item.id === invoiceRow.project_id) as any;
+    const fields = new Set<string>(template.selected_fields || []);
+    const total = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const esc = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char] || char));
+    const money = (value: unknown) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'SAR', maximumFractionDigits: 2 });
+    const headerValues: Record<string, unknown> = {
+      'Invoice Number': invoiceRow.invoice_number, Project: `${project?.project_code || ''} ${project?.name || ''}`.trim(), Contract: contract?.contract_number || '',
+      Client: contract?.client || invoiceRow.client || '', Subcontractor: contract?.contractor || invoiceRow.subcontractor || '',
+      Period: `${invoiceRow.source_from_date || ''} — ${invoiceRow.source_to_date || ''}`, 'Payment Status': invoiceRow.payment_status || 'Unpaid', 'Grand Total': money(total),
+    };
+    const header = [...fields].filter((field) => headerValues[field] !== undefined).map((field) => `<div class="meta"><span>${esc(field)}</span><strong>${esc(headerValues[field])}</strong></div>`).join('');
+    const lineFields = ['BOQ Item Code', 'Description', 'Unit', 'Quantity', 'Unit Rate', 'Amount'].filter((field) => fields.has(field));
+    const valueFor = (row: Record<string, any>, field: string) => ({
+      'BOQ Item Code': row.boq_item_code || row.boq_item_id, Description: row.item_desc || '', Unit: row.unit || '', Quantity: Number(row.quantity || 0).toLocaleString(), 'Unit Rate': money(row.unit_rate), Amount: money(row.amount),
+    }[field] || '');
+    const table = lineFields.length ? `<table><thead><tr>${lineFields.map((field) => `<th>${esc(field)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${lineFields.map((field) => `<td>${esc(valueFor(row, field))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+    const win = window.open('', '_blank', 'width=1100,height=800');
+    if (!win) { alert('Allow pop-ups to preview the invoice.'); return; }
+    win.document.write(`<!doctype html><html><head><title>${esc(template.template_name)}</title><style>body{font-family:Arial,sans-serif;margin:38px;color:#1f2937}.head{display:flex;gap:20px;align-items:center;border-bottom:4px solid ${esc(template.accent_color || '#2563eb')};padding-bottom:18px}.logo{max-width:130px;max-height:80px;object-fit:contain}.title{font-size:27px;font-weight:700}.sub{color:#6b7280;margin-top:6px}.meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0}.meta{border:1px solid #d1d5db;border-radius:7px;padding:9px}.meta span{display:block;font-size:11px;color:#6b7280}.meta strong{display:block;margin-top:3px;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:20px}th{background:${esc(template.accent_color || '#2563eb')};color:white;text-align:left;padding:9px;font-size:12px}td{border:1px solid #d1d5db;padding:9px;font-size:12px}footer{margin-top:28px;border-top:1px solid #d1d5db;padding-top:10px;color:#6b7280;font-size:11px}@media print{body{margin:20px}}</style></head><body><div class="head">${template.logo_data_url ? `<img class="logo" src="${template.logo_data_url}"/>` : ''}<div><div class="title">${esc(template.title || template.template_name)}</div><div class="sub">${esc(template.subtitle)}</div></div></div><div class="meta-grid">${header}</div>${table}<footer>${esc(template.footer_text || '')}</footer></body></html>`);
+    win.document.close();
+  }
+
   function renderView() {
     if (activeView === 'reportTemplates') {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
@@ -2169,6 +2206,15 @@ export default function App() {
           label: 'Migrate Existing Parties',
           title: 'Create master records and link existing contracts and procurement without deleting legacy names.',
           onClick: migrateLegacyParties,
+        } : undefined}
+        rowAction={tableName === 'client_invoices' ? {
+          label: 'Preview Invoice',
+          title: 'Render this complete client invoice using a saved flexible template.',
+          onClick: (row) => previewInvoiceWithTemplate('client_invoices', row),
+        } : tableName === 'subcontractor_invoices' ? {
+          label: 'Preview Invoice',
+          title: 'Render this complete subcontractor invoice using a saved flexible template.',
+          onClick: (row) => previewInvoiceWithTemplate('subcontractor_invoices', row),
         } : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
