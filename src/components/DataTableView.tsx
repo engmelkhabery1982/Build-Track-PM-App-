@@ -5,6 +5,7 @@ import {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
   assertValidHierarchyChange,
+  assertRecordGovernance,
   createCodeDraft,
   dataRepository,
   getCodeControl,
@@ -819,6 +820,7 @@ export function DataTableView({
   }
 
   function assertRelationshipScope(record: Record<string, any>): void {
+    assertRecordGovernance(tableName, record);
     const selectedContract = relationshipOptions?.contract_id?.find((option) => option.value === record.contract_id);
     const selectedHeader = relationshipOptions?.boq_header_id?.find((option) => option.value === record.boq_header_id);
     const selectedItem = relationshipOptions?.boq_item_id?.find((option) => option.value === record.boq_item_id);
@@ -1105,7 +1107,7 @@ export function DataTableView({
       for (let i = 0; i < mapped.length; i += BATCH) {
         const batch = mapped.slice(i, i + BATCH);
         try {
-          batch.forEach((row) => validateRecord?.(row));
+          batch.forEach((row) => { assertRecordGovernance(tableName, row); validateRecord?.(row); });
           const inserted = await dataRepository.insertMany<Record<string, any>>(tableName, batch);
           success += inserted.length;
           insertedRows.push(...inserted);
@@ -1409,6 +1411,7 @@ export function DataTableView({
             patch.amount = Math.round(quantity * rate * 100) / 100;
           }
           assertCodeUpdateAllowed(tableName, targetRow, patch);
+          assertRecordGovernance(tableName, { ...targetRow, ...patch });
           const updated = await dataRepository.update<Record<string, any>>(tableName, targetRow.id, patch);
           onMutated({ type: 'update', row: updated });
           nextSelection.add(`${targetRow.id}:${column.key}`);
@@ -1459,6 +1462,7 @@ export function DataTableView({
             patch.amount = Math.round(quantity * rate * 100) / 100;
           }
           assertCodeUpdateAllowed(tableName, target, patch);
+          assertRecordGovernance(tableName, { ...target, ...patch });
           const updated = await dataRepository.update<Record<string, any>>(tableName, target.id, patch);
           onMutated({ type: 'update', row: updated });
           count += 1;

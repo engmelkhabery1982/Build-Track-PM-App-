@@ -9,6 +9,7 @@ export { SqliteRepository } from "./sqliteRepository";
 export { selectPrimaryContracts } from "./contractRules";
 export { getMainContractId } from "./contractScope";
 export { assertValidHierarchyChange } from "./hierarchyRules";
+export { assertRecordGovernance } from "./governanceRules";
 export {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
