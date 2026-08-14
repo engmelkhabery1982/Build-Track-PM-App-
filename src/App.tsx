@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
+import { PmoInsights } from '@/components/PmoInsights';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -13,6 +14,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
   { key: 'alerts', label: 'PMO Alerts', icon: Bell, group: 'Executive' },
   { key: 'dataQuality', label: 'Data Quality Checks', icon: CircleAlert, group: 'Executive' },
+  { key: 'insights', label: 'PMO Insights', icon: BrainCircuit, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
   { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
@@ -1453,6 +1455,20 @@ export default function App() {
   function renderView() {
     if (activeView === 'reportTemplates') {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
+    }
+    if (activeView === 'insights') {
+      return <PmoInsights
+        projects={data.projects as Record<string, any>[]}
+        contracts={data.contracts as Record<string, any>[]}
+        schedules={data.schedules as Record<string, any>[]}
+        costs={data.costs as Record<string, any>[]}
+        variations={data.variations as Record<string, any>[]}
+        clientInvoiceTracking={data.clientInvoiceTracking as Record<string, any>[]}
+        subcontractorInvoiceTracking={data.subcontractorInvoiceTracking as Record<string, any>[]}
+        rfis={data.rfis as Record<string, any>[]}
+        quality={data.quality as Record<string, any>[]}
+        onNavigate={setActiveView}
+      />;
     }
     if (activeView === 'dashboard') {
       return (
