@@ -1407,6 +1407,49 @@ export default function App() {
     win.document.close();
   }
 
+  function previewRecordWithTemplate(reportType: 'WIR' | 'Variation Order' | 'Cost Report' | 'Cash Forecast', row: Record<string, any>) {
+    const templates = data.reportTemplates.filter((template: any) => template.report_type === reportType) as Record<string, any>[];
+    if (templates.length === 0) { alert(`Create a ${reportType} template first in Report Templates.`); return; }
+    let template = templates[0];
+    if (templates.length > 1) {
+      const choices = templates.map((item, index) => `${index + 1}. ${item.template_name}`).join('\n');
+      const choice = Number(window.prompt(`Choose a template:\n${choices}`, '1'));
+      if (!Number.isInteger(choice) || choice < 1 || choice > templates.length) return;
+      template = templates[choice - 1];
+    }
+    const contract = data.contracts.find((item: any) => item.id === row.contract_id) as any;
+    const project = data.projects.find((item: any) => item.id === row.project_id) as any;
+    const item = data.boqItems.find((entry: any) => entry.id === row.boq_item_id) as any;
+    const esc = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char] || char));
+    const money = (value: unknown) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'SAR', maximumFractionDigits: 2 });
+    const projectName = `${project?.project_code || row.project_code || ''} ${project?.name || ''}`.trim();
+    const common = { Project: projectName, Contract: contract?.contract_number || row.contract_number || '' };
+    const values: Record<string, unknown> = reportType === 'WIR' ? {
+      ...common, 'WIR Number': row.wir_number || row.request_number || row.id, Contractor: contract?.contractor || row.contractor || '',
+      'BOQ Item Code': row.boq_item_code || item?.item_code || '', Description: row.item_description || item?.item_name || item?.description || '', Unit: row.unit || item?.unit || '',
+      Quantity: Number(row.quantity || 0).toLocaleString(), 'Unit Price': money(row.unit_price), Amount: money(row.item_amount || (Number(row.quantity) || 0) * (Number(row.unit_price) || 0)),
+      'Inspection Date': row.inspection_date || '', Result: row.result || row.status || '', Inspector: row.inspector || '',
+    } : reportType === 'Variation Order' ? {
+      ...common, 'Variation Number': row.variation_number || row.code || row.id, Title: row.title || '', Description: row.description || '',
+      'Cost Impact': money(row.cost_impact), 'Time Impact': `${Number(row.time_impact_days || 0).toLocaleString()} days`, Status: row.status || '', 'Approved By': row.approved_by || '', 'Approved Date': row.approved_date || '',
+    } : reportType === 'Cost Report' ? {
+      ...common, 'BOQ Item Code': row.boq_item_code || item?.item_code || '', Description: row.description || item?.item_name || item?.description || '',
+      Budget: money(row.budget), 'Planned Value': money(row.planned), 'Actual Cost': money(row.actual), 'Earned Value': money(row.committed),
+      CPI: Number(row.actual || 0) > 0 ? (Number(row.committed || 0) / Number(row.actual || 0)).toFixed(2) : '—',
+      SPI: Number(row.planned || 0) > 0 ? (Number(row.committed || 0) / Number(row.planned || 0)).toFixed(2) : '—',
+    } : {
+      ...common, Date: row.date || '', Category: row.category || '', 'Movement Type': row.movement_type || '', Inflow: money(row.inflow), Outflow: money(row.outflow),
+      Net: money(row.net ?? (Number(row.inflow || 0) - Number(row.outflow || 0))), 'Cumulative Balance': money(row.cumulative_balance), Status: row.status || '',
+    };
+    const selected = (template.selected_fields || []).filter((field: string) => values[field] !== undefined);
+    const detailRows = selected.map((field: string) => `<tr><td>${esc(field)}</td><td>${esc(values[field])}</td></tr>`).join('');
+    const win = window.open('', '_blank', 'width=900,height=760');
+    if (!win) { alert('Allow pop-ups to preview the report.'); return; }
+    const accent = esc(template.accent_color || '#2563eb');
+    win.document.write(`<!doctype html><html><head><title>${esc(template.template_name)}</title><style>body{font-family:Arial,sans-serif;margin:38px;color:#1f2937}.head{display:flex;gap:20px;align-items:center;border-bottom:4px solid ${accent};padding-bottom:18px}.logo{max-width:130px;max-height:80px;object-fit:contain}.title{font-size:27px;font-weight:700}.sub{color:#6b7280;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:28px}td{border:1px solid #d1d5db;padding:10px;font-size:13px}td:first-child{width:42%;font-weight:600;background:#f9fafb}footer{margin-top:28px;border-top:1px solid #d1d5db;padding-top:10px;color:#6b7280;font-size:11px}</style></head><body><div class="head">${template.logo_data_url ? `<img class="logo" src="${template.logo_data_url}"/>` : ''}<div><div class="title">${esc(template.title || template.template_name)}</div><div class="sub">${esc(template.subtitle)}</div></div></div><table>${detailRows}</table><footer>${esc(template.footer_text || '')}</footer></body></html>`);
+    win.document.close();
+  }
+
   function renderView() {
     if (activeView === 'reportTemplates') {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
@@ -2215,6 +2258,22 @@ export default function App() {
           label: 'Preview Invoice',
           title: 'Render this complete subcontractor invoice using a saved flexible template.',
           onClick: (row) => previewInvoiceWithTemplate('subcontractor_invoices', row),
+        } : tableName === 'wir_entries' ? {
+          label: 'Preview WIR',
+          title: 'Render this inspection request using a saved flexible template.',
+          onClick: (row) => previewRecordWithTemplate('WIR', row),
+        } : tableName === 'variations' ? {
+          label: 'Preview VO',
+          title: 'Render this variation order using a saved flexible template.',
+          onClick: (row) => previewRecordWithTemplate('Variation Order', row),
+        } : tableName === 'costs' ? {
+          label: 'Preview Cost',
+          title: 'Render this cost-control record using a saved flexible template.',
+          onClick: (row) => previewRecordWithTemplate('Cost Report', row),
+        } : tableName === 'cash_flow' ? {
+          label: 'Preview Cash',
+          title: 'Render this cash-flow record using a saved flexible template.',
+          onClick: (row) => previewRecordWithTemplate('Cash Forecast', row),
         } : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
