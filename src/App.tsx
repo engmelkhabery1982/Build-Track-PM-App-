@@ -31,6 +31,9 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'subcontractorInvoiceTracking', label: 'Sub Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'cashflow', label: 'Cash Flow', icon: Banknote, group: 'Commercial & Cash' },
+  { key: 'parties', label: 'Clients, Vendors & Subcontractors', icon: Building2, group: 'Commercial & Cash' },
+  { key: 'partyContacts', label: 'Party Contacts', icon: ClipboardList, group: 'Commercial & Cash' },
+  { key: 'rateHistory', label: 'Rate History', icon: DollarSign, group: 'Commercial & Cash' },
   { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost & Resources' },
   { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost & Resources' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
@@ -300,7 +303,9 @@ const CONTRACT_COLUMNS: ColumnDef[] = [
   { key: 'parent_main_contract_id', label: 'Parent Main Contract', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
   { key: 'project_name', label: 'Project Name', type: 'text', editable: true },
+  { key: 'client_party_id', label: 'Client Master Record', type: 'select', editable: true },
   { key: 'client', label: 'Client', type: 'text', editable: true },
+  { key: 'contractor_party_id', label: 'Contractor Master Record', type: 'select', editable: true },
   { key: 'contractor', label: 'Contractor', type: 'text', editable: true },
   { key: 'contract_type', label: 'Type', type: 'status', editable: true, options: CONTRACT_TYPES },
   { key: 'contract_value', label: 'Original Contract Value', type: 'money', editable: true },
@@ -338,6 +343,43 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'planned_start_date', label: 'Current Plan Start', type: 'date', editable: true },
   { key: 'planned_end_date', label: 'Current Plan Finish', type: 'date', editable: true },
   { key: 'variance_reason', label: 'Schedule Variance Reason', type: 'text', editable: true },
+];
+
+const PARTY_COLUMNS: ColumnDef[] = [
+  { key: 'party_code', label: 'Party Code', type: 'text', editable: true },
+  { key: 'legal_name', label: 'Legal Name', type: 'text', editable: true },
+  { key: 'trading_name', label: 'Trading Name', type: 'text', editable: true },
+  { key: 'party_type', label: 'Type', type: 'status', editable: true, options: ['Client', 'Supplier', 'Subcontractor', 'Consultant'] },
+  { key: 'tax_number', label: 'Tax Number', type: 'text', editable: true },
+  { key: 'registration_number', label: 'Registration #', type: 'text', editable: true },
+  { key: 'payment_terms_days', label: 'Payment Terms (days)', type: 'number', editable: true },
+  { key: 'phone', label: 'Phone', type: 'text', editable: true },
+  { key: 'email', label: 'Email', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
+const PARTY_CONTACT_COLUMNS: ColumnDef[] = [
+  { key: 'party_id', label: 'Party', type: 'select', editable: true },
+  { key: 'contact_name', label: 'Contact Name', type: 'text', editable: true },
+  { key: 'job_title', label: 'Job Title', type: 'text', editable: true },
+  { key: 'phone', label: 'Phone', type: 'text', editable: true },
+  { key: 'email', label: 'Email', type: 'text', editable: true },
+  { key: 'is_primary', label: 'Primary', type: 'boolean', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
+];
+
+const RATE_HISTORY_COLUMNS: ColumnDef[] = [
+  { key: 'party_id', label: 'Party', type: 'select', editable: true },
+  { key: 'item_code', label: 'Item / BOQ Code', type: 'text', editable: true },
+  { key: 'item_description', label: 'Item Description', type: 'text', editable: true },
+  { key: 'unit', label: 'Unit', type: 'text', editable: true },
+  { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
+  { key: 'currency', label: 'Currency', type: 'text', editable: true, options: ['SAR', 'USD', 'AED', 'EGP', 'EUR'] },
+  { key: 'effective_date', label: 'Effective Date', type: 'date', editable: true },
+  { key: 'source_reference', label: 'Source Reference', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Historical', 'Superseded'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const CASHFLOW_COLUMNS: ColumnDef[] = [
@@ -510,6 +552,9 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
   cashflow: { columns: CASHFLOW_COLUMNS, showProjectFilter: true, dateRangeColumn: 'date' },
+  parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
+  partyContacts: { columns: PARTY_CONTACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
+  rateHistory: { columns: RATE_HISTORY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Historical', 'Superseded'] }], dateRangeColumn: 'effective_date' },
   subinvoices: { columns: SUBINV_COLUMNS, showProjectFilter: true },
   clientinvoices: { columns: CLIENTINV_COLUMNS, showProjectFilter: true },
   clientInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
@@ -530,6 +575,7 @@ const TABLE_NAMES: Record<string, string> = {
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', documents: 'documents', wir: 'wir_entries',
   laborDuty: 'labor_duty', equipment: 'equipment', tracking: 'tracking_sheet',
+  parties: 'parties', partyContacts: 'party_contacts', rateHistory: 'rate_history',
 };
 
 const VIEW_TITLES: Record<string, string> = {
@@ -540,6 +586,7 @@ const VIEW_TITLES: Record<string, string> = {
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', documents: 'Documents', wir: 'Work Inspection Reports',
   laborDuty: 'Labor Duty', equipment: 'Equipment', tracking: 'Tracking Sheet',
+  parties: 'Clients, Vendors & Subcontractors', partyContacts: 'Party Contacts', rateHistory: 'Rate History',
 };
 
 export default function App() {
@@ -1472,6 +1519,12 @@ export default function App() {
           ? data.schedules
           : activeView === 'scheduleDistributions'
             ? data.scheduleDistributions
+            : activeView === 'parties'
+              ? data.parties
+              : activeView === 'partyContacts'
+                ? data.partyContacts
+                : activeView === 'rateHistory'
+                  ? data.rateHistory
           : activeView === 'subinvoices'
             ? data.subInvoices
             : activeView === 'clientinvoices'
@@ -1689,6 +1742,19 @@ export default function App() {
         contractor: project.contractor,
       },
     }));
+    relationshipOptions.party_id = data.parties
+      .filter((party: any) => party.status !== 'Inactive')
+      .map((party: any) => ({
+        value: party.id,
+        label: `${party.party_code || 'PTY'} - ${party.legal_name || party.trading_name || party.id}`,
+        data: { party_code: party.party_code, legal_name: party.legal_name, party_type: party.party_type },
+      }));
+    relationshipOptions.client_party_id = data.parties
+      .filter((party: any) => party.party_type === 'Client' && party.status !== 'Inactive')
+      .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { client: party.legal_name } }));
+    relationshipOptions.contractor_party_id = data.parties
+      .filter((party: any) => ['Subcontractor', 'Supplier', 'Consultant'].includes(party.party_type) && party.status !== 'Inactive')
+      .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { contractor: party.legal_name } }));
     relationshipOptions.contract_id = data.contracts.map((contract) => ({
       value: contract.id,
       // Contract Code selectors must show the business code only. Project
@@ -1850,6 +1916,13 @@ export default function App() {
     if (activeView === 'clientinvoices') {
       autoFillOptions.client = [...new Set(data.clientInvoices.map((r: any) => r.client).filter(Boolean))];
     }
+    if (activeView === 'contracts') {
+      autoFillOptions.client = data.parties.filter((party: any) => party.party_type === 'Client' && party.status !== 'Inactive').map((party: any) => party.legal_name);
+      autoFillOptions.contractor = data.parties.filter((party: any) => party.party_type === 'Subcontractor' && party.status !== 'Inactive').map((party: any) => party.legal_name);
+    }
+    if (activeView === 'procurement') {
+      autoFillOptions.supplier = data.parties.filter((party: any) => party.party_type === 'Supplier' && party.status !== 'Inactive').map((party: any) => party.legal_name);
+    }
     if (activeView === 'laborDuty') {
       autoFillOptions.worker_name = [...new Set(data.laborDuty.map((r: any) => r.worker_name).filter(Boolean))];
       autoFillOptions.project_code = [...new Set(data.projects.map((r: any) => r.project_code).filter(Boolean))];
@@ -1871,7 +1944,7 @@ export default function App() {
         showProjectFilter={config.showProjectFilter}
         initialProjectId={workspaceProjectId || undefined}
         showProjectColumn={tableName !== 'contracts'}
-        projectPickerInForm={!['contracts', 'boq_headers', 'boq_items', 'client_invoices', 'subcontractor_invoices'].includes(tableName)}
+        projectPickerInForm={!['contracts', 'boq_headers', 'boq_items', 'client_invoices', 'subcontractor_invoices', 'parties', 'party_contacts', 'rate_history'].includes(tableName)}
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
         contracts={data.contracts}

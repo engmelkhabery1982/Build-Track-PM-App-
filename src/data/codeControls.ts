@@ -1,4 +1,4 @@
-export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices';
+export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'parties';
 
 export interface CodeControl {
   codeField: string;
@@ -47,6 +47,7 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
   wir_entries: { codeField: 'wir_number', lockField: 'wir_number_locked', defaultPrefix: 'WIR', scopeFields: ['contract_id'] },
   client_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-CLIENT', scopeFields: ['contract_id'] },
   subcontractor_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-SUB', scopeFields: ['contract_id'] },
+  parties: { codeField: 'party_code', lockField: 'party_code_locked', defaultPrefix: 'PTY', scopeFields: [] },
 };
 
 function isCodeControlledTable(tableName: string): tableName is CodeControlledTable {
@@ -141,6 +142,29 @@ export function assertCodeUpdateAllowed(
   const codeChanged = control.codeField in patch && value(patch, control.codeField) !== value(existingRow, control.codeField);
   if (existingRow[control.lockField] === true && codeChanged) {
     throw new Error(`${control.codeField.replace('_', ' ')} is locked. Unlock it before changing the code.`);
+  }
+}
+
+/** Enforces the same scoped uniqueness used by automatic code generation.
+ * Invoice rows are intentionally excluded because one invoice contains many
+ * BOQ lines with the same invoice number. Invoice creation governs that group
+ * separately at the commercial workflow level. */
+export function assertCodeIsUnique(
+  tableName: string,
+  record: Record<string, unknown>,
+  existingRows: Record<string, unknown>[],
+): void {
+  const control = getCodeControl(tableName);
+  if (!control || tableName === 'client_invoices' || tableName === 'subcontractor_invoices') return;
+  const code = value(record, control.codeField);
+  if (!code) throw new Error(`${control.codeField.replace('_', ' ')} is required.`);
+  const conflict = existingRows.find((row) =>
+    value(row, 'id') !== value(record, 'id')
+    && isSameScope(row, record, control.scopeFields)
+    && value(row, control.codeField).toLowerCase() === code.toLowerCase(),
+  );
+  if (conflict) {
+    throw new Error(`${control.codeField.replace('_', ' ')} "${code}" already exists in this scope.`);
   }
 }
 

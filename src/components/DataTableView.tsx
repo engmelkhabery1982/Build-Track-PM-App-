@@ -3,6 +3,7 @@ import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight
 import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
+  assertCodeIsUnique,
   assertCodeUpdateAllowed,
   assertValidHierarchyChange,
   assertRecordGovernance,
@@ -851,10 +852,14 @@ export function DataTableView({
 
   function assertRelationshipScope(record: Record<string, any>): void {
     assertRecordGovernance(tableName, record);
+    assertCodeIsUnique(tableName, record, data);
     const selectedContract = relationshipOptions?.contract_id?.find((option) => option.value === record.contract_id);
     const selectedHeader = relationshipOptions?.boq_header_id?.find((option) => option.value === record.boq_header_id);
     const selectedItem = relationshipOptions?.boq_item_id?.find((option) => option.value === record.boq_item_id);
     const selectedSchedule = relationshipOptions?.schedule_id?.find((option) => option.value === record.schedule_id);
+    const selectedParty = relationshipOptions?.party_id?.find((option) => option.value === record.party_id);
+    const selectedClientParty = relationshipOptions?.client_party_id?.find((option) => option.value === record.client_party_id);
+    const selectedContractorParty = relationshipOptions?.contractor_party_id?.find((option) => option.value === record.contractor_party_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -877,6 +882,9 @@ export function DataTableView({
     if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
       throw new Error('The selected activity belongs to a different project.');
     }
+    if (record.party_id && !selectedParty) throw new Error('Select a valid active party from Master Data.');
+    if (record.client_party_id && !selectedClientParty) throw new Error('Select a valid active client from Master Data.');
+    if (record.contractor_party_id && !selectedContractorParty) throw new Error('Select a valid active contractor from Master Data.');
     const predecessor = relationshipOptions?.predecessor_item?.find((option) => option.value === record.predecessor_item);
     if (predecessor?.data?.project_id && record.project_id && predecessor.data.project_id !== record.project_id) {
       throw new Error('The predecessor activity belongs to a different project.');
@@ -1034,7 +1042,7 @@ export function DataTableView({
       'invoice_date', 'due_date', 'payment_date', 'order_date', 'delivery_date',
       'baseline_date', 'data_date', 'raised_date', 'submitted_date',
       'requested_date', 'decision_date', 'approved_date', 'upload_date',
-      'period_start', 'period_end', 'from_date', 'to_date',
+      'period_start', 'period_end', 'from_date', 'to_date', 'effective_date',
     ];
     for (const field of dateFields) {
       const date = String(record[field] || '');

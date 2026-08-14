@@ -359,6 +359,31 @@ pub fn run() {
       CREATE UNIQUE INDEX IF NOT EXISTS uq_app_users_username ON app_users(json_extract(payload, '$.username'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 10,
+    description: "add_party_master_data",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS parties (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS party_contacts (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS rate_history (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_parties_party_code ON parties(json_extract(payload, '$.party_code'));
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_parties_legal_name ON parties(lower(json_extract(payload, '$.legal_name')));
+      CREATE INDEX IF NOT EXISTS idx_party_contacts_party_id ON party_contacts(json_extract(payload, '$.party_id'));
+      CREATE INDEX IF NOT EXISTS idx_rate_history_party_item ON rate_history(json_extract(payload, '$.party_id'), json_extract(payload, '$.item_code'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

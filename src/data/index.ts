@@ -13,6 +13,7 @@ export { assertRecordGovernance } from "./governanceRules";
 export {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
+  assertCodeIsUnique,
   createCodeDraft,
   getCodeControl,
   prepareCodeControlledInsert,

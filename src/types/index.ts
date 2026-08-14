@@ -533,9 +533,56 @@ export interface WIREntry {
   created_at: string;
 }
 
+export interface Party {
+  id: string;
+  party_code: string;
+  legal_name: string;
+  trading_name: string;
+  party_type: 'Client' | 'Supplier' | 'Subcontractor' | 'Consultant' | string;
+  tax_number: string;
+  registration_number: string;
+  payment_terms_days: number;
+  phone: string;
+  email: string;
+  address: string;
+  status: 'Active' | 'Inactive' | string;
+  notes: string;
+  created_at: string;
+}
+
+export interface PartyContact {
+  id: string;
+  party_id: string;
+  contact_name: string;
+  job_title: string;
+  phone: string;
+  email: string;
+  is_primary: boolean;
+  status: string;
+  created_at: string;
+}
+
+export interface RateHistory {
+  id: string;
+  party_id: string;
+  item_code: string;
+  item_description: string;
+  unit: string;
+  unit_rate: number;
+  currency: string;
+  effective_date: string | null;
+  source_project_id: string | null;
+  source_contract_id: string | null;
+  source_reference: string;
+  status: string;
+  notes: string;
+  created_at: string;
+}
+
 export type ViewKey =
   | 'dashboard' | 'alerts' | 'dataQuality' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
-  | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking';
+  | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
+  | 'parties' | 'partyContacts' | 'rateHistory';

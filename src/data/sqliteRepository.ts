@@ -12,6 +12,7 @@ const TABLES = new Set([
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
+  "parties", "party_contacts", "rate_history",
 ]);
 
 type StoredRow = {
