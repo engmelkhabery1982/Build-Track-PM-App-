@@ -481,6 +481,11 @@ export function DataTableView({
     window.localStorage.setItem(`buildtrack:saved-views:${tableName}`, JSON.stringify(next));
   }
 
+  function resetColumnWidths() {
+    setColumnWidths({});
+    window.localStorage.removeItem(`buildtrack:column-widths:${tableName}`);
+  }
+
   function toggleVisibleFilter(key: string) {
     setVisibleFilterKeys((current) => {
       const next = current.includes(key) ? current.filter((value) => value !== key) : [...current, key];
@@ -1714,6 +1719,9 @@ export function DataTableView({
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault(); applyFormulaBar(); return;
     }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault(); void fillDownSelectedCells(); return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); void copySelectedCells(); return; }
     // Do not consume Ctrl+V here. Tauri's WebView may deny navigator.clipboard,
     // while the browser-native paste event still provides the text securely.
@@ -2073,6 +2081,7 @@ export function DataTableView({
             {showViewPicker && (
               <div className="absolute right-0 top-11 z-30 w-72 rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
                 <button onClick={saveCurrentView} className="mb-2 w-full rounded-lg bg-primary-50 px-3 py-2 text-left text-sm font-semibold text-primary-700 hover:bg-primary-100">Save current filters as a view</button>
+                <button onClick={resetColumnWidths} className="mb-2 w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-neutral-600 hover:bg-neutral-100">Reset column widths</button>
                 {savedViews.length ? <div className="max-h-56 space-y-1 overflow-auto">{savedViews.map((view) => <div key={view.name} className="flex items-center gap-1 rounded-lg hover:bg-neutral-50"><button onClick={() => applySavedView(view)} className="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm text-neutral-700">{view.name}</button><button onClick={() => deleteSavedView(view.name)} className="rounded p-1 text-neutral-400 hover:bg-error-50 hover:text-error-600" title="Delete saved view"><X size={14}/></button></div>)}</div> : <p className="px-2 py-2 text-xs text-neutral-500">No saved views yet.</p>}
               </div>
             )}
@@ -2147,7 +2156,7 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+D fills down, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
         <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 shadow-sm">
           <div className="w-16 shrink-0 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center text-xs font-semibold text-primary-700" title={activeCellInfo?.column.label || 'Select a cell'}>
             {activeCellInfo ? `${excelColumnName(activeCellInfo.columnIndex)}${activeCellInfo.rowIndex + 1}` : '—'}
