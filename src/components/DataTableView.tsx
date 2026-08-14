@@ -93,6 +93,7 @@ interface DataTableViewProps {
   relationshipOptions?: Record<string, SelectOption[]>;
   relationshipAutoFillFields?: string[];
   contracts?: { id: string; project_id: string; parent_main_contract_id?: string | null; start_date?: string | null; end_date?: string | null }[];
+  baselines?: Record<string, any>[];
   onInsert?: (row: Record<string, any>) => Promise<Record<string, any> | Record<string, any>[]>;
   onUpdate?: (id: string, row: Record<string, any>) => Promise<Record<string, any>>;
   dateWarning?: (row: Record<string, any>) => string | null;
@@ -353,7 +354,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -752,6 +753,7 @@ export function DataTableView({
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
+      'baseline_start_date', 'baseline_end_date', 'planned_start_date', 'planned_end_date', 'variance_reason',
       ...(relationshipAutoFillFields || []),
     ]);
     const relatedData = Object.fromEntries(
@@ -874,9 +876,10 @@ export function DataTableView({
     }
     if (tableName === 'schedules') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
+      const isExecutableActivity = Boolean(String(record.activity || '').trim());
       const plannedQuantity = Number(record.planned_quantity) || 0;
       if (!item) throw new Error('Select a valid main BOQ item for the activity.');
-      if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
+      if (isExecutableActivity && plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
       // A blank activity is the BOQ Total row, not an executable activity.
       // It is derived from children and must not consume BOQ quantity.
       const otherActivities = data.filter((activity) =>
@@ -885,10 +888,78 @@ export function DataTableView({
         activity.is_summary_row !== true &&
         String(activity.activity || '').trim(),
       );
-      const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + plannedQuantity;
+      const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + (isExecutableActivity ? plannedQuantity : 0);
       const allowed = Number(item.quantity) || 0;
       if (total > allowed + 0.000001) {
         throw new Error(`Planned quantity exceeds BOQ quantity: existing activities ${otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0).toLocaleString()} + new ${plannedQuantity.toLocaleString()} = ${total.toLocaleString()}, while BOQ allows ${allowed.toLocaleString()}.`);
+      }
+      const itemStart = String(item.planned_start_date || item.baseline_start_date || '');
+      const itemEnd = String(item.planned_end_date || item.baseline_end_date || '');
+      const activityStart = String(record.start_date || '');
+      const activityEnd = String(record.end_date || '');
+      if (isExecutableActivity && (!itemStart || !itemEnd)) {
+        throw new Error('Set the governed BOQ item start and finish dates before adding an activity.');
+      }
+      const outsideItemDates = (itemStart && activityStart && activityStart < itemStart)
+        || (itemEnd && activityEnd && activityEnd > itemEnd);
+      if (isExecutableActivity && outsideItemDates && !String(record.variance_reason || '').trim()) {
+        throw new Error(`Activity dates are outside the governed BOQ item period (${itemStart || 'not set'} to ${itemEnd || 'not set'}). Enter a variance reason before saving.`);
+      }
+    }
+    if (tableName === 'wir_entries') {
+      const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
+      if (!item) throw new Error('Select a valid BOQ item before saving the inspection request.');
+      const mainItemId = String((item as any).main_boq_item_id || item.id);
+      const mainItem = boqItems?.find((candidate) => candidate.id === mainItemId) || item;
+      const reservedQuantity = progressWirs
+        .filter((wir) => wir.id !== record.id && String(wir.result || '') !== 'Fail' && String(wir.status || '') !== 'Rejected')
+        .filter((wir) => {
+          const wirItem = boqItems?.find((candidate) => candidate.id === wir.boq_item_id);
+          return String((wirItem as any)?.main_boq_item_id || wirItem?.id || '') === mainItemId;
+        })
+        .reduce((sum, wir) => sum + (Number(wir.quantity) || 0), 0);
+      const requestedQuantity = Number(record.quantity) || 0;
+      const allowedQuantity = Number((mainItem as any).quantity) || 0;
+      if (reservedQuantity + requestedQuantity > allowedQuantity + 0.000001) {
+        throw new Error(`Inspection quantity exceeds the governed BOQ quantity: existing requests ${reservedQuantity.toLocaleString()} + new ${requestedQuantity.toLocaleString()} = ${(reservedQuantity + requestedQuantity).toLocaleString()}, while BOQ allows ${allowedQuantity.toLocaleString()}.`);
+      }
+      const itemStart = String((mainItem as any).planned_start_date || (mainItem as any).baseline_start_date || '');
+      const itemEnd = String((mainItem as any).planned_end_date || (mainItem as any).baseline_end_date || '');
+      const inspectionDate = String(record.inspection_date || '');
+      if (!itemStart || !itemEnd) {
+        throw new Error('Set the governed main BOQ item start and finish dates before adding an inspection request.');
+      }
+      if (((itemStart && inspectionDate && inspectionDate < itemStart) || (itemEnd && inspectionDate && inspectionDate > itemEnd))
+        && !String(record.variance_reason || '').trim()) {
+        throw new Error(`Inspection date is outside the governed BOQ item period (${itemStart || 'not set'} to ${itemEnd || 'not set'}). Enter a variance reason before saving.`);
+      }
+    }
+    if (tableName === 'boq_items' && !selectedContractRow?.parent_main_contract_id) {
+      const mainContractId = record.contract_id || selectedHeader?.data?.contract_id;
+      const baseline = baselines
+        .filter((row) => row.status === 'Approved' && row.contract_id === mainContractId)
+        .sort((a, b) => String(b.baseline_date || '').localeCompare(String(a.baseline_date || '')))[0];
+      const baselineStart = String(record.baseline_start_date || '');
+      const baselineEnd = String(record.baseline_end_date || '');
+      if (baseline && baselineStart && baseline.planned_start_date && baselineStart < String(baseline.planned_start_date)) {
+        throw new Error('BOQ baseline start cannot be before the approved project baseline start.');
+      }
+      if (baseline && baselineEnd && baseline.planned_end_date && baselineEnd > String(baseline.planned_end_date)) {
+        throw new Error('BOQ baseline finish cannot be after the approved project baseline finish.');
+      }
+      const currentStart = String(record.planned_start_date || '');
+      const currentEnd = String(record.planned_end_date || '');
+      const changedFromBaseline = (baselineStart && currentStart && currentStart !== baselineStart)
+        || (baselineEnd && currentEnd && currentEnd !== baselineEnd);
+      if (changedFromBaseline && !String(record.variance_reason || '').trim()) {
+        throw new Error('A BOQ current-plan date differs from its baseline date. Enter a schedule variance reason before saving.');
+      }
+    }
+    if (tableName === 'project_baselines') {
+      const baselineContract = contracts?.find((contract) => contract.id === record.contract_id) as Record<string, any> | undefined;
+      if (baselineContract?.parent_main_contract_id) throw new Error('A project baseline can be assigned only to a main contract.');
+      if (record.status === 'Approved' && data.some((row) => row.id !== record.id && row.contract_id === record.contract_id && row.status === 'Approved')) {
+        throw new Error('Only one approved baseline is allowed per main contract. Supersede the current baseline first.');
       }
     }
     assertDateGovernance(record);
@@ -903,7 +974,9 @@ export function DataTableView({
     const parentContract = tableName === 'contracts' && record.parent_main_contract_id
       ? contracts?.find((contract) => contract.id === record.parent_main_contract_id) as Record<string, any> | undefined
       : undefined;
-    const scope = parentContract || (tableName === 'contracts' ? undefined : ownContract);
+    const mainContractId = ownContract ? getMainContractId(ownContract.id, contracts || []) : null;
+    const mainContract = mainContractId ? contracts?.find((contract) => contract.id === mainContractId) as Record<string, any> | undefined : undefined;
+    const scope = parentContract || (tableName === 'contracts' ? undefined : (mainContract || ownContract));
     // A main contract is the master date source and is allowed to extend its
     // project; its update is then synchronized to Projects by App. Every
     // other operational record is constrained by its contract/project.
@@ -911,8 +984,15 @@ export function DataTableView({
       ? undefined
       : projects.find((candidate) => candidate.id === (record.project_id || ownContract?.project_id));
     const scopeStart = String(scope?.start_date || project?.start_date || '');
-    const scopeEnd = String(scope?.end_date || project?.end_date || '');
-    const dateFields = ['start_date', 'end_date', 'inspection_date', 'date', 'invoice_date', 'order_date', 'delivery_date'];
+    const scopeEnd = String(scope?.revised_end_date || scope?.end_date || project?.end_date || '');
+    const dateFields = [
+      'start_date', 'end_date', 'planned_start_date', 'planned_end_date',
+      'baseline_start_date', 'baseline_end_date', 'inspection_date', 'date',
+      'invoice_date', 'due_date', 'payment_date', 'order_date', 'delivery_date',
+      'baseline_date', 'data_date', 'raised_date', 'submitted_date',
+      'requested_date', 'decision_date', 'approved_date', 'upload_date',
+      'period_start', 'period_end', 'from_date', 'to_date',
+    ];
     for (const field of dateFields) {
       const date = String(record[field] || '');
       if (!date) continue;
@@ -1107,7 +1187,7 @@ export function DataTableView({
       for (let i = 0; i < mapped.length; i += BATCH) {
         const batch = mapped.slice(i, i + BATCH);
         try {
-          batch.forEach((row) => { assertRecordGovernance(tableName, row); validateRecord?.(row); });
+          batch.forEach((row) => { assertRelationshipScope(row); validateRecord?.(row); });
           const inserted = await dataRepository.insertMany<Record<string, any>>(tableName, batch);
           success += inserted.length;
           insertedRows.push(...inserted);
@@ -1411,7 +1491,7 @@ export function DataTableView({
             patch.amount = Math.round(quantity * rate * 100) / 100;
           }
           assertCodeUpdateAllowed(tableName, targetRow, patch);
-          assertRecordGovernance(tableName, { ...targetRow, ...patch });
+          assertRelationshipScope({ ...targetRow, ...patch });
           const updated = await dataRepository.update<Record<string, any>>(tableName, targetRow.id, patch);
           onMutated({ type: 'update', row: updated });
           nextSelection.add(`${targetRow.id}:${column.key}`);
@@ -1462,7 +1542,7 @@ export function DataTableView({
             patch.amount = Math.round(quantity * rate * 100) / 100;
           }
           assertCodeUpdateAllowed(tableName, target, patch);
-          assertRecordGovernance(tableName, { ...target, ...patch });
+          assertRelationshipScope({ ...target, ...patch });
           const updated = await dataRepository.update<Record<string, any>>(tableName, target.id, patch);
           onMutated({ type: 'update', row: updated });
           count += 1;

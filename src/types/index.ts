@@ -257,6 +257,13 @@ export interface BOQItem {
   boq_header_id: string | null;
   /** Required for subcontractor items; links to the priced main BOQ item. */
   main_boq_item_id?: string | null;
+  /** Frozen schedule dates captured from the approved project baseline. */
+  baseline_start_date?: string | null;
+  baseline_end_date?: string | null;
+  /** Current approved planning window; activities and inspections are governed against it. */
+  planned_start_date?: string | null;
+  planned_end_date?: string | null;
+  variance_reason?: string | null;
   item_code_locked: boolean;
   last_modified: string;
   notes: string;

@@ -275,6 +275,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
+  { key: 'variance_reason', label: 'Date Variance Reason', type: 'text', editable: true },
   { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
@@ -332,6 +333,11 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'quantity', label: 'Qty', type: 'number', editable: true },
   { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
   { key: 'amount', label: 'Amount', type: 'money' },
+  { key: 'baseline_start_date', label: 'Baseline Start', type: 'date', editable: true },
+  { key: 'baseline_end_date', label: 'Baseline Finish', type: 'date', editable: true },
+  { key: 'planned_start_date', label: 'Current Plan Start', type: 'date', editable: true },
+  { key: 'planned_end_date', label: 'Current Plan Finish', type: 'date', editable: true },
+  { key: 'variance_reason', label: 'Schedule Variance Reason', type: 'text', editable: true },
 ];
 
 const CASHFLOW_COLUMNS: ColumnDef[] = [
@@ -437,6 +443,7 @@ const WIR_COLUMNS: ColumnDef[] = [
   { key: 'item_amount', label: 'Item Amount', type: 'money' },
   { key: 'completion_pct', label: 'Completion %', type: 'progress' },
   { key: 'remarks', label: 'Remarks', type: 'text', editable: true },
+  { key: 'variance_reason', label: 'Date Variance Reason', type: 'text', editable: true },
 ];
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
@@ -1529,13 +1536,14 @@ export default function App() {
             const summaryQuantity = isSummaryRow && childActivities.length > 0
               ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.planned_quantity) || 0), 0)
               : plannedQuantity;
-            const summaryStart = isSummaryRow && childActivities.length > 0
-              ? childActivities.map((activity: any) => String(activity.start_date || '')).filter(Boolean).sort()[0] || schedule.start_date
-              : schedule.start_date;
+            // The BOQ date is the governed plan. Child activities are execution
+            // forecasts and must not silently rewrite the controlled BOQ date.
+            const governedStart = mainItem?.planned_start_date || mainItem?.baseline_start_date || schedule.start_date;
+            const governedEnd = mainItem?.planned_end_date || mainItem?.baseline_end_date || schedule.end_date;
+            const summaryStart = isSummaryRow ? governedStart : schedule.start_date;
             const childEndDates = childActivities.map((activity: any) => String(activity.end_date || '')).filter(Boolean).sort();
-            const summaryEnd = isSummaryRow && childActivities.length > 0
-              ? childEndDates[childEndDates.length - 1] || schedule.end_date
-              : schedule.end_date;
+            const forecastEnd = childEndDates[childEndDates.length - 1] || '';
+            const summaryEnd = isSummaryRow ? governedEnd : schedule.end_date;
             const summaryDuration = isSummaryRow && childActivities.length > 0
               ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.duration_days) || 0), 0)
               : (Number(schedule.duration_days) || 0);
@@ -1546,9 +1554,13 @@ export default function App() {
               ? calendarSpan - summaryDuration
               : 0;
             const revisedFinish = scheduleContract?.revised_end_date || scheduleContract?.end_date;
-            const dateAlert = revisedFinish && schedule.end_date && String(schedule.end_date) > revisedFinish
+            const reportedFinish = isSummaryRow ? forecastEnd || governedEnd : schedule.end_date;
+            const boqDelay = isSummaryRow && forecastEnd && governedEnd && forecastEnd > governedEnd
+              ? `Delayed against BOQ plan: forecast ${forecastEnd}, governed finish ${governedEnd}`
+              : '';
+            const dateAlert = revisedFinish && reportedFinish && String(reportedFinish) > revisedFinish
               ? `⚠ Delayed: finishes after revised contract end (${revisedFinish})`
-              : scheduleContract?.end_date && schedule.end_date && String(schedule.end_date) > String(scheduleContract.end_date)
+              : scheduleContract?.end_date && reportedFinish && String(reportedFinish) > String(scheduleContract.end_date)
                 ? `ℹ Uses approved time extension to ${revisedFinish || schedule.end_date}`
                 : '';
             const cpi = actualCost > 0 ? earned / actualCost : null;
@@ -1576,7 +1588,7 @@ export default function App() {
               actual_cost: actualCost,
               cost_cpi: cpi,
               schedule_spi: spi,
-              status: `${calendarGapDays !== 0 ? `Calendar ${calendarGapDays > 0 ? 'gap' : 'overlap'}: ${Math.abs(calendarGapDays)} day(s) | ` : ''}${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
+              status: `${calendarGapDays !== 0 ? `Calendar ${calendarGapDays > 0 ? 'gap' : 'overlap'}: ${Math.abs(calendarGapDays)} day(s) | ` : ''}${boqDelay ? `${boqDelay} | ` : ''}${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
             };
           })
         : activeView === 'progress'
@@ -1798,12 +1810,14 @@ export default function App() {
         dateRangeColumn={config.dateRangeColumn}
         boqItems={data.boqItems}
         contracts={data.contracts}
+        baselines={data.baselines}
         dateWarning={tableName === 'schedules' ? (activity) => {
           const contract = contractsWithModifiedValue.find((row: any) => row.id === activity.contract_id) as any;
           const revisedEnd = contract?.revised_end_date || contract?.end_date;
-          const boqSummary = data.schedules.find((row: any) => row.boq_item_id === activity.boq_item_id && !String(row.activity || '').trim() && row.id !== activity.id) as any;
-          if (boqSummary?.end_date && activity.end_date && String(activity.end_date) > String(boqSummary.end_date)) {
-            return `Activity finish ${activity.end_date} is later than the current BOQ finish ${boqSummary.end_date}; the BOQ total row will be extended and the item is delayed against its former plan.`;
+          const item = data.boqItems.find((row: any) => row.id === activity.boq_item_id) as any;
+          const governedEnd = item?.planned_end_date || item?.baseline_end_date;
+          if (governedEnd && activity.end_date && String(activity.end_date) > String(governedEnd)) {
+            return `Activity finish ${activity.end_date} is later than the governed BOQ finish ${governedEnd}. The BOQ plan remains unchanged and the activity is reported as delayed.`;
           }
           return revisedEnd && activity.end_date && String(activity.end_date) > String(revisedEnd)
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
@@ -1864,7 +1878,7 @@ export default function App() {
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
-        progressWirs={tableName === 'progress_entries' ? derivedWirs : undefined}
+        progressWirs={data.wirEntries}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         onInsert={tableName === 'app_users' ? async (userDraft) => {
