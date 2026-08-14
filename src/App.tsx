@@ -348,7 +348,7 @@ const CASHFLOW_COLUMNS: ColumnDef[] = [
   { key: 'inflow', label: 'Inflow', type: 'money', editable: true },
   { key: 'outflow', label: 'Outflow', type: 'money', editable: true },
   { key: 'net', label: 'Net', type: 'money' },
-  { key: 'cumulative_balance', label: 'Cumulative', type: 'money', editable: true },
+  { key: 'cumulative_balance', label: 'Cumulative', type: 'money', editable: false },
 ];
 
 const SUBINV_COLUMNS: ColumnDef[] = [
@@ -1009,6 +1009,10 @@ export default function App() {
     const isSubcontract = Boolean(contract.parent_main_contract_id);
     if (invoiceTable === 'client_invoices' && isSubcontract) throw new Error('Client invoices are created from main-contract WIRs only.');
     if (invoiceTable === 'subcontractor_invoices' && !isSubcontract) throw new Error('Subcontractor invoices are created from subcontract WIRs only.');
+    const existingInvoices = invoiceTable === 'client_invoices' ? data.clientInvoices : data.subInvoices;
+    if (existingInvoices.some((row: any) => row.contract_id === contract.id && row.invoice_number === draft.invoice_number)) {
+      throw new Error(`Invoice number ${draft.invoice_number} already exists for this contract. Use a new invoice number.`);
+    }
 
     const matchingWirs = data.wirEntries.filter((wir: any) =>
       wir.contract_id === contract.id &&
@@ -1114,6 +1118,67 @@ export default function App() {
     if (invoiceTable === 'client_invoices') await data.reloadInvoiceTracking('client_invoice_tracking');
     else await data.reloadInvoiceTracking('subcontractor_invoice_tracking');
     return invoiceRows;
+  }
+
+  async function updateInvoiceTrackingAndCash(
+    trackingTable: 'client_invoice_tracking' | 'subcontractor_invoice_tracking',
+    trackingId: string,
+    patch: Record<string, any>,
+  ): Promise<Record<string, any>> {
+    const trackingRows = trackingTable === 'client_invoice_tracking'
+      ? data.clientInvoiceTracking as Record<string, any>[]
+      : data.subcontractorInvoiceTracking as Record<string, any>[];
+    const current = trackingRows.find((row) => row.id === trackingId);
+    if (!current) throw new Error('The invoice tracking record no longer exists. Refresh and try again.');
+    const updatedTracking = { ...current, ...patch };
+    const invoiceTable = trackingTable === 'client_invoice_tracking' ? 'client_invoices' : 'subcontractor_invoices';
+    const invoiceRows = (invoiceTable === 'client_invoices' ? data.clientInvoices : data.subInvoices)
+      .filter((row: any) => row.invoice_number === updatedTracking.invoice_number) as Record<string, any>[];
+
+    // Invoice tracking is the commercial control point. Keep every generated
+    // line for the invoice aligned with the single tracking decision.
+    for (const invoiceRow of invoiceRows) {
+      const updatedInvoice = await dataRepository.update<Record<string, any>>(invoiceTable, invoiceRow.id, {
+        status: updatedTracking.status,
+        payment_status: updatedTracking.payment_status,
+        payment_date: updatedTracking.payment_date || null,
+        due_date: updatedTracking.due_date || null,
+      });
+      data.applyLocalMutation(invoiceTable, { type: 'update', row: updatedInvoice });
+    }
+
+    const sourceType = trackingTable === 'client_invoice_tracking' ? 'client_invoice' : 'subcontractor_invoice';
+    const sourceId = String(updatedTracking.invoice_number);
+    const existingCash = data.cashFlow.find((row: any) => row.source_type === sourceType && String(row.source_id) === sourceId) as any;
+    if (updatedTracking.payment_status === 'Paid') {
+      const amount = Number(updatedTracking.total_work_value) || invoiceRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+      const isClient = trackingTable === 'client_invoice_tracking';
+      const cashRow = {
+        project_id: updatedTracking.project_id,
+        contract_id: updatedTracking.contract_id,
+        date: updatedTracking.payment_date,
+        description: `${isClient ? 'Client invoice received' : 'Subcontractor invoice paid'}: ${sourceId}`,
+        category: isClient ? 'Client Receipt' : 'Subcontractor Payment',
+        inflow: isClient ? amount : 0,
+        outflow: isClient ? 0 : amount,
+        net: isClient ? amount : -amount,
+        cumulative_balance: 0,
+        source_type: sourceType,
+        source_id: sourceId,
+      };
+      if (existingCash) {
+        const updatedCash = await dataRepository.update<Record<string, any>>('cash_flow', existingCash.id, cashRow);
+        data.applyLocalMutation('cash_flow', { type: 'update', row: updatedCash });
+      } else {
+        const insertedCash = await dataRepository.insert<Record<string, any>>('cash_flow', cashRow);
+        data.applyLocalMutation('cash_flow', { type: 'insert', row: insertedCash });
+      }
+    } else if (existingCash) {
+      await dataRepository.delete('cash_flow', existingCash.id);
+      data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+    }
+
+    return dataRepository.update<Record<string, any>>(trackingTable, trackingId, patch);
   }
 
   function renderView() {
@@ -2032,7 +2097,9 @@ export default function App() {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;
           if (existing?.status === 'Approved') throw new Error('An approved baseline is frozen. Create a new revision instead of changing it.');
           return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
-        } : undefined}
+        } : tableName === 'client_invoice_tracking' || tableName === 'subcontractor_invoice_tracking'
+          ? async (id, trackingPatch) => updateInvoiceTrackingAndCash(tableName, id, trackingPatch)
+          : undefined}
         onDeleteGroup={tableName === 'client_invoices' || tableName === 'subcontractor_invoices'
           ? async (invoiceRow) => deleteInvoiceGroup(tableName, invoiceRow)
           : undefined}

@@ -536,6 +536,23 @@ export function DataTableView({
         amount: r.amount ?? Math.round(((Number(r.quantity) || 0) * (Number(r.unit_rate) || 0)) * 100) / 100,
       }));
     }
+    if (tableName === 'cash_flow') {
+      const runningBalance = new Map<string, number>();
+      const balanceById = new Map<string, number>();
+      [...data]
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+        .forEach((row) => {
+          const scope = String(row.contract_id || row.project_id || 'unassigned');
+          const balance = (runningBalance.get(scope) || 0) + (Number(row.inflow) || 0) - (Number(row.outflow) || 0);
+          runningBalance.set(scope, balance);
+          balanceById.set(String(row.id), Math.round(balance * 100) / 100);
+        });
+      return filtered.map((row) => ({
+        ...row,
+        net: Math.round(((Number(row.inflow) || 0) - (Number(row.outflow) || 0)) * 100) / 100,
+        cumulative_balance: balanceById.get(String(row.id)) || 0,
+      }));
+    }
     return filtered;
   }, [filtered, tableName, dateFrom, dateTo, progressWirs, projects]);
 
@@ -669,6 +686,17 @@ export function DataTableView({
       const qty = Number(out.quantity) || 0;
       const ur = Number(out.unit_rate) || 0;
       out.amount = Math.round(qty * ur * 100) / 100;
+    }
+    if (tableName === 'procurement') {
+      const qty = Number(out.quantity) || 0;
+      const unitCost = Number(out.unit_cost) || 0;
+      out.total_cost = Math.round(qty * unitCost * 100) / 100;
+    }
+    if (tableName === 'cash_flow') {
+      out.inflow = Number(out.inflow) || 0;
+      out.outflow = Number(out.outflow) || 0;
+      out.net = Math.round((out.inflow - out.outflow) * 100) / 100;
+      out.cumulative_balance = 0;
     }
     if (tableName === 'boq_items') {
       const qty = Number(out.quantity) || 0;
@@ -843,6 +871,9 @@ export function DataTableView({
     if (selectedItem?.data?.boq_header_id && record.boq_header_id && selectedItem.data.boq_header_id !== record.boq_header_id) {
       throw new Error('The selected BOQ item belongs to a different BOQ.');
     }
+    if (selectedItem?.data?.contract_id && record.contract_id && selectedItem.data.contract_id !== record.contract_id) {
+      throw new Error('The selected BOQ item belongs to a different contract.');
+    }
     if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
       throw new Error('The selected activity belongs to a different project.');
     }
@@ -873,6 +904,18 @@ export function DataTableView({
     }
     if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
       throw new Error('A subcontractor invoice must be assigned to a subcontract.');
+    }
+    if (tableName === 'cash_flow') {
+      const inflow = Number(record.inflow) || 0;
+      const outflow = Number(record.outflow) || 0;
+      if (inflow > 0 && outflow > 0) throw new Error('A cash-flow row must be either an inflow or an outflow, not both.');
+      if (inflow === 0 && outflow === 0) throw new Error('Enter a positive inflow or outflow for the cash-flow row.');
+    }
+    if (tableName === 'client_invoice_tracking' || tableName === 'subcontractor_invoice_tracking') {
+      const paymentStatus = String(record.payment_status || '');
+      const paymentDate = String(record.payment_date || '');
+      if (paymentStatus === 'Paid' && !paymentDate) throw new Error('A paid invoice requires a payment date.');
+      if (paymentStatus !== 'Paid' && paymentDate) throw new Error('Set payment status to Paid before recording a payment date.');
     }
     if (tableName === 'schedules') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);

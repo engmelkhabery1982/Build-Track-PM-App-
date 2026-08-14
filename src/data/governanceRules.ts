@@ -8,7 +8,7 @@ const NON_NEGATIVE_FIELDS = new Set([
   'unit_cost', 'total_hours', 'no_of_workers', 'hours_per_day', 'days',
   'lag_days', 'duration_days', 'remaining_duration_days', 'budget',
   'planned_value', 'actual_cost', 'earned_work_value', 'contract_value',
-  'modified_contract_value', 'amount', 'item_amount', 'total_cost',
+  'modified_contract_value', 'amount', 'item_amount', 'total_cost', 'inflow', 'outflow',
 ]);
 
 const DATE_PAIRS: Array<[string, string, string]> = [
@@ -17,6 +17,9 @@ const DATE_PAIRS: Array<[string, string, string]> = [
   ['planned_start_date', 'planned_end_date', 'Planned finish cannot be earlier than planned start.'],
   ['period_start', 'period_end', 'Period end cannot be earlier than period start.'],
   ['from_date', 'to_date', 'To date cannot be earlier than from date.'],
+  ['invoice_date', 'due_date', 'Due date cannot be earlier than invoice date.'],
+  ['invoice_date', 'payment_date', 'Payment date cannot be earlier than invoice date.'],
+  ['order_date', 'delivery_date', 'Delivery date cannot be earlier than order date.'],
 ];
 
 function isPresent(value: unknown): boolean {
