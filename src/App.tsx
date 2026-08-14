@@ -350,7 +350,7 @@ const PARTY_COLUMNS: ColumnDef[] = [
   { key: 'party_code', label: 'Party Code', type: 'text', editable: true },
   { key: 'legal_name', label: 'Legal Name', type: 'text', editable: true },
   { key: 'trading_name', label: 'Trading Name', type: 'text', editable: true },
-  { key: 'party_type', label: 'Type', type: 'status', editable: true, options: ['Client', 'Supplier', 'Subcontractor', 'Consultant'] },
+  { key: 'party_type', label: 'Type', type: 'status', editable: true, options: ['Client', 'Supplier', 'Contractor', 'Subcontractor', 'Consultant'] },
   { key: 'tax_number', label: 'Tax Number', type: 'text', editable: true },
   { key: 'registration_number', label: 'Registration #', type: 'text', editable: true },
   { key: 'payment_terms_days', label: 'Payment Terms (days)', type: 'number', editable: true },
@@ -553,7 +553,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
   cashflow: { columns: CASHFLOW_COLUMNS, showProjectFilter: true, dateRangeColumn: 'date' },
-  parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
+  parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Contractor', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   partyContacts: { columns: PARTY_CONTACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   rateHistory: { columns: RATE_HISTORY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Historical', 'Superseded'] }], dateRangeColumn: 'effective_date' },
   subinvoices: { columns: SUBINV_COLUMNS, showProjectFilter: true },
@@ -873,6 +873,60 @@ export default function App() {
       source_type: 'subcontract_boq', source_id: boqItem.id,
       status: 'Historical', notes: 'Generated from subcontract BOQ rate.',
     });
+  }
+
+  async function migrateLegacyParties(): Promise<void> {
+    const normalize = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const candidates = new Map<string, { name: string; type: string }>();
+    const register = (name: unknown, type: string) => {
+      const key = normalize(name);
+      if (!key || key === '-' || key === '—') return;
+      const existing = candidates.get(key);
+      // A client role is retained if the same legal party appears in more
+      // than one legacy column; it is the least risky default for reporting.
+      if (!existing || (type === 'Client' && existing.type !== 'Client')) candidates.set(key, { name: String(name).trim(), type });
+    };
+    data.projects.forEach((row: any) => { register(row.client, 'Client'); register(row.contractor, 'Contractor'); });
+    data.contracts.forEach((row: any) => { register(row.client, 'Client'); register(row.contractor, row.parent_main_contract_id ? 'Subcontractor' : 'Contractor'); });
+    data.procurement.forEach((row: any) => register(row.supplier, 'Supplier'));
+
+    const partyByName = new Map(data.parties.map((party: any) => [normalize(party.legal_name), party]));
+    let created = 0;
+    for (const candidate of candidates.values()) {
+      if (partyByName.has(normalize(candidate.name))) continue;
+      const row = prepareCodeControlledInsert('parties', {
+        ...createCodeDraft('parties', [...partyByName.values()]),
+        legal_name: candidate.name, trading_name: candidate.name, party_type: candidate.type,
+        status: 'Active', payment_terms_days: 0, tax_number: '', registration_number: '', phone: '', email: '', address: '', notes: 'Migrated from existing application records.',
+      }, [...partyByName.values()]);
+      const inserted = await dataRepository.insert<Record<string, any>>('parties', row);
+      data.applyLocalMutation('parties', { type: 'insert', row: inserted });
+      partyByName.set(normalize(inserted.legal_name), inserted);
+      created += 1;
+    }
+
+    let linked = 0;
+    for (const contract of data.contracts as Record<string, any>[]) {
+      const clientParty = partyByName.get(normalize(contract.client));
+      const contractorParty = partyByName.get(normalize(contract.contractor));
+      const patch: Record<string, any> = {};
+      if (clientParty && contract.client_party_id !== clientParty.id) patch.client_party_id = clientParty.id;
+      if (contractorParty && contract.contractor_party_id !== contractorParty.id) patch.contractor_party_id = contractorParty.id;
+      if (Object.keys(patch).length) {
+        const updated = await dataRepository.update<Record<string, any>>('contracts', contract.id, patch);
+        data.applyLocalMutation('contracts', { type: 'update', row: updated });
+        linked += 1;
+      }
+    }
+    for (const purchase of data.procurement as Record<string, any>[]) {
+      const supplierParty = partyByName.get(normalize(purchase.supplier));
+      if (supplierParty && purchase.supplier_party_id !== supplierParty.id) {
+        const updated = await dataRepository.update<Record<string, any>>('procurement', purchase.id, { supplier_party_id: supplierParty.id });
+        data.applyLocalMutation('procurement', { type: 'update', row: updated });
+        linked += 1;
+      }
+    }
+    alert(`Master Data migration completed: ${created} party record(s) created and ${linked} legacy record(s) linked. Original names were kept unchanged.`);
   }
 
   useEffect(() => {
@@ -1809,7 +1863,7 @@ export default function App() {
       .filter((party: any) => party.party_type === 'Client' && party.status !== 'Inactive')
       .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { client: party.legal_name } }));
     relationshipOptions.contractor_party_id = data.parties
-      .filter((party: any) => ['Subcontractor', 'Supplier', 'Consultant'].includes(party.party_type) && party.status !== 'Inactive')
+      .filter((party: any) => ['Contractor', 'Subcontractor', 'Supplier', 'Consultant'].includes(party.party_type) && party.status !== 'Inactive')
       .map((party: any) => ({ value: party.id, label: `${party.party_code || 'PTY'} - ${party.legal_name}`, data: { contractor: party.legal_name } }));
     relationshipOptions.supplier_party_id = data.parties
       .filter((party: any) => party.party_type === 'Supplier' && party.status !== 'Inactive')
@@ -2076,6 +2130,11 @@ export default function App() {
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
         progressWirs={data.wirEntries}
+        toolbarAction={tableName === 'parties' ? {
+          label: 'Migrate Existing Parties',
+          title: 'Create master records and link existing contracts and procurement without deleting legacy names.',
+          onClick: migrateLegacyParties,
+        } : undefined}
         formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
         onInsert={tableName === 'app_users' ? async (userDraft) => {
