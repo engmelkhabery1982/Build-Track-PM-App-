@@ -778,9 +778,11 @@ export default function App() {
     const sourceType = sourceTable === 'procurement' ? 'procurement' : sourceTable === 'labor_duty' ? 'labor' : 'equipment';
     const existingCost = data.costEntries.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
     const existingCash = data.cashFlow.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
+    const existingForecast = data.cashFlow.find((entry: any) => entry.source_type === `${sourceType}_forecast` && entry.source_id === sourceId) as any;
     if (mutation.type === 'delete') {
       if (existingCost) { await dataRepository.delete('cost_entries', existingCost.id); data.applyLocalMutation('cost_entries', { type: 'delete', id: existingCost.id }); }
       if (existingCash) { await dataRepository.delete('cash_flow', existingCash.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id }); }
+      if (existingForecast) { await dataRepository.delete('cash_flow', existingForecast.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existingForecast.id }); }
       return;
     }
     const source = mutation.row;
@@ -827,6 +829,22 @@ export default function App() {
     } else if (existingCash) {
       await dataRepository.delete('cash_flow', existingCash.id);
       data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+    }
+    if (sourceTable === 'procurement') {
+      const shouldForecast = !isPaid && ['Ordered', 'Partially Delivered', 'Delivered'].includes(String(source.status || ''));
+      if (shouldForecast) {
+        const forecastRow = { project_id: contract.project_id, contract_id: contract.id, date: source.delivery_date || source.order_date || null, description: `Supplier payment forecast: ${source.item || item.item_name || ''}`, category: 'Supplier Payable', inflow: 0, outflow: costRow.amount, net: -costRow.amount, cumulative_balance: 0, movement_type: 'Forecast', status: 'Open', source_type: `${sourceType}_forecast`, source_id: sourceId };
+        if (existingForecast) {
+          const updated = await dataRepository.update<Record<string, any>>('cash_flow', existingForecast.id, forecastRow);
+          data.applyLocalMutation('cash_flow', { type: 'update', row: updated });
+        } else {
+          const inserted = await dataRepository.insert<Record<string, any>>('cash_flow', forecastRow);
+          data.applyLocalMutation('cash_flow', { type: 'insert', row: inserted });
+        }
+      } else if (existingForecast) {
+        await dataRepository.delete('cash_flow', existingForecast.id);
+        data.applyLocalMutation('cash_flow', { type: 'delete', id: existingForecast.id });
+      }
     }
   }
 

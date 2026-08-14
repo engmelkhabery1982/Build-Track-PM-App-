@@ -200,6 +200,16 @@ export function Dashboard({
     const totalOutflow = actualCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
     const netCashFlow = totalInflow - totalOutflow;
     const forecastNetCashFlow = forecastCashFlow.reduce((s, c) => s + (c.inflow || 0) - (c.outflow || 0), 0);
+    const today = new Date();
+    const forecastAt = (days: number) => forecastCashFlow
+      .filter((c: any) => {
+        const date = c.date ? new Date(`${c.date}T00:00:00`) : null;
+        return date && date >= today && date <= new Date(today.getTime() + days * 86400000);
+      })
+      .reduce((s, c) => s + (c.inflow || 0) - (c.outflow || 0), 0);
+    const forecast30 = forecastAt(30);
+    const forecast60 = forecastAt(60);
+    const forecast90 = forecastAt(90);
     const subInvoiceTotal = fSubInv.reduce((s, i) => s + (i.amount || 0), 0);
     const subInvoicePaid = fSubInv.reduce((s, i) => s + (i.paid_amount || 0), 0);
     const subOutstanding = subInvoiceTotal - subInvoicePaid;
@@ -238,7 +248,7 @@ export function Dashboard({
       deliveredProcurement, pendingProcurement, orderedProcurement, partialProcurement, requestedProcurement, totalProcurementValue,
       totalWorkers, avgPercentComplete,
       criticalPathCount, delayedSchedules, completedSchedules, totalContractValue, modifiedContractValue, activeContracts,
-      totalBOQAmount, totalInflow, totalOutflow, netCashFlow, forecastNetCashFlow,
+      totalBOQAmount, totalInflow, totalOutflow, netCashFlow, forecastNetCashFlow, forecast30, forecast60, forecast90,
       subInvoiceTotal, subInvoicePaid, subOutstanding,
       clientInvoiceTotal, clientInvoicePaid, clientOutstanding,
       variationCostImpact, approvedVariationCostImpact, totalVariations: mainVariations.length, pendingVariations, approvedVariations,
@@ -472,7 +482,7 @@ export function Dashboard({
     {
       label: 'Net Cash Flow',
       value: fmtMoney(stats.netCashFlow),
-      sub: `Actual: In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)} | Forecast net ${fmtMoney(stats.forecastNetCashFlow)}`,
+      sub: `Actual: In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)} | F30 ${fmtMoney(stats.forecast30)} · F60 ${fmtMoney(stats.forecast60)} · F90 ${fmtMoney(stats.forecast90)}`,
       icon: CircleDollarSign,
       color: stats.netCashFlow >= 0 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
       trend: stats.netCashFlow >= 0 ? ('up' as const) : ('down' as const),
