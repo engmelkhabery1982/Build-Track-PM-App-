@@ -395,6 +395,7 @@ export function DataTableView({
   const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const printableRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1707,15 +1708,31 @@ export function DataTableView({
   }
 
   function handleGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+      event.preventDefault(); searchInputRef.current?.focus(); return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault(); applyFormulaBar(); return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); void copySelectedCells(); return; }
     // Do not consume Ctrl+V here. Tauri's WebView may deny navigator.clipboard,
     // while the browser-native paste event still provides the text securely.
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return;
     const anchor = selectionAnchor.current;
-    if (!anchor || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'F2'].includes(event.key)) return;
+    if (event.key === 'Escape') { setSelectedCells(new Set()); setActiveCell(null); selectionAnchor.current = null; event.preventDefault(); return; }
+    if (!anchor) return;
     const rowIndex = sortedData.findIndex((row) => row.id === anchor.rowId);
     const columnIndex = columns.findIndex((column) => column.key === anchor.columnKey);
     if (rowIndex < 0 || columnIndex < 0) return;
+    const activeRow = sortedData[rowIndex]; const activeColumn = columns[columnIndex];
+    // Typing into an already selected editable cell replaces its value, just
+    // like an Excel worksheet. Date/select controls keep F2 or double-click
+    // so their native editors remain predictable.
+    if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey && !readOnly && !activeRow.is_summary_row && activeColumn.editable !== false && !['date', 'select', 'status', 'boolean'].includes(activeColumn.type || 'text')) {
+      startInlineEdit(activeRow.id, activeColumn.key, event.key);
+      event.preventDefault(); return;
+    }
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'F2', 'Home', 'End'].includes(event.key)) return;
     if (event.key === 'Enter') {
       const row = sortedData[rowIndex]; const column = columns[columnIndex];
       if (!readOnly && !row.is_summary_row && column.editable !== false) startInlineEdit(row.id, column.key, row[column.key]);
@@ -1726,8 +1743,8 @@ export function DataTableView({
       if (!readOnly && !row.is_summary_row && column.editable !== false) startInlineEdit(row.id, column.key, row[column.key]);
       event.preventDefault(); return;
     }
-    const nextRow = Math.min(sortedData.length - 1, Math.max(0, rowIndex + (event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0)));
-    const nextColumn = Math.min(columns.length - 1, Math.max(0, columnIndex + (event.key === 'ArrowRight' || (event.key === 'Tab' && !event.shiftKey) ? 1 : event.key === 'ArrowLeft' || (event.key === 'Tab' && event.shiftKey) ? -1 : 0)));
+    const nextRow = event.key === 'Home' && event.ctrlKey ? 0 : event.key === 'End' && event.ctrlKey ? sortedData.length - 1 : Math.min(sortedData.length - 1, Math.max(0, rowIndex + (event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0)));
+    const nextColumn = event.key === 'Home' ? 0 : event.key === 'End' ? columns.length - 1 : Math.min(columns.length - 1, Math.max(0, columnIndex + (event.key === 'ArrowRight' || (event.key === 'Tab' && !event.shiftKey) ? 1 : event.key === 'ArrowLeft' || (event.key === 'Tab' && event.shiftKey) ? -1 : 0)));
     const next = { rowId: sortedData[nextRow].id, columnKey: columns[nextColumn].key };
     selectionAnchor.current = next;
     setActiveCell(next);
@@ -2007,7 +2024,7 @@ export function DataTableView({
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-            <input type="text" placeholder={`Search ${title.toLowerCase()}...`} value={search}
+            <input ref={searchInputRef} type="text" placeholder={`Search ${title.toLowerCase()}...`} value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="text-sm pl-9 pr-3 py-2 border border-neutral-200 rounded-lg w-56 focus:outline-none focus:border-primary-400 bg-white" />
           </div>
@@ -2130,7 +2147,7 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Ctrl+C / Ctrl+V copies and pastes ranges. Numeric cells accept safe formulas such as =12*5 or =A1+B1. Double-click or F2 edits; Tab moves to the next cell.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
         <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 shadow-sm">
           <div className="w-16 shrink-0 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center text-xs font-semibold text-primary-700" title={activeCellInfo?.column.label || 'Select a cell'}>
             {activeCellInfo ? `${excelColumnName(activeCellInfo.columnIndex)}${activeCellInfo.rowIndex + 1}` : '—'}
@@ -2139,7 +2156,7 @@ export function DataTableView({
           <input
             value={formulaInput}
             onChange={(event) => setFormulaInput(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); applyFormulaBar(); } }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's')) { event.preventDefault(); applyFormulaBar(); } }}
             disabled={!activeCellInfo || readOnly}
             placeholder="Select a cell to view or edit its value"
             className="min-w-0 flex-1 border-0 bg-transparent px-1 py-1 text-sm text-neutral-800 outline-none disabled:cursor-not-allowed disabled:text-neutral-400"
