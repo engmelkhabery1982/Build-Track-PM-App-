@@ -1519,6 +1519,16 @@ export function DataTableView({
 
   function startEdit(row: Record<string, any>) { setMinimizedModal(null); setEditingId(row.id); setEditRow({ ...row }); }
 
+  function duplicateRow(row: Record<string, any>) {
+    const { id: _id, created_at: _createdAt, is_summary_row: _summary, ...copy } = row;
+    const codeDraft = createDraft ? createDraft() : createCodeDraft(tableName, data);
+    setMinimizedModal(null);
+    setNewRow({ ...copy, ...codeDraft });
+    setShowAdd(true);
+  }
+
+  const canDuplicateRows = canAdd && !readOnly && !['projects', 'progress_entries', 'audit_log', 'app_users', 'client_invoices', 'subcontractor_invoices', 'client_invoice_tracking', 'subcontractor_invoice_tracking', 'report_templates'].includes(tableName);
+
   async function exportExcel() {
     const XLSX = await getXlsx();
     const exportedRows = displayData.map((row) => {
@@ -2290,6 +2300,7 @@ export function DataTableView({
                       <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
                         <div className="flex items-center justify-end gap-1">
                           {rowAction && <button onClick={() => void rowAction.onClick(row)} className="text-xs text-violet-700 hover:text-violet-800 font-medium px-2 py-1 rounded hover:bg-violet-50 transition-colors" title={rowAction.title || rowAction.label}>{rowAction.label}</button>}
+                          {canDuplicateRows && !row.is_summary_row && <button onClick={() => duplicateRow(row)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors" title="Copy this record into a new row">Duplicate</button>}
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
                           {getCodeControl(tableName) && (
                             <button onClick={() => void toggleCodeLock(row)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors">
