@@ -385,13 +385,15 @@ const RATE_HISTORY_COLUMNS: ColumnDef[] = [
 
 const CASHFLOW_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'movement_type', label: 'Movement Type', type: 'status', editable: true, options: ['Forecast', 'Actual', 'Manual'] },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'category', label: 'Category', type: 'text', editable: true },
   { key: 'inflow', label: 'Inflow', type: 'money', editable: true },
   { key: 'outflow', label: 'Outflow', type: 'money', editable: true },
   { key: 'net', label: 'Net', type: 'money' },
-  { key: 'cumulative_balance', label: 'Cumulative', type: 'money', editable: false },
+  { key: 'cumulative_balance', label: 'Cumulative (Type)', type: 'money', editable: false },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'Settled', 'Cancelled'] },
 ];
 
 const SUBINV_COLUMNS: ColumnDef[] = [
@@ -552,7 +554,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
-  cashflow: { columns: CASHFLOW_COLUMNS, showProjectFilter: true, dateRangeColumn: 'date' },
+  cashflow: { columns: CASHFLOW_COLUMNS, filters: [{ key: 'movement_type', label: 'Movement Type', options: ['Forecast', 'Actual', 'Manual'] }, { key: 'status', label: 'Status', options: ['Open', 'Settled', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Contractor', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   partyContacts: { columns: PARTY_CONTACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   rateHistory: { columns: RATE_HISTORY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Historical', 'Superseded'] }], dateRangeColumn: 'effective_date' },
@@ -814,7 +816,7 @@ export default function App() {
     }
     const isPaid = String(source.payment_status || '') === 'Paid';
     if (isPaid) {
-      const cashRow = { project_id: contract.project_id, contract_id: contract.id, date: costRow.date, description: `${costType}: ${source.item || source.worker_name || source.equipment_name || item.item_name || ''}`, category: costType, inflow: 0, outflow: costRow.amount, net: -costRow.amount, cumulative_balance: 0, source_type: sourceType, source_id: sourceId };
+      const cashRow = { project_id: contract.project_id, contract_id: contract.id, date: costRow.date, description: `${costType}: ${source.item || source.worker_name || source.equipment_name || item.item_name || ''}`, category: costType, inflow: 0, outflow: costRow.amount, net: -costRow.amount, cumulative_balance: 0, movement_type: 'Actual', status: 'Settled', source_type: sourceType, source_id: sourceId };
       if (existingCash) {
         const updated = await dataRepository.update<Record<string, any>>('cash_flow', existingCash.id, cashRow);
         data.applyLocalMutation('cash_flow', { type: 'update', row: updated });
@@ -1304,35 +1306,45 @@ export default function App() {
       data.applyLocalMutation(invoiceTable, { type: 'update', row: updatedInvoice });
     }
 
-    const sourceType = trackingTable === 'client_invoice_tracking' ? 'client_invoice' : 'subcontractor_invoice';
-    const sourceId = String(updatedTracking.invoice_number);
-    const existingCash = data.cashFlow.find((row: any) => row.source_type === sourceType && String(row.source_id) === sourceId) as any;
-    if (updatedTracking.payment_status === 'Paid') {
-      const amount = Number(updatedTracking.total_work_value) || invoiceRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-      const isClient = trackingTable === 'client_invoice_tracking';
-      const cashRow = {
-        project_id: updatedTracking.project_id,
-        contract_id: updatedTracking.contract_id,
-        date: updatedTracking.payment_date,
-        description: `${isClient ? 'Client invoice received' : 'Subcontractor invoice paid'}: ${sourceId}`,
-        category: isClient ? 'Client Receipt' : 'Subcontractor Payment',
-        inflow: isClient ? amount : 0,
-        outflow: isClient ? 0 : amount,
-        net: isClient ? amount : -amount,
-        cumulative_balance: 0,
-        source_type: sourceType,
-        source_id: sourceId,
-      };
-      if (existingCash) {
-        const updatedCash = await dataRepository.update<Record<string, any>>('cash_flow', existingCash.id, cashRow);
+    const sourcePrefix = trackingTable === 'client_invoice_tracking' ? 'client_invoice' : 'subcontractor_invoice';
+    const invoiceNumber = String(updatedTracking.invoice_number);
+    const amount = Number(updatedTracking.total_work_value) || invoiceRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const isClient = trackingTable === 'client_invoice_tracking';
+    const cashRows = (movementType: 'Forecast' | 'Actual', date: string, status: string) => ({
+      project_id: updatedTracking.project_id, contract_id: updatedTracking.contract_id, date,
+      description: `${movementType === 'Forecast' ? (isClient ? 'Client receipt forecast' : 'Subcontractor payment forecast') : (isClient ? 'Client invoice received' : 'Subcontractor invoice paid')}: ${invoiceNumber}`,
+      category: isClient ? (movementType === 'Forecast' ? 'Client Receivable' : 'Client Receipt') : (movementType === 'Forecast' ? 'Subcontractor Payable' : 'Subcontractor Payment'),
+      inflow: isClient ? amount : 0, outflow: isClient ? 0 : amount, net: isClient ? amount : -amount,
+      cumulative_balance: 0, movement_type: movementType, status,
+      source_type: `${sourcePrefix}_${movementType.toLowerCase()}`, source_id: invoiceNumber,
+    });
+    const upsertCash = async (movementType: 'Forecast' | 'Actual', date: string, status: string) => {
+      const sourceType = `${sourcePrefix}_${movementType.toLowerCase()}`;
+      const existing = data.cashFlow.find((row: any) => row.source_type === sourceType && String(row.source_id) === invoiceNumber) as any;
+      const cashRow = cashRows(movementType, date, status);
+      if (existing) {
+        const updatedCash = await dataRepository.update<Record<string, any>>('cash_flow', existing.id, cashRow);
         data.applyLocalMutation('cash_flow', { type: 'update', row: updatedCash });
       } else {
         const insertedCash = await dataRepository.insert<Record<string, any>>('cash_flow', cashRow);
         data.applyLocalMutation('cash_flow', { type: 'insert', row: insertedCash });
       }
-    } else if (existingCash) {
-      await dataRepository.delete('cash_flow', existingCash.id);
-      data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+    };
+    const removeCash = async (movementType: 'Forecast' | 'Actual') => {
+      const sourceType = `${sourcePrefix}_${movementType.toLowerCase()}`;
+      const existing = data.cashFlow.find((row: any) => row.source_type === sourceType && String(row.source_id) === invoiceNumber) as any;
+      if (existing) { await dataRepository.delete('cash_flow', existing.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existing.id }); }
+    };
+    // Replace the pre-ledger row format from the previous release if it exists.
+    const legacy = data.cashFlow.find((row: any) => row.source_type === sourcePrefix && String(row.source_id) === invoiceNumber) as any;
+    if (legacy) { await dataRepository.delete('cash_flow', legacy.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: legacy.id }); }
+    if (updatedTracking.payment_status === 'Paid') {
+      await removeCash('Forecast');
+      await upsertCash('Actual', updatedTracking.payment_date, 'Settled');
+    } else {
+      await removeCash('Actual');
+      if (updatedTracking.status === 'Approved') await upsertCash('Forecast', updatedTracking.due_date || updatedTracking.invoice_date, 'Open');
+      else await removeCash('Forecast');
     }
 
     return dataRepository.update<Record<string, any>>(trackingTable, trackingId, patch);
@@ -1516,7 +1528,7 @@ export default function App() {
       const plannedCost = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
       const actualCost = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
       const committedValue = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
-      const projectCash = data.cashFlow.filter((entry: any) => entry.project_id === selectedProject.id || relatedContractIds.has(entry.contract_id));
+      const projectCash = data.cashFlow.filter((entry: any) => (entry.project_id === selectedProject.id || relatedContractIds.has(entry.contract_id)) && (!entry.movement_type || entry.movement_type === 'Actual' || entry.movement_type === 'Manual'));
       const cashIn = projectCash.reduce((sum: number, entry: any) => sum + (Number(entry.inflow) || 0), 0);
       const cashOut = projectCash.reduce((sum: number, entry: any) => sum + (Number(entry.outflow) || 0), 0);
       const activityCount = data.schedules.filter((activity: any) => activity.project_id === selectedProject.id && activity.activity).length;

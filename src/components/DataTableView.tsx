@@ -544,7 +544,7 @@ export function DataTableView({
       [...data]
         .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.created_at || '').localeCompare(String(b.created_at || '')))
         .forEach((row) => {
-          const scope = String(row.contract_id || row.project_id || 'unassigned');
+          const scope = `${String(row.contract_id || row.project_id || 'unassigned')}:${String(row.movement_type || 'Manual')}`;
           const balance = (runningBalance.get(scope) || 0) + (Number(row.inflow) || 0) - (Number(row.outflow) || 0);
           runningBalance.set(scope, balance);
           balanceById.set(String(row.id), Math.round(balance * 100) / 100);
@@ -699,6 +699,8 @@ export function DataTableView({
       out.outflow = Number(out.outflow) || 0;
       out.net = Math.round((out.inflow - out.outflow) * 100) / 100;
       out.cumulative_balance = 0;
+      out.movement_type = out.movement_type || 'Manual';
+      out.status = out.status || 'Open';
     }
     if (tableName === 'boq_items') {
       const qty = Number(out.quantity) || 0;

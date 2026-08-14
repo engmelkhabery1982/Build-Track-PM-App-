@@ -281,6 +281,10 @@ export interface CashFlowEntry {
   net: number;
   cumulative_balance: number;
   category: string;
+  movement_type?: 'Forecast' | 'Actual' | 'Manual' | string;
+  status?: 'Open' | 'Settled' | 'Cancelled' | string;
+  source_type?: string | null;
+  source_id?: string | null;
   notes: string;
   created_at: string;
 }

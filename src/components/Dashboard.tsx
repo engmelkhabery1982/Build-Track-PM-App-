@@ -194,9 +194,12 @@ export function Dashboard({
     const totalContractValue = primaryContracts.reduce((s, c) => s + (Number(c.contract_value) || 0), 0);
     const activeContracts = primaryContracts.filter((c) => c.status === 'Active').length;
     const totalBOQAmount = fBOQ.reduce((s, b) => s + (b.amount || 0), 0);
-    const totalInflow = fCashFlow.reduce((s, c) => s + (c.inflow || 0), 0);
-    const totalOutflow = fCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
+    const actualCashFlow = fCashFlow.filter((c: any) => !c.movement_type || c.movement_type === 'Actual' || c.movement_type === 'Manual');
+    const forecastCashFlow = fCashFlow.filter((c: any) => c.movement_type === 'Forecast');
+    const totalInflow = actualCashFlow.reduce((s, c) => s + (c.inflow || 0), 0);
+    const totalOutflow = actualCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
     const netCashFlow = totalInflow - totalOutflow;
+    const forecastNetCashFlow = forecastCashFlow.reduce((s, c) => s + (c.inflow || 0) - (c.outflow || 0), 0);
     const subInvoiceTotal = fSubInv.reduce((s, i) => s + (i.amount || 0), 0);
     const subInvoicePaid = fSubInv.reduce((s, i) => s + (i.paid_amount || 0), 0);
     const subOutstanding = subInvoiceTotal - subInvoicePaid;
@@ -235,7 +238,7 @@ export function Dashboard({
       deliveredProcurement, pendingProcurement, orderedProcurement, partialProcurement, requestedProcurement, totalProcurementValue,
       totalWorkers, avgPercentComplete,
       criticalPathCount, delayedSchedules, completedSchedules, totalContractValue, modifiedContractValue, activeContracts,
-      totalBOQAmount, totalInflow, totalOutflow, netCashFlow,
+      totalBOQAmount, totalInflow, totalOutflow, netCashFlow, forecastNetCashFlow,
       subInvoiceTotal, subInvoicePaid, subOutstanding,
       clientInvoiceTotal, clientInvoicePaid, clientOutstanding,
       variationCostImpact, approvedVariationCostImpact, totalVariations: mainVariations.length, pendingVariations, approvedVariations,
@@ -320,7 +323,7 @@ export function Dashboard({
   }, [stats, evm]);
 
   const cashFlowTrend = useMemo(() => {
-    const sorted = [...fCashFlow].sort((a, b) => {
+    const sorted = fCashFlow.filter((c: any) => !c.movement_type || c.movement_type === 'Actual' || c.movement_type === 'Manual').sort((a, b) => {
       const da = a.date || a.created_at || '';
       const db = b.date || b.created_at || '';
       return da.localeCompare(db);
@@ -469,7 +472,7 @@ export function Dashboard({
     {
       label: 'Net Cash Flow',
       value: fmtMoney(stats.netCashFlow),
-      sub: `In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)}`,
+      sub: `Actual: In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)} | Forecast net ${fmtMoney(stats.forecastNetCashFlow)}`,
       icon: CircleDollarSign,
       color: stats.netCashFlow >= 0 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
       trend: stats.netCashFlow >= 0 ? ('up' as const) : ('down' as const),
