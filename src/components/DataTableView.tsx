@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -362,7 +362,11 @@ export function DataTableView({
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [showViewPicker, setShowViewPicker] = useState(false);
   const [visibleFilterKeys, setVisibleFilterKeys] = useState<string[]>(() => filters?.map((filter) => filter.key) || []);
+  const [savedViews, setSavedViews] = useState<{ name: string; search: string; filterValues: Record<string, string>; visibleFilterKeys: string[]; projectFilter: string; dateFrom: string; dateTo: string }[]>([]);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [columnResize, setColumnResize] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -387,6 +391,8 @@ export function DataTableView({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [activeCell, setActiveCell] = useState<{ rowId: string; columnKey: string } | null>(null);
+  const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -414,6 +420,65 @@ export function DataTableView({
       if (Array.isArray(parsed)) setVisibleFilterKeys(parsed.filter((key) => availableFilters.some((filter) => filter.key === key)));
     } catch { /* Ignore malformed local preference. */ }
   }, [tableName, availableFilters]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(`buildtrack:saved-views:${tableName}`);
+      const parsed = stored ? JSON.parse(stored) : [];
+      setSavedViews(Array.isArray(parsed) ? parsed : []);
+    } catch { setSavedViews([]); }
+  }, [tableName]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(`buildtrack:column-widths:${tableName}`);
+      const parsed = stored ? JSON.parse(stored) : {};
+      setColumnWidths(parsed && typeof parsed === 'object' ? parsed : {});
+    } catch { setColumnWidths({}); }
+  }, [tableName]);
+
+  function startColumnResize(key: string, event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault(); event.stopPropagation();
+    const header = event.currentTarget.closest('th');
+    const startWidth = header?.getBoundingClientRect().width || 130;
+    setColumnResize({ key, startX: event.clientX, startWidth });
+  }
+
+  useEffect(() => {
+    if (!columnResize) return;
+    const resize = columnResize as { key: string; startX: number; startWidth: number };
+    function move(event: MouseEvent) {
+      const nextWidth = Math.max(80, Math.min(620, resize.startWidth + event.clientX - resize.startX));
+      setColumnWidths((current) => ({ ...current, [resize.key]: Math.round(nextWidth) }));
+    }
+    function up() { setColumnResize(null); }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [columnResize]);
+
+  useEffect(() => {
+    if (!Object.keys(columnWidths).length) return;
+    window.localStorage.setItem(`buildtrack:column-widths:${tableName}`, JSON.stringify(columnWidths));
+  }, [tableName, columnWidths]);
+
+  function saveCurrentView() {
+    const name = window.prompt('Name this table view:', `My ${title} view`)?.trim();
+    if (!name) return;
+    const next = [...savedViews.filter((view) => view.name !== name), { name, search, filterValues, visibleFilterKeys, projectFilter, dateFrom, dateTo }];
+    setSavedViews(next);
+    window.localStorage.setItem(`buildtrack:saved-views:${tableName}`, JSON.stringify(next));
+  }
+
+  function applySavedView(view: typeof savedViews[number]) {
+    setSearch(view.search || ''); setFilterValues(view.filterValues || {}); setVisibleFilterKeys(view.visibleFilterKeys || []);
+    setProjectFilter(view.projectFilter || 'all'); setDateFrom(view.dateFrom || ''); setDateTo(view.dateTo || ''); setShowViewPicker(false);
+  }
+
+  function deleteSavedView(name: string) {
+    const next = savedViews.filter((view) => view.name !== name);
+    setSavedViews(next);
+    window.localStorage.setItem(`buildtrack:saved-views:${tableName}`, JSON.stringify(next));
+  }
 
   function toggleVisibleFilter(key: string) {
     setVisibleFilterKeys((current) => {
@@ -591,6 +656,18 @@ export function DataTableView({
       return sortDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
     });
   }, [displayData, sortField, sortDir, columns, tableName, collapsedScheduleItems]);
+
+  const activeCellInfo = useMemo(() => {
+    if (!activeCell) return null;
+    const rowIndex = sortedData.findIndex((row) => row.id === activeCell.rowId);
+    const columnIndex = columns.findIndex((column) => column.key === activeCell.columnKey);
+    if (rowIndex < 0 || columnIndex < 0) return null;
+    return { row: sortedData[rowIndex], column: columns[columnIndex], rowIndex, columnIndex };
+  }, [activeCell, sortedData, columns]);
+
+  useEffect(() => {
+    setFormulaInput(activeCellInfo ? String(activeCellInfo.row[activeCellInfo.column.key] ?? '') : '');
+  }, [activeCellInfo]);
 
   const scheduleBOQIds = useMemo(() => new Set(
     displayData.map((row) => String(row.boq_item_id || '')).filter(Boolean),
@@ -1303,10 +1380,11 @@ export function DataTableView({
     setInlineValue(value ?? '');
   }
 
-  async function commitInlineEdit(commitValue?: any) {
-    if (!inlineEdit) return;
+  async function commitInlineEdit(commitValue?: any, target?: { id: string; key: string } | null) {
+    const editTarget = target || inlineEdit;
+    if (!editTarget) return;
     preserveViewport();
-    const { id, key } = inlineEdit;
+    const { id, key } = editTarget;
     const col = columns.find((c) => c.key === key);
     let val = commitValue !== undefined ? commitValue : inlineValue;
     if (col) {
@@ -1441,6 +1519,7 @@ export function DataTableView({
     // reach handleGridKeyDown in a desktop WebView.
     scrollRef.current?.focus({ preventScroll: true });
     const cellId = `${rowId}:${columnKey}`;
+    setActiveCell({ rowId, columnKey });
     if (event.shiftKey && selectionAnchor.current) {
       const anchorRow = sortedData.findIndex((row) => row.id === selectionAnchor.current!.rowId);
       const targetRow = sortedData.findIndex((row) => row.id === rowId);
@@ -1609,13 +1688,31 @@ export function DataTableView({
     } catch (error: any) { setClipboardNotice(`Fill down failed: ${error.message || 'Unknown error.'}`); }
   }
 
+  function applyFormulaBar() {
+    if (!activeCellInfo) return;
+    const { row, column } = activeCellInfo;
+    const control = getCodeControl(tableName);
+    if (readOnly || row.is_summary_row || column.editable === false || (control?.codeField === column.key && row[control.lockField])) {
+      setClipboardNotice('The selected cell is read-only.');
+      return;
+    }
+    void commitInlineEdit(formulaInput, { id: row.id, key: column.key });
+  }
+
+  function excelColumnName(index: number): string {
+    let value = index + 1;
+    let result = '';
+    while (value > 0) { const remainder = (value - 1) % 26; result = String.fromCharCode(65 + remainder) + result; value = Math.floor((value - 1) / 26); }
+    return result;
+  }
+
   function handleGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); void copySelectedCells(); return; }
     // Do not consume Ctrl+V here. Tauri's WebView may deny navigator.clipboard,
     // while the browser-native paste event still provides the text securely.
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return;
     const anchor = selectionAnchor.current;
-    if (!anchor || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) return;
+    if (!anchor || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'F2'].includes(event.key)) return;
     const rowIndex = sortedData.findIndex((row) => row.id === anchor.rowId);
     const columnIndex = columns.findIndex((column) => column.key === anchor.columnKey);
     if (rowIndex < 0 || columnIndex < 0) return;
@@ -1624,10 +1721,16 @@ export function DataTableView({
       if (!readOnly && !row.is_summary_row && column.editable !== false) startInlineEdit(row.id, column.key, row[column.key]);
       event.preventDefault(); return;
     }
+    if (event.key === 'F2') {
+      const row = sortedData[rowIndex]; const column = columns[columnIndex];
+      if (!readOnly && !row.is_summary_row && column.editable !== false) startInlineEdit(row.id, column.key, row[column.key]);
+      event.preventDefault(); return;
+    }
     const nextRow = Math.min(sortedData.length - 1, Math.max(0, rowIndex + (event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0)));
-    const nextColumn = Math.min(columns.length - 1, Math.max(0, columnIndex + (event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0)));
+    const nextColumn = Math.min(columns.length - 1, Math.max(0, columnIndex + (event.key === 'ArrowRight' || (event.key === 'Tab' && !event.shiftKey) ? 1 : event.key === 'ArrowLeft' || (event.key === 'Tab' && event.shiftKey) ? -1 : 0)));
     const next = { rowId: sortedData[nextRow].id, columnKey: columns[nextColumn].key };
     selectionAnchor.current = next;
+    setActiveCell(next);
     setSelectedCells(new Set([`${next.rowId}:${next.columnKey}`]));
     window.requestAnimationFrame(() => document.querySelector(`[data-grid-cell="${next.rowId}:${next.columnKey}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
     event.preventDefault();
@@ -1946,6 +2049,17 @@ export function DataTableView({
               </div>
             )}
           </div>
+          <div className="relative">
+            <button onClick={() => setShowViewPicker((shown) => !shown)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg bg-white hover:bg-neutral-100" title="Save or apply a complete filter view">
+              <Bookmark size={15} /> Views
+            </button>
+            {showViewPicker && (
+              <div className="absolute right-0 top-11 z-30 w-72 rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
+                <button onClick={saveCurrentView} className="mb-2 w-full rounded-lg bg-primary-50 px-3 py-2 text-left text-sm font-semibold text-primary-700 hover:bg-primary-100">Save current filters as a view</button>
+                {savedViews.length ? <div className="max-h-56 space-y-1 overflow-auto">{savedViews.map((view) => <div key={view.name} className="flex items-center gap-1 rounded-lg hover:bg-neutral-50"><button onClick={() => applySavedView(view)} className="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm text-neutral-700">{view.name}</button><button onClick={() => deleteSavedView(view.name)} className="rounded p-1 text-neutral-400 hover:bg-error-50 hover:text-error-600" title="Delete saved view"><X size={14}/></button></div>)}</div> : <p className="px-2 py-2 text-xs text-neutral-500">No saved views yet.</p>}
+              </div>
+            )}
+          </div>
           {dateRangeColumn && (
             <div className="flex items-center gap-1.5">
               <Calendar size={14} className="text-neutral-400" />
@@ -2016,7 +2130,23 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Ctrl+C / Ctrl+V copies and pastes ranges. Numeric cells accept safe formulas such as =12*5 or =A1+B1. Double-click to edit; Enter saves.</p>
+        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Ctrl+C / Ctrl+V copies and pastes ranges. Numeric cells accept safe formulas such as =12*5 or =A1+B1. Double-click or F2 edits; Tab moves to the next cell.</p>
+        <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 shadow-sm">
+          <div className="w-16 shrink-0 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center text-xs font-semibold text-primary-700" title={activeCellInfo?.column.label || 'Select a cell'}>
+            {activeCellInfo ? `${excelColumnName(activeCellInfo.columnIndex)}${activeCellInfo.rowIndex + 1}` : '—'}
+          </div>
+          <span className="shrink-0 text-sm font-semibold text-neutral-400">fx</span>
+          <input
+            value={formulaInput}
+            onChange={(event) => setFormulaInput(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); applyFormulaBar(); } }}
+            disabled={!activeCellInfo || readOnly}
+            placeholder="Select a cell to view or edit its value"
+            className="min-w-0 flex-1 border-0 bg-transparent px-1 py-1 text-sm text-neutral-800 outline-none disabled:cursor-not-allowed disabled:text-neutral-400"
+            title={activeCellInfo?.column.label || 'Select a cell'}
+          />
+          <button onClick={applyFormulaBar} disabled={!activeCellInfo || readOnly} className="shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40">Apply</button>
+        </div>
 
         {/* Table */}
         <div ref={printableRef} className="bg-white rounded-xl border border-neutral-300 shadow-sm overflow-hidden printable-area flex-1 flex flex-col min-h-0">
@@ -2027,12 +2157,13 @@ export function DataTableView({
                   {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
                   {columns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
-                      className="text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
-                      style={col.width ? { width: col.width } : undefined}>
+                      className="relative text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
+                      style={columnWidths[col.key] ? { width: `${columnWidths[col.key]}px` } : col.width ? { width: col.width } : undefined}>
                       <div className="flex items-center gap-1">
                         {col.label}
                         {sortField === col.key && <span className="text-primary-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
                       </div>
+                      <button onMouseDown={(event) => startColumnResize(col.key, event)} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:w-1.5 hover:bg-primary-400" title="Drag to resize column" aria-label={`Resize ${col.label} column`} />
                     </th>
                   ))}
                   <th className="text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 no-print">Actions</th>
