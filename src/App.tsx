@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2 } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -611,6 +611,7 @@ export default function App() {
     try { const stored = JSON.parse(localStorage.getItem('buildtrack:recent-views') || '[]'); return Array.isArray(stored) ? stored.slice(0, 5) : []; } catch { return []; }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [workspaceProjectId, setWorkspaceProjectId] = useState('');
   const [activeRole, setActiveRole] = useState(() => localStorage.getItem('buildtrack:active-role') || 'PMO Admin');
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem('buildtrack:session-user') || '');
@@ -2515,7 +2516,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-neutral-50">
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-neutral-800 flex flex-col transition-transform duration-300 no-print`}>
+      {!focusMode && <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-neutral-800 flex flex-col transition-transform duration-300 no-print`}>
         {/* Logo */}
         <div className="px-5 py-5 border-b border-neutral-700">
           <div className="flex items-center gap-2.5">
@@ -2565,7 +2566,7 @@ export default function App() {
           <button onClick={() => { localStorage.removeItem('buildtrack:session-user'); setSessionUserId(''); }} className="mb-2 text-xs text-primary-300 hover:text-primary-200">Sign out</button>
           <p className="text-xs text-neutral-500 text-center">BuildTrack v1.0</p>
         </div>
-      </aside>
+      </aside>}
 
       {/* Overlay for mobile */}
       {sidebarOpen && (
@@ -2574,7 +2575,7 @@ export default function App() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="hidden shrink-0 items-center justify-end border-b border-neutral-200 bg-white px-5 py-2 lg:flex"><CommandPalette destinations={NAV_ITEMS.map(({ key, label, group }) => ({ key, label, group }))} projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} onNavigate={setActiveView} onOpenProject={(projectId) => { setWorkspaceProjectId(projectId); setActiveView('projects'); }}/></div>
+        <div className="hidden shrink-0 items-center justify-end gap-2 border-b border-neutral-200 bg-white px-5 py-2 lg:flex"><button onClick={() => setFocusMode((value) => !value)} className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50" title="Hide or show navigation for focused table work">{focusMode ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}{focusMode ? 'Exit focus' : 'Focus mode'}</button><CommandPalette destinations={NAV_ITEMS.map(({ key, label, group }) => ({ key, label, group }))} projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} onNavigate={setActiveView} onOpenProject={(projectId) => { setWorkspaceProjectId(projectId); setActiveView('projects'); }}/></div>
         {/* Top bar (mobile) */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-neutral-200">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-neutral-100">

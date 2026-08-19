@@ -530,6 +530,14 @@ export function DataTableView({
     });
   }
 
+  function applyDatePreset(preset: 'today' | 'week' | 'month') {
+    const today = new Date();
+    const iso = (value: Date) => value.toISOString().slice(0, 10);
+    if (preset === 'today') { const value = iso(today); setDateFrom(value); setDateTo(value); return; }
+    if (preset === 'week') { const start = new Date(today); start.setDate(today.getDate() - ((today.getDay() + 6) % 7)); const end = new Date(start); end.setDate(start.getDate() + 6); setDateFrom(iso(start)); setDateTo(iso(end)); return; }
+    const start = new Date(today.getFullYear(), today.getMonth(), 1); const end = new Date(today.getFullYear(), today.getMonth() + 1, 0); setDateFrom(iso(start)); setDateTo(iso(end));
+  }
+
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(`buildtrack:saved-views:${tableName}`);
@@ -2387,6 +2395,7 @@ export function DataTableView({
               <span className="text-xs text-neutral-400">to</span>
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
                 className="text-sm px-2 py-2 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-primary-400" />
+              <button onClick={() => applyDatePreset('today')} className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100">Today</button><button onClick={() => applyDatePreset('week')} className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100">Week</button><button onClick={() => applyDatePreset('month')} className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100">Month</button>
             </div>
           )}
           {hasActiveFilters && (
@@ -2449,7 +2458,7 @@ export function DataTableView({
         )}
 
         {/* Table hint */}
-        <p className="text-xs text-neutral-400 mb-2">Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+D fills down, Ctrl+Z undoes the last direct edit, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</p>
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400"><span>Click to select. Shift-click selects a range; Ctrl-click adds cells. Type to replace a cell; F2 edits; Tab moves. Ctrl+C / Ctrl+V copies and pastes ranges, Ctrl+D fills down, Ctrl+Z undoes the last direct edit, Ctrl+F searches, Ctrl+S applies the formula bar, Esc clears selection. Numeric cells accept safe formulas such as =12*5 or =A1+B1.</span><span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-primary-200"/>Editable</span><span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-neutral-300"/>Calculated / controlled</span></div>
         <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 shadow-sm">
           <div className="w-16 shrink-0 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center text-xs font-semibold text-primary-700" title={activeCellInfo?.column.label || 'Select a cell'}>
             {activeCellInfo ? `${excelColumnName(activeCellInfo.columnIndex)}${activeCellInfo.rowIndex + 1}` : '—'}
@@ -2519,7 +2528,7 @@ export function DataTableView({
                             className={`px-2 py-1.5 whitespace-nowrap border border-neutral-200 text-sm ${
                               isEditing ? 'p-0' : ''
                             } ${
-                              isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : isScheduleSummary ? 'bg-primary-50 text-primary-950 font-semibold' : canEdit ? 'hover:bg-primary-50/30 cursor-cell' : 'bg-neutral-50 cursor-default'
+                              isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : isScheduleSummary ? 'bg-primary-50 text-primary-950 font-semibold' : canEdit ? 'bg-white hover:bg-primary-50/50 cursor-cell border-l-primary-100' : 'bg-neutral-50/80 text-neutral-600 cursor-default'
                             }`}
                           >
                             {isEditing ? (
