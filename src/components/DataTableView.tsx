@@ -439,6 +439,7 @@ export function DataTableView({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [activeCell, setActiveCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
@@ -1685,9 +1686,9 @@ export function DataTableView({
 
   const canDuplicateRows = canAdd && !readOnly && !['projects', 'progress_entries', 'audit_log', 'app_users', 'client_invoices', 'subcontractor_invoices', 'client_invoice_tracking', 'subcontractor_invoice_tracking', 'report_templates'].includes(tableName);
 
-  async function exportExcel() {
+  async function exportExcel(rowsToExport = displayData) {
     const XLSX = await getXlsx();
-    const exportedRows = displayData.map((row) => {
+    const exportedRows = rowsToExport.map((row) => {
       const exported: Record<string, any> = {};
       if (showProjectColumn) exported.Project = projectMap[row.project_id] || '';
       columns.forEach((column) => { exported[column.label] = row[column.key] ?? ''; });
@@ -1702,6 +1703,40 @@ export function DataTableView({
     } catch (error: any) {
       alert(`Could not export the Excel file: ${error.message || 'Unknown error'}`);
     }
+  }
+
+  function toggleRowSelection(id: string) {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllVisibleRows() {
+    const selectable = sortedData.filter((row) => !row.is_summary_row).map((row) => row.id);
+    setSelectedRowIds((current) => selectable.every((id) => current.has(id)) ? new Set() : new Set(selectable));
+  }
+
+  async function bulkUpdateStatus() {
+    const statusColumn = columns.find((column) => column.key === 'status' && (column.options?.length || 0) > 0);
+    const rows = data.filter((row) => selectedRowIds.has(row.id));
+    if (!statusColumn || !rows.length || readOnly) return;
+    const value = window.prompt(`Set status for ${rows.length} selected row(s):\n${statusColumn.options!.join(', ')}`, statusColumn.options![0]);
+    if (!value || !statusColumn.options!.includes(value)) { if (value) setOperationNotice({ kind: 'error', text: 'Choose one of the listed status values.' }); return; }
+    setSaving(true);
+    const errors: string[] = [];
+    for (const row of rows) {
+      try {
+        const patch = { status: value };
+        assertRelationshipScope({ ...row, ...patch });
+        validateRecord?.({ ...row, ...patch });
+        const updated = await dataRepository.update<Record<string, any>>(tableName, row.id, patch);
+        onMutated({ type: 'update', row: updated });
+      } catch (error: any) { errors.push(error.message || `Could not update row ${row.id}.`); }
+    }
+    setSaving(false);
+    setOperationNotice(errors.length ? { kind: 'warning', text: `Status updated with ${errors.length} issue(s).` } : { kind: 'success', text: `Status updated for ${rows.length} selected row(s).` });
   }
 
   function selectCell(rowId: string, columnKey: string, event: React.MouseEvent<HTMLTableCellElement>) {
@@ -2208,9 +2243,11 @@ export function DataTableView({
             {toolbarAction && <button onClick={() => void toolbarAction.onClick()} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print" title={toolbarAction.title || toolbarAction.label}>
               <Download size={15} /> {toolbarAction.label}
             </button>}
-            <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
+            <button onClick={() => void exportExcel()} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
               <Download size={15} /> Export
             </button>
+            {selectedRowIds.size > 0 && <button onClick={() => void exportExcel(displayData.filter((row) => selectedRowIds.has(row.id)))} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print" title="Export selected rows only"><Download size={15} /> Export selected ({selectedRowIds.size})</button>}
+            {selectedRowIds.size > 0 && columns.some((column) => column.key === 'status' && (column.options?.length || 0) > 0) && <button onClick={() => void bulkUpdateStatus()} disabled={saving || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors disabled:opacity-50 no-print">Update status ({selectedRowIds.size})</button>}
             {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createScopedDraft()); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> {addButtonLabel}
             </button>}
@@ -2374,6 +2411,7 @@ export function DataTableView({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
+                  <th className="w-9 bg-neutral-100 px-2 py-2 text-center no-print"><input type="checkbox" checked={sortedData.filter((row) => !row.is_summary_row).length > 0 && sortedData.filter((row) => !row.is_summary_row).every((row) => selectedRowIds.has(row.id))} onChange={toggleAllVisibleRows} aria-label="Select all visible rows" className="rounded border-neutral-300 text-primary-600"/></th>
                   {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
                   {visibleColumns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
@@ -2392,7 +2430,7 @@ export function DataTableView({
               <tbody>
                 {sortedData.length === 0 ? (
                   <tr>
-                    <td colSpan={visibleColumns.length + (showProjectColumn ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
+                    <td colSpan={visibleColumns.length + (showProjectColumn ? 3 : 2)} className="text-center text-sm text-neutral-400 py-12">
                       No records found. {data.length === 0 ? (canAdd ? 'Click "Add New" to create the first record.' : 'Create a main contract to create the first project.') : 'Try adjusting your filters.'}
                     </td>
                   </tr>
@@ -2401,6 +2439,7 @@ export function DataTableView({
                     const isScheduleSummary = tableName === 'schedules' && row.is_summary_row === true;
                     return (
                     <tr key={row.id} className={`border-b border-neutral-200 ${isScheduleSummary ? 'bg-primary-50 font-semibold border-y-2 border-primary-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
+                      <td className="px-2 py-1.5 text-center no-print">{!isScheduleSummary && <input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => toggleRowSelection(row.id)} aria-label={`Select row ${rowIndex + 1}`} className="rounded border-neutral-300 text-primary-600"/>}</td>
                       {showProjectColumn && (
                         <td className={`sticky left-0 z-10 px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>{projectMap[row.project_id] || '—'}</td>
                       )}
@@ -2479,6 +2518,7 @@ export function DataTableView({
               {sortedData.length > 0 && (
                 <tfoot className="sticky bottom-0 z-10">
                   <tr className="bg-neutral-200/90 backdrop-blur border-t-2 border-neutral-400 font-semibold">
+                    <td className="border border-neutral-300 no-print"></td>
                     {showProjectColumn && <td className="px-2 py-2 text-xs font-bold text-neutral-700 border border-neutral-300"></td>}
                     {visibleColumns.map((col, ci) => (
                       <td key={col.key} className="px-2 py-2 text-xs font-bold text-neutral-800 border border-neutral-300 whitespace-nowrap">

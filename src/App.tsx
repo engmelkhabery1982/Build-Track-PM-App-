@@ -7,6 +7,7 @@ import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
 import { PmoInsights } from '@/components/PmoInsights';
 import { DataEntryWorkspace } from '@/components/DataEntryWorkspace';
+import { CommandPalette } from '@/components/CommandPalette';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -1719,6 +1720,8 @@ export default function App() {
             })}
           </div>
 
+          <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="font-semibold text-neutral-900">Common project actions</h3><p className="mt-1 text-xs text-neutral-500">Start the operation from this project context; related tables keep the project filter.</p></div><span className="text-xs text-neutral-400">Use Ctrl + K to find any record or work area</span></div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{[{ label: 'Guided import', note: 'BOQ, schedule and WIR', view: 'dataEntry' as ViewKey, icon: Download }, { label: 'Inspection requests', note: `${relatedWirs.length} request(s)`, view: 'wir' as ViewKey, icon: FileCheck2 }, { label: 'Record cost', note: `${projectCosts.length} cost item(s)`, view: 'costEntries' as ViewKey, icon: DollarSign }, { label: 'Project documents', note: `${data.documents.filter((item: any) => item.project_id === selectedProject.id).length} document(s)`, view: 'documents' as ViewKey, icon: FolderOpen }].map((action) => { const Icon = action.icon; return <button key={action.label} onClick={() => openWorkspaceArea(action.view)} className="flex items-center gap-3 rounded-xl border border-neutral-200 px-3 py-3 text-left hover:border-primary-300 hover:bg-primary-50"><span className="rounded-lg bg-primary-50 p-2 text-primary-700"><Icon size={17}/></span><span><span className="block text-sm font-semibold text-neutral-800">{action.label}</span><span className="block text-xs text-neutral-500">{action.note}</span></span></button>; })}</div></section>
+
           <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
             <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold text-neutral-900">Project control summary</h3><p className="text-xs text-neutral-500">Calculated from linked local records</p></div><span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">{selectedProject.status || 'Planning'}</span></div>
@@ -2558,6 +2561,7 @@ export default function App() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="hidden shrink-0 items-center justify-end border-b border-neutral-200 bg-white px-5 py-2 lg:flex"><CommandPalette destinations={NAV_ITEMS.map(({ key, label, group }) => ({ key, label, group }))} projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} onNavigate={setActiveView} onOpenProject={(projectId) => { setWorkspaceProjectId(projectId); setActiveView('projects'); }}/></div>
         {/* Top bar (mobile) */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-neutral-200">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-neutral-100">
