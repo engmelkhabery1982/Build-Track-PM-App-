@@ -593,6 +593,10 @@ export interface ReportTemplate {
   selected_fields: string[];
   footer_text: string;
   accent_color: string;
+  page_size?: 'A4' | 'Letter';
+  orientation?: 'portrait' | 'landscape';
+  show_generated_at?: boolean;
+  show_signatures?: boolean;
   created_at: string;
 }
 
