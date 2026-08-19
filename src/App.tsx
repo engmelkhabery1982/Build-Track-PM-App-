@@ -1497,7 +1497,7 @@ export default function App() {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
     }
     if (activeView === 'dataEntry') {
-      return <DataEntryWorkspace projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} boqHeaders={data.boqHeaders as Record<string, any>[]} onOpen={setActiveView} />;
+      return <DataEntryWorkspace projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} boqHeaders={data.boqHeaders as Record<string, any>[]} boqItems={data.boqItems as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} costEntries={data.costEntries as Record<string, any>[]} onOpen={setActiveView} />;
     }
     if (activeView === 'insights') {
       return <PmoInsights
