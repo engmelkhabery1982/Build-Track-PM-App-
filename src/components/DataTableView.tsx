@@ -440,6 +440,7 @@ export function DataTableView({
   const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [activeCell, setActiveCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
@@ -451,6 +452,25 @@ export function DataTableView({
   const printableRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const savedViewport = useRef<{ top: number; left: number } | null>(null);
+  const addDraftKey = `buildtrack:form-draft:${tableName}:add`;
+
+  useEffect(() => {
+    if (showAdd && Object.keys(newRow).length) window.localStorage.setItem(addDraftKey, JSON.stringify(newRow));
+  }, [showAdd, newRow, addDraftKey]);
+
+  function openAddForm() {
+    setMinimizedModal(null);
+    try {
+      const stored = window.localStorage.getItem(addDraftKey);
+      const draft = stored ? JSON.parse(stored) : null;
+      if (draft && typeof draft === 'object' && Object.keys(draft).length && window.confirm('Restore the unsaved draft for this table?')) {
+        setNewRow(draft);
+      } else {
+        setNewRow(createScopedDraft());
+      }
+    } catch { setNewRow(createScopedDraft()); }
+    setShowAdd(true);
+  }
 
   function preserveViewport() {
     if (!scrollRef.current) return;
@@ -762,6 +782,7 @@ export function DataTableView({
     if (rowIndex < 0 || columnIndex < 0) return null;
     return { row: sortedData[rowIndex], column: columns[columnIndex], rowIndex, columnIndex };
   }, [activeCell, sortedData, columns]);
+  const detailRow = useMemo(() => data.find((row) => row.id === detailRowId) || null, [data, detailRowId]);
 
   useEffect(() => {
     setFormulaInput(activeCellInfo ? String(activeCellInfo.row[activeCellInfo.column.key] ?? '') : '');
@@ -1263,6 +1284,7 @@ export function DataTableView({
       setShowAdd(false);
       setMinimizedModal(null);
       setNewRow({});
+      window.localStorage.removeItem(addDraftKey);
       if (Array.isArray(inserted)) onMutated({ type: 'insertMany', rows: inserted });
       else onMutated({ type: 'insert', row: inserted });
       const warning = dateWarning?.(Array.isArray(inserted) ? inserted[0] : inserted);
@@ -2283,7 +2305,7 @@ export function DataTableView({
             {selectedRowIds.size > 0 && columns.some((column) => column.key === 'status' && (column.options?.length || 0) > 0) && <button onClick={() => void bulkUpdateStatus()} disabled={saving || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors disabled:opacity-50 no-print">Update status ({selectedRowIds.size})</button>}
             {selectedRowIds.size > 0 && columns.some((column) => column.key === 'owner') && <button onClick={() => void bulkUpdateTextField('owner')} disabled={saving || readOnly} className="px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 no-print">Assign owner</button>}
             {selectedRowIds.size > 0 && columns.some((column) => column.key === 'due_date') && <button onClick={() => void bulkUpdateTextField('due_date')} disabled={saving || readOnly} className="px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 no-print">Set due date</button>}
-            {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createScopedDraft()); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+            {canAdd && <button onClick={openAddForm} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> {addButtonLabel}
             </button>}
           </div>
@@ -2535,6 +2557,7 @@ export function DataTableView({
                       <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
                         <div className="flex items-center justify-end gap-1">
                           {rowAction && <button onClick={() => void rowAction.onClick(row)} className="text-xs text-violet-700 hover:text-violet-800 font-medium px-2 py-1 rounded hover:bg-violet-50 transition-colors" title={rowAction.title || rowAction.label}>{rowAction.label}</button>}
+                          <button onClick={() => setDetailRowId(row.id)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors">Details</button>
                           {canDuplicateRows && !row.is_summary_row && <button onClick={() => duplicateRow(row)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors" title="Copy this record into a new row">Duplicate</button>}
                           <button onClick={() => startEdit(row)} className="text-xs text-primary-600 hover:text-primary-700 font-medium px-2 py-1 rounded hover:bg-primary-50 transition-colors">Edit</button>
                           {getCodeControl(tableName) && (
@@ -2586,6 +2609,9 @@ export function DataTableView({
             <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Importing…' : `Confirm and import ${importPreview.rows.length} row(s)`}</button></div>
           </div>
         </div>
+      )}
+      {detailRow && (
+        <div className="fixed inset-0 z-[55] flex justify-end bg-black/25" onMouseDown={() => setDetailRowId(null)}><aside className="h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-3 border-b border-neutral-200 pb-4"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary-700">Record details</p><h3 className="mt-1 text-xl font-bold text-neutral-900">{title}</h3><p className="mt-1 text-xs text-neutral-500">View linked values and calculated fields without leaving the table.</p></div><button onClick={() => setDetailRowId(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100"><X size={20}/></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2">{columns.filter((column) => !['id', 'created_at'].includes(column.key)).map((column) => <div key={column.key} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3"><p className="text-xs font-medium text-neutral-500">{column.label}</p><div className="mt-1 break-words text-sm font-semibold text-neutral-800">{renderCell(detailRow[column.key], column, relationshipOptions?.[column.key], detailRow)}</div></div>)}</div><div className="mt-5 flex justify-end gap-2 border-t border-neutral-200 pt-4"><button onClick={() => { setDetailRowId(null); startEdit(detailRow); }} disabled={readOnly} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Edit record</button><button onClick={() => setDetailRowId(null)} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700">Close</button></div></aside></div>
       )}
       {showAdd && !readOnly && (
         minimizedModal === 'add' ? (
