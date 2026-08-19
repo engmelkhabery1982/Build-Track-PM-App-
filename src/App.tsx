@@ -499,6 +499,7 @@ const WIR_COLUMNS: ColumnDef[] = [
   { key: 'completion_pct', label: 'Completion %', type: 'progress' },
   { key: 'remarks', label: 'Remarks', type: 'text', editable: true },
   { key: 'variance_reason', label: 'Date Variance Reason', type: 'text', editable: true },
+  { key: 'file_reference', label: 'Site Photo / Attachment', type: 'text', editable: true },
 ];
 
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
@@ -1773,9 +1774,7 @@ export default function App() {
             ? data.governanceRegister
             : activeView === 'approvals'
               ? data.approvals
-              : activeView === 'auditLog'
-                ? data.auditLog
-                : activeView === 'rfi'
+              : activeView === 'rfi'
                   ? data.rfis
                   : activeView === 'submittals'
                     ? data.submittals
