@@ -8,6 +8,7 @@ import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
 import { PmoInsights } from '@/components/PmoInsights';
 import { DataEntryWorkspace } from '@/components/DataEntryWorkspace';
 import { CommandPalette } from '@/components/CommandPalette';
+import { WorkQueue } from '@/components/WorkQueue';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -16,6 +17,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
   { key: 'alerts', label: 'PMO Alerts', icon: Bell, group: 'Executive' },
   { key: 'dataQuality', label: 'Data Quality Checks', icon: CircleAlert, group: 'Executive' },
+  { key: 'workQueue', label: 'My Work Queue', icon: CheckSquare, group: 'Executive' },
   { key: 'dataEntry', label: 'Guided Data Entry', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'insights', label: 'PMO Insights', icon: BrainCircuit, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
@@ -1487,6 +1489,9 @@ export default function App() {
         quality={data.quality as Record<string, any>[]}
         onNavigate={setActiveView}
       />;
+    }
+    if (activeView === 'workQueue') {
+      return <WorkQueue approvals={data.approvals as Record<string, any>[]} tasks={data.tasks as Record<string, any>[]} clientInvoices={data.clientInvoiceTracking as Record<string, any>[]} subInvoices={data.subcontractorInvoiceTracking as Record<string, any>[]} rfis={data.rfis as Record<string, any>[]} quality={data.quality as Record<string, any>[]} onNavigate={setActiveView} />;
     }
     if (activeView === 'dashboard') {
       return (

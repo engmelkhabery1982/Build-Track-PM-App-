@@ -601,7 +601,7 @@ export interface ReportTemplate {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
