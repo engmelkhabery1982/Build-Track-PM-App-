@@ -22,33 +22,58 @@ let xlsxModule: Promise<typeof import('xlsx')> | undefined;
 const getXlsx = () => xlsxModule ||= import('xlsx');
 
 function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
-  const lines = content.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n');
-  const rows: Record<string, any>[] = [];
-  let inTaskTable = false;
+  const tables = new Map<string, Record<string, string>[]>();
+  let table = '';
   let fields: string[] = [];
-  for (const line of lines) {
+  for (const line of content.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
     if (!line) continue;
     const cells = line.split('\t');
-    if (cells[0] === '%T') { inTaskTable = cells[1] === 'TASK'; fields = []; continue; }
-    if (!inTaskTable) continue;
+    if (cells[0] === '%T') { table = cells[1] || ''; fields = []; if (!tables.has(table)) tables.set(table, []); continue; }
     if (cells[0] === '%F') { fields = cells.slice(1); continue; }
-    if (cells[0] !== '%R' || !fields.length) continue;
-    const source = Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? '']));
-    const activityCode = source.task_code || '';
-    const activity = source.task_name || '';
-    if (!activityCode || !activity) continue;
-    rows.push({
-      'Activity ID': activityCode,
-      'Activity Name': activity,
-      Start: String(source.act_start_date || source.target_start_date || source.early_start_date || '').slice(0, 10),
-      Finish: String(source.act_end_date || source.target_end_date || source.early_end_date || '').slice(0, 10),
-      'Original Duration': source.target_drtn || source.remain_drtn || '',
-      'Planned Qty': source.target_work_qty || source.target_equip_qty || '',
-      Calendar: source.clndr_id || '',
-      Notes: source.task_descr || '',
-    });
+    if (cells[0] === '%R' && table && fields.length) tables.get(table)?.push(Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? ''])));
   }
-  return rows;
+  const calendars = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row.clndr_name || row.clndr_id]));
+  const tasks = tables.get('TASK') || [];
+  const taskCodeById = new Map(tasks.map((task) => [task.task_id, task.task_code]));
+  const predecessorsByTask = new Map<string, Record<string, string>[]>();
+  for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
+  return tasks.map((task) => {
+    const links = predecessorsByTask.get(task.task_id) || [];
+    const predecessorCodes = links.map((link) => taskCodeById.get(link.pred_task_id)).filter(Boolean) as string[];
+    const first = links[0];
+    const relation = String(first?.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS';
+    const lagHours = Number(first?.lag_hr_cnt) || 0;
+    return {
+      'Activity ID': task.task_code || '',
+      'Activity Name': task.task_name || '',
+      WBS: task.wbs_id || '',
+      Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
+      Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
+      'Original Duration': task.target_drtn || task.remain_drtn || '',
+      'Planned Qty': task.target_work_qty || task.target_equip_qty || '',
+      Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
+      Predecessors: predecessorCodes.join(', '),
+      Relationship: relation,
+      'Lag (days)': lagHours ? Math.round((lagHours / 8) * 100) / 100 : 0,
+      Critical: task.driving_path_flag === 'Y' || task.critical_path_flag === 'Y',
+      Notes: task.task_descr || '',
+    };
+  }).filter((row) => row['Activity ID'] && row['Activity Name']);
+}
+
+function normalizeImportDate(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + Math.floor(value));
+    return excelEpoch.toISOString().slice(0, 10);
+  }
+  const source = String(value || '').trim();
+  if (!source) return null;
+  const iso = source.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  if (iso) return iso;
+  const parsed = new Date(source);
+  return Number.isNaN(parsed.getTime()) ? source : parsed.toISOString().slice(0, 10);
 }
 
 export interface ColumnDef {
@@ -1361,7 +1386,7 @@ export function DataTableView({
       if (isXer && tableName !== 'schedules') throw new Error('Primavera XER files can be imported only from Schedule & Activities.');
       const rows: Record<string, any>[] = isXer
         ? parsePrimaveraXerTasks(await file.text())
-        : await (async () => { const XLSX = await getXlsx(); const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }) as Record<string, any>[]; })();
+        : await (async () => { const XLSX = await getXlsx(); const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }) as Record<string, any>[]; })();
       if (rows.length === 0) {
         setImportResult({ success: 0, failed: 0, errors: [isXer ? 'No TASK activities were found in the Primavera XER file.' : 'The Excel file is empty or has no data rows.'] });
         setImporting(false);
@@ -1385,7 +1410,9 @@ export function DataTableView({
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
           'planned cost': 'budget', 'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
           'resource names': 'responsible', 'calendar name': 'calendar_name',
-          'primary constraint': 'notes', 'predecessors': 'predecessor_item',
+          'calendar': 'calendar_name', 'primary constraint': 'notes', 'predecessors': 'predecessors',
+          'relationship': 'relationship_type', 'relationship type': 'relationship_type', 'lag': 'lag_days', 'lag days': 'lag_days',
+          'critical': 'critical_path', 'critical path': 'critical_path',
         });
       }
       if (tableName === 'schedule_distributions') {
@@ -1416,6 +1443,9 @@ export function DataTableView({
           const key = labelToKey[normalizeHeader(k)] || (columns.some((column) => column.key === k) ? k : null);
           if (key) out[key] = v;
         }
+        ['start_date', 'end_date', 'period_start', 'period_end'].forEach((key) => {
+          if (out[key] !== undefined) out[key] = normalizeImportDate(out[key]) || '';
+        });
         ['project_id', 'company_name', 'contract_id', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
           out[key] = resolveRelationship(key, out[key]);
         });
@@ -1442,17 +1472,51 @@ export function DataTableView({
         stagedRows.push(enriched);
         return enriched;
       });
-      if (isXer) {
-        mapped.forEach((row, index) => {
+      if (tableName === 'schedules') {
+        // Primavera does not have a native BOQ foreign key. The adapter first
+        // uses Activity ID/WBS, then an unambiguous BOQ description match.
+        // This makes both XER and P6 Excel exports direct imports while never
+        // guessing between two possible BOQ items.
+        const compact = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
+        const scopedContractId = String(applicableScope.contract_id || '');
+        const schedulableItems = (boqItems || []).filter((item) => {
+          const option = relationshipOptions?.boq_item_id?.find((candidate) => candidate.value === item.id);
+          return Boolean(item.item_code) && (!scopedContractId || option?.data?.contract_id === scopedContractId);
+        });
+        const matchItem = (row: Record<string, any>) => {
+          if (row.boq_item_id) return boqItems?.find((item) => item.id === row.boq_item_id);
           const code = String(row.activity_code || '');
-          const item = boqItems?.filter((candidate) => candidate.item_code && (code === candidate.item_code || code.startsWith(`${candidate.item_code}-`)))
-            .sort((a, b) => String(b.item_code).length - String(a.item_code).length)[0];
-          if (!item) throw new Error(`XER activity ${code} (row ${index + 1}) does not begin with an existing BOQ Item Code. Use the generated ITEMCODE-ACT-### format or import through the Excel mapping template.`);
+          const source = `${code} ${row.wbs_code || ''} ${row.activity || ''}`;
+          const codeMatches = schedulableItems.filter((item) => {
+            const itemCode = String(item.item_code || '');
+            return itemCode && (code === itemCode || code.startsWith(`${itemCode}-`) || source.includes(itemCode));
+          }).sort((a, b) => String(b.item_code).length - String(a.item_code).length);
+          if (codeMatches.length) return codeMatches[0];
+          const text = compact(`${row.wbs_code || ''} ${row.activity || ''}`);
+          const nameMatches = schedulableItems.filter((item) => {
+            const name = compact(item.item_name || item.description || '');
+            return name.length >= 5 && (text.includes(name) || name.includes(text));
+          }).sort((a, b) => compact(b.item_name || b.description).length - compact(a.item_name || a.description).length);
+          return nameMatches.length === 1 ? nameMatches[0] : undefined;
+        };
+        mapped.forEach((row, index) => {
+          const item = matchItem(row);
+          if (!item) throw new Error(`Row ${index + 2}: Primavera activity "${row.activity_code || row.activity}" could not be matched to one BOQ item. Use the BOQ item code in Activity ID/WBS, or include the exact BOQ description in the activity name.`);
           const itemOption = relationshipOptions?.boq_item_id?.find((option) => option.value === item.id);
-          if (!itemOption?.data?.contract_id) throw new Error(`BOQ item ${item.item_code} has no main-contract relationship.`);
+          if (!itemOption?.data?.contract_id) throw new Error(`BOQ item ${item.item_code} has no valid main-contract relationship.`);
           row.boq_item_id = item.id;
           row.contract_id = itemOption.data.contract_id;
           row.project_id = item.project_id;
+          row.boq_header_id = item.boq_header_id || null;
+          row.boq_item_name = item.item_name || item.description || '';
+          row.unit_rate = Number(item.unit_rate) || 0;
+          const predecessorCodes = String(row.predecessors || '').split(/[,;]+/).map((value) => value.trim().replace(/\s+(FS|SS|FF|SF).*$/i, '')).filter(Boolean);
+          if (predecessorCodes.length) {
+            row._primavera_predecessor_code = predecessorCodes[0];
+            row.predecessors = predecessorCodes.join(', ');
+            row.predecessor_item = '';
+            if (predecessorCodes.length > 1) row.notes = `${row.notes || ''}${row.notes ? '\n' : ''}Additional Primavera predecessors retained: ${predecessorCodes.slice(1).join(', ')}`;
+          }
         });
       }
       // Spreadsheet imports must meet the same relationship and quantity
@@ -1467,6 +1531,32 @@ export function DataTableView({
         data.filter((row) => !row.is_summary_row && String(row.activity || '').trim()).forEach((row) => {
           existingQtyByItem.set(String(row.boq_item_id || ''), (existingQtyByItem.get(String(row.boq_item_id || '')) || 0) + (Number(row.planned_quantity) || 0));
           existingActivityCountByItem.set(String(row.boq_item_id || ''), (existingActivityCountByItem.get(String(row.boq_item_id || '')) || 0) + 1);
+        });
+        // P6 exports may omit physical quantities (they often contain only
+        // durations/cost resources). For a direct import, allocate the BOQ
+        // balance across those activities by their planned duration. Explicit
+        // P6 quantities always take precedence.
+        const missingQuantityByItem = new Map<string, Record<string, any>[]>();
+        const explicitQuantityByItem = new Map<string, number>();
+        mapped.forEach((row) => {
+          const key = String(row.boq_item_id || '');
+          const quantity = Number(row.planned_quantity) || 0;
+          if (quantity > 0) explicitQuantityByItem.set(key, (explicitQuantityByItem.get(key) || 0) + quantity);
+          else missingQuantityByItem.set(key, [...(missingQuantityByItem.get(key) || []), row]);
+        });
+        missingQuantityByItem.forEach((rowsWithoutQuantity, itemId) => {
+          const item = boqItems?.find((candidate) => candidate.id === itemId);
+          const available = (Number(item?.quantity) || 0) - (existingQtyByItem.get(itemId) || 0) - (explicitQuantityByItem.get(itemId) || 0);
+          if (available <= 0) throw new Error(`Primavera activities for ${item?.item_code || itemId} have no planned quantity and there is no remaining BOQ quantity available for automatic allocation.`);
+          const weights = rowsWithoutQuantity.map((row) => Math.max(1, Number(row.duration_days) || (row.start_date && row.end_date ? Math.ceil((new Date(`${row.end_date}T00:00:00`).getTime() - new Date(`${row.start_date}T00:00:00`).getTime()) / 86400000) : 1)));
+          const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+          let assigned = 0;
+          rowsWithoutQuantity.forEach((row, index) => {
+            const quantity = index === rowsWithoutQuantity.length - 1 ? available - assigned : Math.round((available * weights[index] / totalWeight) * 1000000) / 1000000;
+            assigned += quantity;
+            row.planned_quantity = quantity;
+            row.notes = `${row.notes || ''}${row.notes ? '\n' : ''}Planned quantity auto-allocated from remaining BOQ quantity by Primavera duration.`;
+          });
         });
         mapped.forEach((row, index) => {
           const contract = contracts?.find((candidate) => candidate.id === row.contract_id);
@@ -1493,6 +1583,11 @@ export function DataTableView({
           row.unit_rate = Number(item.unit_rate) || 0;
           row.budget = Math.round(quantity * row.unit_rate * 100) / 100;
           row.planned_value = row.budget;
+          const governedStart = String(item.planned_start_date || item.baseline_start_date || '');
+          const governedEnd = String(item.planned_end_date || item.baseline_end_date || '');
+          if ((governedStart && row.start_date && String(row.start_date) < governedStart) || (governedEnd && row.end_date && String(row.end_date) > governedEnd)) {
+            row.variance_reason = row.variance_reason || 'Imported Primavera dates differ from the governed BOQ period; review required.';
+          }
           if (!row.activity_code) row.activity_code = `${item.item_code || 'ITEM'}-ACT-${String((existingActivityCountByItem.get(item.id) || 0) + (importedActivityCountByItem.get(item.id) || 0)).padStart(3, '0')}`;
         });
       }
@@ -1526,6 +1621,7 @@ export function DataTableView({
     let success = 0;
     const insertedRows: Record<string, any>[] = [];
     const errors: string[] = [];
+    const importedPredecessors: { activityCode: string; predecessorCode: string }[] = [];
     // Persist one row at a time so that valid operational records survive an
     // invalid row, while the outcome clearly tells the user exactly what was
     // accepted and what must be corrected.
@@ -1539,11 +1635,29 @@ export function DataTableView({
       try {
         assertRelationshipScope(row);
         validateRecord?.(row);
-        const inserted = await dataRepository.insert<Record<string, any>>(tableName, row);
+        const { _primavera_predecessor_code, ...persistedRow } = row;
+        const inserted = await dataRepository.insert<Record<string, any>>(tableName, persistedRow);
         success += 1;
         insertedRows.push(inserted);
+        if (tableName === 'schedules' && _primavera_predecessor_code && inserted.activity_code) importedPredecessors.push({ activityCode: String(inserted.activity_code), predecessorCode: String(_primavera_predecessor_code) });
       } catch (error: any) {
         errors.push(`Row ${i + 2}: ${error.message || 'Failed to import.'}`);
+      }
+    }
+    if (tableName === 'schedules' && importedPredecessors.length) {
+      const activityByCode = new Map([...data, ...insertedRows].map((activity) => [String(activity.activity_code || ''), activity]));
+      for (const link of importedPredecessors) {
+        const activity = activityByCode.get(link.activityCode);
+        const predecessor = activityByCode.get(link.predecessorCode);
+        if (!activity || !predecessor || activity.id === predecessor.id) {
+          errors.push(`Activity ${link.activityCode}: predecessor ${link.predecessorCode} was retained in notes but could not be linked.`);
+          continue;
+        }
+        try {
+          const updated = await dataRepository.update<Record<string, any>>('schedules', activity.id, { predecessor_item: predecessor.id });
+          const index = insertedRows.findIndex((item) => item.id === updated.id);
+          if (index >= 0) insertedRows[index] = updated;
+        } catch (error: any) { errors.push(`Activity ${link.activityCode}: predecessor link could not be saved (${error.message || 'unknown error'}).`); }
       }
     }
     setImportResult({ success, failed: importPreview.rows.length - success, errors });
@@ -2364,8 +2478,8 @@ export function DataTableView({
             <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Print or save as PDF">
               <Printer size={15} /> Print
             </button>
-            <button onClick={handleImportClick} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:opacity-50 no-print" title="Import data from an Excel file">
-              {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Import
+            <button onClick={handleImportClick} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:opacity-50 no-print" title={tableName === 'schedules' ? 'Direct import from Primavera XER or Primavera Excel export' : 'Import data from an Excel file'}>
+              {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} {tableName === 'schedules' ? 'Import Primavera' : 'Import'}
             </button>
             <button onClick={() => void undoLastImport()} disabled={!lastImportRows.length || importing || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title={lastImportRows.length ? `Remove ${lastImportRows.length} row(s) from the last import` : 'Undo the latest import'}><Undo2 size={15} /> Undo Import</button>
             <button onClick={downloadExcelTemplate} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Download a blank Excel template with the correct column headers">
