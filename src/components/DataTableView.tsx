@@ -2345,6 +2345,7 @@ export function DataTableView({
               className="text-sm pl-9 pr-3 py-2 border border-neutral-200 rounded-lg w-56 focus:outline-none focus:border-primary-400 bg-white" />
           </div>
           <select value={groupByKey} onChange={(event) => setGroupByKey(event.target.value)} className="text-sm px-3 py-2 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-primary-400" title="Show a grouped summary above the table"><option value="">No grouping</option>{columns.filter((column) => !['id', 'created_at', 'notes'].includes(column.key)).map((column) => <option key={column.key} value={column.key}>Group by {column.label}</option>)}</select>
+          {sortRules.length > 0 && <button onClick={() => setSortRules([])} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Clear sort</button>}
           {showProjectFilter && (
             <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}
               className="text-sm px-3 py-2 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-primary-400">
@@ -2447,7 +2448,7 @@ export function DataTableView({
           {clipboardNotice && <><span className="text-neutral-300">|</span><span className="text-primary-700">{clipboardNotice}</span></>}
         </div>
 
-        {groupByKey && <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3 shadow-sm"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-neutral-600">Grouped summary by {columns.find((column) => column.key === groupByKey)?.label}</p><span className="text-xs text-neutral-400">Top {groupSummary.length} groups</span></div><div className="flex gap-2 overflow-x-auto pb-1">{groupSummary.map((group) => <div key={group.label} className="min-w-40 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2"><p className="truncate text-xs text-neutral-500">{group.label}</p><p className="mt-1 text-sm font-bold text-neutral-800">{group.count} row(s)</p>{columns.some((column) => column.type === 'money') && <p className="text-xs text-primary-700">{fmtMoney(group.value)}</p>}</div>)}</div></div>}
+        {groupByKey && <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3 shadow-sm"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-neutral-600">Grouped summary by {columns.find((column) => column.key === groupByKey)?.label}</p><span className="text-xs text-neutral-400">Click a group to filter · Top {groupSummary.length} groups</span></div><div className="flex gap-2 overflow-x-auto pb-1">{groupSummary.map((group) => <button key={group.label} onClick={() => setFilterValues((current) => ({ ...current, [groupByKey]: group.label }))} className="min-w-40 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left hover:border-primary-300 hover:bg-primary-50"><p className="truncate text-xs text-neutral-500">{group.label}</p><p className="mt-1 text-sm font-bold text-neutral-800">{group.count} row(s)</p>{columns.some((column) => column.type === 'money') && <p className="text-xs text-primary-700">{fmtMoney(group.value)}</p>}</button>)}</div></div>}
 
         {/* Import result banner */}
         {importResult && (
