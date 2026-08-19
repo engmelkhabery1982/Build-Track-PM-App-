@@ -11,6 +11,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { WorkQueue } from '@/components/WorkQueue';
 import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
 import { ReportPack } from '@/components/ReportPack';
+import { HelpCenter } from '@/components/HelpCenter';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -21,6 +22,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'dataQuality', label: 'Data Quality Checks', icon: CircleAlert, group: 'Executive' },
   { key: 'workQueue', label: 'My Work Queue', icon: CheckSquare, group: 'Executive' },
   { key: 'reportPack', label: 'Executive Report Pack', icon: FileText, group: 'Executive' },
+  { key: 'help', label: 'Help & Quick Guide', icon: ClipboardList, group: 'Executive' },
   { key: 'dataEntry', label: 'Guided Data Entry', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'insights', label: 'PMO Insights', icon: BrainCircuit, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
@@ -1503,6 +1505,9 @@ export default function App() {
     }
     if (activeView === 'reportPack') {
       return <ReportPack projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} variations={data.variations as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} costs={data.costs as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} cashFlow={data.cashFlow as Record<string, any>[]} />;
+    }
+    if (activeView === 'help') {
+      return <HelpCenter onNavigate={setActiveView} />;
     }
     if (activeView === 'dashboard') {
       return (
