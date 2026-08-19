@@ -375,6 +375,7 @@ export function DataTableView({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [groupByKey, setGroupByKey] = useState('');
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => columns.map((column) => column.key));
 
   // Entering a work area from Project Workspace establishes that project's
@@ -822,6 +823,13 @@ export function DataTableView({
     });
     return sums;
   }, [displayData, columns, tableName, contracts, hasSingleScheduleBOQ]);
+  const groupSummary = useMemo(() => {
+    if (!groupByKey) return [] as { label: string; count: number; value: number }[];
+    const numeric = columns.find((column) => column.type === 'money')?.key;
+    const groups = new Map<string, { count: number; value: number }>();
+    displayData.forEach((row) => { const label = String(row[groupByKey] || 'Unspecified'); const current = groups.get(label) || { count: 0, value: 0 }; current.count += 1; current.value += numeric ? (Number(row[numeric]) || 0) : 0; groups.set(label, current); });
+    return [...groups.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value || b.count - a.count).slice(0, 12);
+  }, [groupByKey, displayData, columns]);
 
   const projectMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -2336,6 +2344,7 @@ export function DataTableView({
               onChange={(e) => setSearch(e.target.value)}
               className="text-sm pl-9 pr-3 py-2 border border-neutral-200 rounded-lg w-56 focus:outline-none focus:border-primary-400 bg-white" />
           </div>
+          <select value={groupByKey} onChange={(event) => setGroupByKey(event.target.value)} className="text-sm px-3 py-2 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-primary-400" title="Show a grouped summary above the table"><option value="">No grouping</option>{columns.filter((column) => !['id', 'created_at', 'notes'].includes(column.key)).map((column) => <option key={column.key} value={column.key}>Group by {column.label}</option>)}</select>
           {showProjectFilter && (
             <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}
               className="text-sm px-3 py-2 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-primary-400">
@@ -2438,6 +2447,8 @@ export function DataTableView({
           {clipboardNotice && <><span className="text-neutral-300">|</span><span className="text-primary-700">{clipboardNotice}</span></>}
         </div>
 
+        {groupByKey && <div className="mb-3 rounded-xl border border-neutral-200 bg-white p-3 shadow-sm"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-neutral-600">Grouped summary by {columns.find((column) => column.key === groupByKey)?.label}</p><span className="text-xs text-neutral-400">Top {groupSummary.length} groups</span></div><div className="flex gap-2 overflow-x-auto pb-1">{groupSummary.map((group) => <div key={group.label} className="min-w-40 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2"><p className="truncate text-xs text-neutral-500">{group.label}</p><p className="mt-1 text-sm font-bold text-neutral-800">{group.count} row(s)</p>{columns.some((column) => column.type === 'money') && <p className="text-xs text-primary-700">{fmtMoney(group.value)}</p>}</div>)}</div></div>}
+
         {/* Import result banner */}
         {importResult && (
           <div className={`mb-4 rounded-lg border p-4 ${importResult.errors.length > 0 ? 'border-warning-200 bg-warning-50' : 'border-success-200 bg-success-50'} no-print`}>
@@ -2495,7 +2506,7 @@ export function DataTableView({
                       <button onMouseDown={(event) => startColumnResize(col.key, event)} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:w-1.5 hover:bg-primary-400" title="Drag to resize column" aria-label={`Resize ${col.label} column`} />
                     </th>
                   ))}
-                  <th className="text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 no-print">Actions</th>
+                  <th className="sticky right-0 z-20 text-right text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 bg-neutral-100 shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -2568,7 +2579,7 @@ export function DataTableView({
                           </td>
                         );
                       })}
-                      <td className="px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 no-print">
+                      <td className={`sticky right-0 z-10 px-2 py-1.5 text-right whitespace-nowrap border border-neutral-200 shadow-[-2px_0_4px_rgba(0,0,0,0.05)] no-print ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>
                         <div className="flex items-center justify-end gap-1">
                           {rowAction && <button onClick={() => void rowAction.onClick(row)} className="text-xs text-violet-700 hover:text-violet-800 font-medium px-2 py-1 rounded hover:bg-violet-50 transition-colors" title={rowAction.title || rowAction.label}>{rowAction.label}</button>}
                           <button onClick={() => setDetailRowId(row.id)} className="text-xs text-neutral-600 hover:text-neutral-800 font-medium px-2 py-1 rounded hover:bg-neutral-100 transition-colors">Details</button>
