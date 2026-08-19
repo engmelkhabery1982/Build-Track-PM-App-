@@ -12,7 +12,7 @@ import { WorkQueue } from '@/components/WorkQueue';
 import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
 import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
-import { PreferencesPanel } from '@/components/PreferencesPanel';
+import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -641,6 +641,7 @@ export default function App() {
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (localStorage.getItem('buildtrack:workspace-mode') as WorkspaceMode) || 'professional');
   const [workspaceProjectId, setWorkspaceProjectId] = useState('');
   const [activeRole, setActiveRole] = useState(() => localStorage.getItem('buildtrack:active-role') || 'PMO Admin');
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem('buildtrack:session-user') || '');
@@ -654,6 +655,10 @@ export default function App() {
   const normalizingScheduleActivities = useRef(false);
 
   useEffect(() => { localStorage.setItem('buildtrack:active-role', activeRole); }, [activeRole]);
+  useEffect(() => {
+    document.documentElement.dataset.workspaceMode = workspaceMode;
+    if (workspaceMode === 'focus') setFocusMode(true);
+  }, [workspaceMode]);
   useEffect(() => {
     if (restoringNavigation.current) { restoringNavigation.current = false; return; }
     setNavigationHistory((previous) => {
@@ -1659,7 +1664,7 @@ export default function App() {
       return <HelpCenter onNavigate={setActiveView} />;
     }
     if (activeView === 'preferences') {
-      return <PreferencesPanel destinations={NAV_ITEMS.map(({ key, label }) => ({ key, label }))} onSaved={setActiveView} />;
+      return <PreferencesPanel destinations={NAV_ITEMS.map(({ key, label }) => ({ key, label }))} onSaved={setActiveView} mode={workspaceMode} onModeSaved={(mode) => { setWorkspaceMode(mode); setFocusMode(mode === 'focus'); }} />;
     }
     if (activeView === 'dashboard') {
       return (
@@ -2747,7 +2752,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-neutral-50">
+    <div className={`app-workspace app-mode-${workspaceMode} flex h-screen bg-neutral-50`}>
       {/* Sidebar */}
       {!focusMode && <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-neutral-800 flex flex-col transition-transform duration-300 no-print`}>
         {/* Logo */}
