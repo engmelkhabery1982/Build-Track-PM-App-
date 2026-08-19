@@ -1520,7 +1520,7 @@ export default function App() {
       return <AuditTrailExplorer records={data.auditLog as Record<string, any>[]} />;
     }
     if (activeView === 'reportPack') {
-      return <ReportPack projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} variations={data.variations as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} costs={data.costs as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} cashFlow={data.cashFlow as Record<string, any>[]} />;
+      return <ReportPack projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} variations={data.variations as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} cashFlow={data.cashFlow as Record<string, any>[]} costEntries={data.costEntries as Record<string, any>[]} scheduleDistributions={data.scheduleDistributions as Record<string, any>[]} boqItems={data.boqItems as Record<string, any>[]} />;
     }
     if (activeView === 'help') {
       return <HelpCenter onNavigate={setActiveView} />;

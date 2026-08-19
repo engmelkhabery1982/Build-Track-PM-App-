@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
-import { addCalendarDays, distributedPlannedValueToDate, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, distributedPlannedValueToDate } from '@/utils/schedulePlanning';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -86,6 +86,11 @@ export function Dashboard({
   const [statusFilter, setStatusFilter] = useState('all');
 
   const pid = selectedProjectId;
+  const reportDate = new Date().toISOString().slice(0, 10);
+  const datedThroughToday = (value: unknown) => {
+    const date = String(value || '').slice(0, 10);
+    return Boolean(date && date <= reportDate);
+  };
   const effectiveProjects = useMemo(() => projects.map((project) => {
     const mainContractIds = new Set(contracts
       .filter((contract) => contract.project_id === project.id && !contract.parent_main_contract_id)
@@ -98,12 +103,13 @@ export function Dashboard({
   const fProjects = pid === 'all' ? effectiveProjects : effectiveProjects.filter((p) => p.id === pid);
   const fTasks = pid === 'all' ? tasks : tasks.filter((t) => t.project_id === pid);
   const fCosts = pid === 'all' ? costs : costs.filter((c) => c.project_id === pid);
+  const fCostEntries = pid === 'all' ? costEntries : costEntries.filter((entry) => entry.project_id === pid);
   const fProcurement = pid === 'all' ? procurement : procurement.filter((p) => p.project_id === pid);
   const fSafety = pid === 'all' ? safety : safety.filter((s) => s.project_id === pid);
   const fProgress = pid === 'all' ? progress : progress.filter((p) => p.project_id === pid);
   const fSchedules = pid === 'all' ? schedules : schedules.filter((s) => s.project_id === pid);
   const fContracts = pid === 'all' ? contracts : contracts.filter((c) => c.project_id === pid);
-  const primaryContracts = selectPrimaryContracts(fContracts);
+  const primaryContracts = selectPrimaryContracts(fContracts).filter((contract) => datedThroughToday(contract.signed_date || contract.start_date));
   const fBOQ = pid === 'all' ? boqItems : boqItems.filter((b) => b.project_id === pid);
   const fCashFlow = pid === 'all' ? cashFlow : cashFlow.filter((c) => c.project_id === pid);
   const fSubInv = pid === 'all' ? subInvoices : subInvoices.filter((s) => s.project_id === pid);
@@ -122,7 +128,7 @@ export function Dashboard({
 
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
-    const totalSpent = fProjects.reduce((s, p) => s + (p.spent || 0), 0);
+    const totalSpent = fCostEntries.filter((entry) => datedThroughToday(entry.date)).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
     const activeProjects = fProjects.filter((p) => p.status === 'In Progress').length;
     const completedProjects = fProjects.filter((p) => p.status === 'Completed').length;
     const planningProjects = fProjects.filter((p) => p.status === 'Planning').length;
@@ -155,7 +161,10 @@ export function Dashboard({
     fTasks.forEach((t) => { taskPriorityCounts[t.priority] = (taskPriorityCounts[t.priority] || 0) + 1; });
 
     const totalPlannedCosts = fCosts.reduce((s, c) => s + (c.planned || 0), 0);
-    const totalActualCosts = fCosts.reduce((s, c) => s + (c.actual || 0), 0);
+    // Cost-control rows are live aggregates. Dashboard/report AC must be
+    // reconstructed from dated cost entries so future costs never appear in
+    // an "as of today" figure.
+    const totalActualCosts = fCostEntries.filter((entry) => datedThroughToday(entry.date)).reduce((s, entry) => s + (Number(entry.amount) || 0), 0);
     const totalCommittedCosts = fCosts.reduce((s, c) => s + (c.committed || 0), 0);
     // EVM has authoritative sources: PV from Schedule and EV from the
     // WIR-derived committed value in Cost Control. Project progress is a
@@ -163,8 +172,14 @@ export function Dashboard({
     const totalPlannedWork = fSchedules
       .filter((schedule) => !(!String(schedule.activity || '').trim() && fSchedules
         .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim())))
-      .reduce((s, schedule) => s + schedulePlannedValueToDate(schedule as Record<string, any>), 0);
-    const totalEarnedWork = fCosts.reduce((s, cost) => s + (Number(cost.committed) || 0), 0);
+      .reduce((s, schedule) => s + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, reportDate), 0);
+    const totalEarnedWork = fWirs
+      .filter((wir) => datedThroughToday(wir.inspection_date) && (wir.status === 'Approved' || wir.result === 'Pass' || wir.result === 'Conditional Pass'))
+      .reduce((sum, wir) => {
+        const item = boqItems.find((boqItem) => boqItem.id === wir.boq_item_id);
+        const mainItem = item?.main_boq_item_id ? boqItems.find((boqItem) => boqItem.id === item.main_boq_item_id) : item;
+        return sum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
+      }, 0);
     const costVariance = totalPlannedCosts - totalActualCosts;
 
     const openSafety = fSafety.filter((s) => s.status === 'Open').length;
@@ -194,7 +209,7 @@ export function Dashboard({
     const totalContractValue = primaryContracts.reduce((s, c) => s + (Number(c.contract_value) || 0), 0);
     const activeContracts = primaryContracts.filter((c) => c.status === 'Active').length;
     const totalBOQAmount = fBOQ.reduce((s, b) => s + (b.amount || 0), 0);
-    const actualCashFlow = fCashFlow.filter((c: any) => !c.movement_type || c.movement_type === 'Actual' || c.movement_type === 'Manual');
+    const actualCashFlow = fCashFlow.filter((c: any) => (!c.movement_type || c.movement_type === 'Actual' || c.movement_type === 'Manual') && datedThroughToday(c.date));
     const forecastCashFlow = fCashFlow.filter((c: any) => c.movement_type === 'Forecast');
     const totalInflow = actualCashFlow.reduce((s, c) => s + (c.inflow || 0), 0);
     const totalOutflow = actualCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
@@ -220,11 +235,11 @@ export function Dashboard({
     const mainVariations = fVariations.filter((variation) => !variation.contract_id || mainContractIds.has(variation.contract_id));
     const variationCostImpact = mainVariations.reduce((s, v) => s + (Number(v.cost_impact) || 0), 0);
     const approvedVariationCostImpact = mainVariations
-      .filter((variation) => variation.status === 'Approved')
+      .filter((variation) => variation.status === 'Approved' && datedThroughToday(variation.approved_date))
       .reduce((s, variation) => s + (Number(variation.cost_impact) || 0), 0);
     const modifiedContractValue = totalContractValue + approvedVariationCostImpact;
     const pendingVariations = mainVariations.filter((v) => v.status === 'Pending' || v.status === 'Submitted').length;
-    const approvedVariations = mainVariations.filter((v) => v.status === 'Approved').length;
+    const approvedVariations = mainVariations.filter((v) => v.status === 'Approved' && datedThroughToday(v.approved_date)).length;
     const approvedBaselines = fBaselines.filter((baseline) => baseline.status === 'Approved').length;
     const openReportingPeriods = fReportingPeriods.filter((period) => period.status === 'Open').length;
     const openGovernanceItems = fGovernance.filter((entry) => entry.status !== 'Closed').length;
@@ -256,7 +271,7 @@ export function Dashboard({
       openRfis, pendingSubmittals, openQualityItems,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fProcurement, fSafety, fProgress, fSchedules, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality]);
+  }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, boqItems, scheduleDistributions, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate]);
 
   const evm = useMemo(() => {
     const BAC = stats.totalBudget || stats.totalPlannedWork || 0;
