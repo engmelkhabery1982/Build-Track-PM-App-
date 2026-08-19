@@ -435,8 +435,7 @@ export function DataTableView({
   const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
   const [inlineEdit, setInlineEdit] = useState<{ id: string; key: string } | null>(null);
   const [inlineValue, setInlineValue] = useState<any>(null);
-  const [sortField, setSortField] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortRules, setSortRules] = useState<{ key: string; dir: 'asc' | 'desc' }[]>([]);
   const [collapsedScheduleItems, setCollapsedScheduleItems] = useState<Set<string>>(new Set());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
@@ -761,19 +760,21 @@ export function DataTableView({
         });
       return ordered;
     }
-    if (!sortField) return displayData;
+    if (!sortRules.length) return displayData;
     return [...displayData].sort((a, b) => {
-      const col = columns.find((c) => c.key === sortField);
-      const aVal = a[sortField];
-      const bVal = b[sortField];
-      if (aVal === null || aVal === undefined || aVal === '') return 1;
-      if (bVal === null || bVal === undefined || bVal === '') return -1;
-      if (col?.type === 'number' || col?.type === 'money') {
-        return sortDir === 'asc' ? Number(aVal) - Number(bVal) : Number(bVal) - Number(aVal);
+      for (const rule of sortRules) {
+        const col = columns.find((c) => c.key === rule.key);
+        const aVal = a[rule.key]; const bVal = b[rule.key];
+        if (aVal === null || aVal === undefined || aVal === '') return 1;
+        if (bVal === null || bVal === undefined || bVal === '') return -1;
+        const result = col?.type === 'number' || col?.type === 'money'
+          ? Number(aVal) - Number(bVal)
+          : String(aVal).localeCompare(String(bVal));
+        if (result !== 0) return rule.dir === 'asc' ? result : -result;
       }
-      return sortDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
+      return 0;
     });
-  }, [displayData, sortField, sortDir, columns, tableName, collapsedScheduleItems]);
+  }, [displayData, sortRules, columns, tableName, collapsedScheduleItems]);
 
   const activeCellInfo = useMemo(() => {
     if (!activeCell) return null;
@@ -839,14 +840,18 @@ export function DataTableView({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [search, filterValues, projectFilter, dateFrom, dateTo]);
 
-  function toggleSort(key: string) {
-    if (sortField === key) {
-      if (sortDir === 'asc') setSortDir('desc');
-      else { setSortField(null); setSortDir('asc'); }
-    } else {
-      setSortField(key);
-      setSortDir('asc');
-    }
+  function toggleSort(key: string, append = false) {
+    setSortRules((current) => {
+      const existing = current.find((rule) => rule.key === key);
+      if (!append) {
+        if (!existing) return [{ key, dir: 'asc' }];
+        if (existing.dir === 'asc') return [{ key, dir: 'desc' }];
+        return [];
+      }
+      if (!existing) return [...current, { key, dir: 'asc' }];
+      if (existing.dir === 'asc') return current.map((rule) => rule.key === key ? { ...rule, dir: 'desc' } : rule);
+      return current.filter((rule) => rule.key !== key);
+    });
   }
 
   function getDynamicFilterOptions(key: string): string[] {
@@ -2471,12 +2476,12 @@ export function DataTableView({
                   <th className="w-9 bg-neutral-100 px-2 py-2 text-center no-print"><input type="checkbox" checked={sortedData.filter((row) => !row.is_summary_row).length > 0 && sortedData.filter((row) => !row.is_summary_row).every((row) => selectedRowIds.has(row.id))} onChange={toggleAllVisibleRows} aria-label="Select all visible rows" className="rounded border-neutral-300 text-primary-600"/></th>
                   {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
                   {visibleColumns.map((col) => (
-                    <th key={col.key} onClick={() => toggleSort(col.key)}
+                    <th key={col.key} onClick={(event) => toggleSort(col.key, event.ctrlKey || event.metaKey)}
                       className="relative text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
                       style={columnWidths[col.key] ? { width: `${columnWidths[col.key]}px` } : col.width ? { width: col.width } : undefined}>
                       <div className="flex items-center gap-1">
                         {col.label}
-                        {sortField === col.key && <span className="text-primary-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                        {sortRules.find((rule) => rule.key === col.key) && <span className="text-primary-500">{sortRules.find((rule) => rule.key === col.key)!.dir === 'asc' ? '↑' : '↓'}{sortRules.length > 1 ? ` ${sortRules.findIndex((rule) => rule.key === col.key) + 1}` : ''}</span>}
                       </div>
                       <button onMouseDown={(event) => startColumnResize(col.key, event)} onClick={(event) => event.stopPropagation()} className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:w-1.5 hover:bg-primary-400" title="Drag to resize column" aria-label={`Resize ${col.label} column`} />
                     </th>
