@@ -376,6 +376,7 @@ export function DataTableView({
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [groupByKey, setGroupByKey] = useState('');
+  const [compactRows] = useState(() => window.localStorage.getItem('buildtrack:compact-tables') === 'true');
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => columns.map((column) => column.key));
 
   // Entering a work area from Project Workspace establishes that project's
@@ -2537,7 +2538,7 @@ export function DataTableView({
                             data-grid-cell={`${row.id}:${col.key}`}
                             onClick={(event) => selectCell(row.id, col.key, event)}
                             onDoubleClick={() => { if (canEdit) startInlineEdit(row.id, col.key, row[col.key]); }}
-                            className={`px-2 py-1.5 whitespace-nowrap border border-neutral-200 text-sm ${
+                            className={`px-2 ${compactRows ? 'py-1' : 'py-1.5'} whitespace-nowrap border border-neutral-200 text-sm ${
                               isEditing ? 'p-0' : ''
                             } ${
                               isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : isScheduleSummary ? 'bg-primary-50 text-primary-950 font-semibold' : canEdit ? 'bg-white hover:bg-primary-50/50 cursor-cell border-l-primary-100' : 'bg-neutral-50/80 text-neutral-600 cursor-default'

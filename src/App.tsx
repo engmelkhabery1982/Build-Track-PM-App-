@@ -12,6 +12,7 @@ import { WorkQueue } from '@/components/WorkQueue';
 import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
 import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
+import { PreferencesPanel } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -23,6 +24,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'workQueue', label: 'My Work Queue', icon: CheckSquare, group: 'Executive' },
   { key: 'reportPack', label: 'Executive Report Pack', icon: FileText, group: 'Executive' },
   { key: 'help', label: 'Help & Quick Guide', icon: ClipboardList, group: 'Executive' },
+  { key: 'preferences', label: 'My Preferences', icon: Menu, group: 'Executive' },
   { key: 'dataEntry', label: 'Guided Data Entry', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'insights', label: 'PMO Insights', icon: BrainCircuit, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
@@ -608,7 +610,7 @@ const VIEW_TITLES: Record<string, string> = {
 };
 
 export default function App() {
-  const [activeView, setActiveView] = useState<ViewKey>('dashboard');
+  const [activeView, setActiveView] = useState<ViewKey>(() => (localStorage.getItem('buildtrack:default-view') as ViewKey) || 'dashboard');
   const [recentViews, setRecentViews] = useState<ViewKey[]>(() => {
     try { const stored = JSON.parse(localStorage.getItem('buildtrack:recent-views') || '[]'); return Array.isArray(stored) ? stored.slice(0, 5) : []; } catch { return []; }
   });
@@ -1508,6 +1510,9 @@ export default function App() {
     }
     if (activeView === 'help') {
       return <HelpCenter onNavigate={setActiveView} />;
+    }
+    if (activeView === 'preferences') {
+      return <PreferencesPanel destinations={NAV_ITEMS.map(({ key, label }) => ({ key, label }))} onSaved={setActiveView} />;
     }
     if (activeView === 'dashboard') {
       return (
