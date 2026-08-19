@@ -2264,6 +2264,16 @@ export default function App() {
       autoFillOptions.project_code = [...new Set(data.projects.map((r: any) => r.project_code).filter(Boolean))];
     }
 
+    const tailoredFormKeys: Record<string, string[]> = {
+      boq_items: ['contract_id', 'boq_header_id', 'item_name', 'description', 'category', 'unit', 'quantity', 'unit_rate', 'planned_start_date', 'planned_end_date', 'notes'],
+      schedules: ['contract_id', 'boq_item_id', 'activity', 'predecessor_item', 'relationship_type', 'lag_days', 'start_date', 'end_date', 'duration_days', 'planned_quantity', 'calendar_name', 'critical_path', 'responsible', 'status', 'notes'],
+      wir_entries: ['contract_id', 'boq_item_id', 'inspection_date', 'area', 'work_type', 'quantity', 'inspector', 'result', 'remarks', 'status'],
+      cost_entries: ['contract_id', 'boq_item_id', 'date', 'cost_type', 'invoice_number', 'payment_order_number', 'amount'],
+    };
+    const tailoredFormColumns = tailoredFormKeys[tableName]
+      ? config.columns.filter((column) => tailoredFormKeys[tableName].includes(column.key))
+      : undefined;
+
     return (
       <DataTableView
         tableName={tableName}
@@ -2379,8 +2389,8 @@ export default function App() {
           title: 'Render this cash-flow record using a saved flexible template.',
           onClick: (row) => previewRecordWithTemplate('Cash Forecast', row),
         } : undefined}
-        formColumns={['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
-        editFormColumns={tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined}
+        formColumns={tailoredFormColumns || (['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}
+        editFormColumns={tailoredFormColumns || (tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}
         onInsert={tableName === 'app_users' ? async (userDraft) => {
           const username = String(userDraft.username || '').trim();
           const password = String(userDraft.initial_password || '');

@@ -2093,6 +2093,29 @@ export function DataTableView({
     if (tableName === 'cost_entries') { return { label: 'Cost control impact', value: fmtMoney(Number(newRow.amount) || 0), detail: 'This cost entry updates the linked project cost-control position.' }; }
     return null;
   }, [tableName, newRow]);
+  const preSaveIssues = useMemo(() => {
+    const issues: string[] = [];
+    const required = (key: string, label: string) => { if (!String(newRow[key] ?? '').trim()) issues.push(`${label} is required.`); };
+    if (tableName === 'boq_items') {
+      required('contract_id', 'Contract'); required('boq_header_id', 'BOQ header'); required('item_name', 'Item description');
+      if (!(Number(newRow.quantity) > 0)) issues.push('Quantity must be greater than zero.');
+      if (Number(newRow.unit_rate) < 0) issues.push('Unit rate cannot be negative.');
+    }
+    if (tableName === 'schedules') {
+      required('contract_id', 'Main contract'); required('boq_item_id', 'BOQ item'); required('activity', 'Activity');
+      if (!(Number(newRow.planned_quantity) > 0)) issues.push('Planned quantity must be greater than zero.');
+      if (!newRow.start_date && !newRow.end_date) issues.push('Enter dates, or enter a date together with duration.');
+    }
+    if (tableName === 'wir_entries') {
+      required('contract_id', 'Contract'); required('boq_item_id', 'BOQ item'); required('inspection_date', 'Inspection date');
+      if (!(Number(newRow.quantity) > 0)) issues.push('Inspection quantity must be greater than zero.');
+    }
+    if (tableName === 'cost_entries') {
+      required('contract_id', 'Main contract'); required('boq_item_id', 'BOQ item'); required('date', 'Cost date'); required('cost_type', 'Cost type');
+      if (!(Number(newRow.amount) > 0)) issues.push('Cost amount must be greater than zero.');
+    }
+    return issues;
+  }, [tableName, newRow]);
   const formSection = (key: string) => {
     if (['project_id', 'project_code', 'contract_id', 'company_name', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'party_id', 'client_party_id', 'contractor_party_id', 'supplier_party_id'].includes(key)) return 'Context & relationships';
     if (key.includes('date') || ['start_date', 'end_date', 'duration_days', 'lag_days', 'calendar_name', 'predecessor_item', 'relationship_type'].includes(key)) return 'Dates & planning';
@@ -2692,6 +2715,7 @@ export function DataTableView({
               {allColsForEdit.map((col, index) => { const section = formSection(col.key); const previous = index > 0 ? formSection(allColsForEdit[index - 1].key) : ''; return <Fragment key={col.key}>{section !== previous && <div className="border-b border-neutral-100 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-primary-700">{section}</div>}<div><label className="block text-xs font-medium text-neutral-600 mb-1">{col.label}</label>{renderFormField(col, newRow, setNewRow)}</div></Fragment>; })}
             </div>
             {draftImpact && <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Expected impact</p><p className="mt-1 text-lg font-bold text-primary-900">{draftImpact.label}: {draftImpact.value}</p><p className="mt-1 text-xs leading-5 text-primary-800">{draftImpact.detail}</p></div>}
+            {(['boq_items', 'schedules', 'wir_entries', 'cost_entries'].includes(tableName)) && <div className={`mt-3 rounded-xl border p-3 text-sm ${preSaveIssues.length ? 'border-warning-200 bg-warning-50 text-warning-900' : 'border-success-200 bg-success-50 text-success-900'}`}><p className="font-semibold">{preSaveIssues.length ? 'Complete these checks before saving' : 'Ready for governance validation'}</p>{preSaveIssues.length > 0 ? <ul className="mt-1 space-y-1 text-xs">{preSaveIssues.map((issue) => <li key={issue}>• {issue}</li>)}</ul> : <p className="mt-1 text-xs">Relationship, quantity and date rules will be verified again when you save.</p>}</div>}
             <div className="flex items-center justify-end gap-2 mt-5">
               <button onClick={() => { setMinimizedModal(null); setShowAdd(false); }} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
               <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">

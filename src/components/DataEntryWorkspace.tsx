@@ -28,6 +28,14 @@ function readContext() {
   } catch { return {}; }
 }
 
+function readEntryPresets(): { name: string; project_id: string; contract_id: string; boq_header_id?: string }[] {
+  try {
+    const saved = window.localStorage.getItem('buildtrack:entry-presets');
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
 export function DataEntryWorkspace({ projects, contracts, boqHeaders, boqItems, schedules, wirs, costEntries, onOpen }: {
   projects: Row[];
   contracts: Row[];
@@ -42,6 +50,8 @@ export function DataEntryWorkspace({ projects, contracts, boqHeaders, boqItems, 
   const [projectId, setProjectId] = useState(String(savedContext.project_id || ''));
   const [contractId, setContractId] = useState(String(savedContext.contract_id || ''));
   const [boqHeaderId, setBoqHeaderId] = useState(String(savedContext.boq_header_id || ''));
+  const [presetName, setPresetName] = useState('');
+  const [presets, setPresets] = useState(readEntryPresets);
 
   const selectedProject = projects.find((project) => project.id === projectId);
   const filteredContracts = useMemo(() => contracts.filter((contract) => contract.project_id === projectId), [contracts, projectId]);
@@ -83,6 +93,16 @@ export function DataEntryWorkspace({ projects, contracts, boqHeaders, boqItems, 
     setBoqHeaderId('');
   }
 
+  function savePreset() {
+    if (!projectId || !contractId || !presetName.trim()) { alert('Choose a project and contract, then enter a preset name.'); return; }
+    const next = [...presets.filter((preset) => preset.name.toLowerCase() !== presetName.trim().toLowerCase()), { name: presetName.trim(), project_id: projectId, contract_id: contractId, ...(boqHeaderId ? { boq_header_id: boqHeaderId } : {}) }];
+    setPresets(next); window.localStorage.setItem('buildtrack:entry-presets', JSON.stringify(next)); setPresetName('');
+  }
+
+  function applyPreset(preset: { project_id: string; contract_id: string; boq_header_id?: string }) {
+    setProjectId(preset.project_id); setContractId(preset.contract_id); setBoqHeaderId(preset.boq_header_id || '');
+  }
+
   function openTarget(target: EntryTarget) {
     if (!projectId || !contractId) { alert('Select a project and contract first.'); return; }
     if (target.needsHeader && !boqHeaderId) { alert('Select a BOQ header before opening BOQ item entry.'); return; }
@@ -98,6 +118,8 @@ export function DataEntryWorkspace({ projects, contracts, boqHeaders, boqItems, 
     <section className="rounded-2xl border border-primary-200 bg-gradient-to-r from-primary-50 to-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary-700">Guided data entry</p><h1 className="mt-1 text-2xl font-bold text-neutral-900">One workspace for project operations</h1><p className="mt-2 max-w-3xl text-sm text-neutral-600">Choose the project and contract once. Every operation opens in the same context, so the user only enters business data—not repeated codes or calculated values.</p></div>{(projectId || contractId) && <button onClick={clearContext} className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"><RotateCcw size={15}/> Clear context</button>}</div></section>
 
     <section className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm md:grid-cols-3"><label className="text-sm font-medium text-neutral-700">1. Project<select value={projectId} onChange={(event) => chooseProject(event.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2"><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.project_code || project.id} — {project.name}</option>)}</select></label><label className="text-sm font-medium text-neutral-700">2. Contract<select value={contractId} onChange={(event) => chooseContract(event.target.value)} disabled={!projectId} className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 disabled:bg-neutral-100"><option value="">Select contract</option>{filteredContracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number || contract.id} — {contract.title || contract.contractor || ''}{contract.parent_main_contract_id ? ' (Subcontract)' : ' (Main)'}</option>)}</select></label><label className="text-sm font-medium text-neutral-700">3. BOQ header <span className="font-normal text-neutral-400">(for BOQ)</span><select value={boqHeaderId} onChange={(event) => setBoqHeaderId(event.target.value)} disabled={!contractId} className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 disabled:bg-neutral-100"><option value="">Select BOQ header</option>{filteredHeaders.map((header) => <option key={header.id} value={header.id}>{header.boq_code || header.id} — {header.classification || 'BOQ'}</option>)}</select></label></section>
+
+    <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-end gap-2"><div className="min-w-56 flex-1"><p className="text-sm font-semibold text-neutral-800">Saved entry presets</p><p className="mt-1 text-xs text-neutral-500">Save a frequent project/contract/BOQ context and reopen it in one click.</p></div><input value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="Preset name, e.g. Tower A weekly WIR" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"/><button onClick={savePreset} className="rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-100">Save current context</button></div>{presets.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{presets.map((preset) => <span key={preset.name} className="inline-flex items-center rounded-lg border border-neutral-200 bg-neutral-50"><button onClick={() => applyPreset(preset)} className="px-3 py-1.5 text-sm font-medium text-neutral-700 hover:text-primary-700">{preset.name}</button><button onClick={() => { const next = presets.filter((item) => item.name !== preset.name); setPresets(next); window.localStorage.setItem('buildtrack:entry-presets', JSON.stringify(next)); }} className="border-l border-neutral-200 px-2 py-1.5 text-xs text-neutral-400 hover:text-error-600" title="Remove preset">×</button></span>)}</div>}</section>
 
     {selectedContract && <section className="flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900"><BriefcaseBusiness size={17}/><strong>{selectedProject?.project_code || selectedProject?.name}</strong><span className="text-primary-300">/</span><strong>{selectedContract.contract_number || selectedContract.id}</strong><span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold">{contractIsMain ? 'Main contract' : 'Subcontract'}</span><span className="text-xs text-primary-700">Context remains active until you clear it.</span></section>}
 
