@@ -1835,6 +1835,21 @@ export function DataTableView({
         }
       }
     }
+    if (tableName === 'boq_items' && insertedRows.length) {
+      const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
+      const contractsToCheck = new Set(insertedRows.map((row) => String(row.contract_id || headerContract.get(row.boq_header_id) || '')).filter(Boolean));
+      for (const contractId of contractsToCheck) {
+        const contract = contracts?.find((candidate) => candidate.id === contractId) as Record<string, any> | undefined;
+        if (!contract || contract.parent_main_contract_id || (Number(contract.contract_value) || 0) !== 0) continue;
+        const total = (boqItems || [])
+          .filter((item) => String(headerContract.get(item.boq_header_id || '') || '') === contractId)
+          .concat(insertedRows.filter((item) => String(item.contract_id || headerContract.get(item.boq_header_id) || '') === contractId) as BOQItem[])
+          .reduce((sum, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.unit_rate) || 0), 0);
+        if (total <= 0) continue;
+        const updated = await dataRepository.update<Record<string, any>>('contracts', contractId, { contract_value: Math.round(total * 100) / 100, notes: `${contract.notes ? `${contract.notes}\n` : ''}Original contract value initialized from imported BOQ.` });
+        onRelatedMutation?.('contracts', { type: 'update', row: updated });
+      }
+    }
     setImportResult({ success, failed: importPreview.rows.length - success, errors });
     if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
     setLastImportRows(insertedRows);
