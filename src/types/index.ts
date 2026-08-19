@@ -429,7 +429,9 @@ export interface VariationLine {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
-  change_type: 'New Item' | 'Quantity Change' | 'Rate Change';
+  change_type: 'New Item' | 'Quantity Change' | 'Rate Change' | 'Quantity & Rate Change';
+  /** Whether the revised rate reprices all quantity or only the changed quantity. */
+  pricing_scope?: 'Entire Revised Quantity' | 'Changed Quantity Only';
   item_code: string;
   description: string;
   unit: string;

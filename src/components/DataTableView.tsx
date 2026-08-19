@@ -959,12 +959,18 @@ export function DataTableView({
       const revisedRate = Number(out.revised_rate) || originalRate;
       out.original_quantity = originalQuantity;
       out.original_rate = originalRate;
-      out.revised_quantity = Math.round((changeType === 'New Item' ? quantityChange : originalQuantity + (changeType === 'Quantity Change' ? quantityChange : 0)) * 10000) / 10000;
+      const changesQuantity = changeType === 'Quantity Change' || changeType === 'Quantity & Rate Change';
+      out.revised_quantity = Math.round((changeType === 'New Item' ? quantityChange : originalQuantity + (changesQuantity ? quantityChange : 0)) * 10000) / 10000;
       out.revised_rate = revisedRate;
+      out.pricing_scope = out.pricing_scope || 'Entire Revised Quantity';
       out.value_impact = Math.round((changeType === 'New Item'
         ? quantityChange * revisedRate
         : changeType === 'Rate Change'
           ? originalQuantity * (revisedRate - originalRate)
+          : changeType === 'Quantity & Rate Change'
+            ? (out.pricing_scope === 'Changed Quantity Only'
+              ? quantityChange * revisedRate
+              : out.revised_quantity * revisedRate - originalQuantity * originalRate)
           : quantityChange * originalRate) * 100) / 100;
     }
     if (tableName === 'wir_entries') {
@@ -1221,7 +1227,7 @@ export function DataTableView({
         throw new Error('The variation line must belong to the same contract as its variation order.');
       }
       const changeType = String(record.change_type || '');
-      if (!['New Item', 'Quantity Change', 'Rate Change'].includes(changeType)) throw new Error('Choose a valid variation change type.');
+      if (!['New Item', 'Quantity Change', 'Rate Change', 'Quantity & Rate Change'].includes(changeType)) throw new Error('Choose a valid variation change type.');
       if (changeType === 'New Item' && !record.boq_header_id) throw new Error('Select the target BOQ header for a new variation item.');
       if (changeType !== 'New Item' && !record.boq_item_id) throw new Error('Select the existing BOQ item to be changed.');
       if (changeType === 'New Item' && (!String(record.item_code || '').trim() || !String(record.description || '').trim())) {
@@ -1230,6 +1236,11 @@ export function DataTableView({
       if (changeType === 'New Item' && (Number(record.quantity_change) || 0) <= 0) throw new Error('A new variation item requires a positive quantity.');
       if (changeType === 'Quantity Change' && (Number(record.quantity_change) || 0) === 0) throw new Error('Enter a non-zero quantity change.');
       if (changeType === 'Rate Change' && (Number(record.revised_rate) || 0) < 0) throw new Error('The revised rate cannot be negative.');
+      if (changeType === 'Quantity & Rate Change' && (Number(record.quantity_change) || 0) === 0) throw new Error('Enter a non-zero quantity change for the combined change.');
+      if (changeType === 'Quantity & Rate Change' && (Number(record.revised_rate) || 0) < 0) throw new Error('The revised rate cannot be negative.');
+      if (changeType === 'Quantity & Rate Change' && record.pricing_scope === 'Changed Quantity Only' && (Number(record.quantity_change) || 0) < 0) {
+        throw new Error('Changed Quantity Only is for additional quantity at a new rate. Use Entire Revised Quantity when reducing quantity.');
+      }
     }
     if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
       throw new Error('A subcontractor invoice must be assigned to a subcontract.');

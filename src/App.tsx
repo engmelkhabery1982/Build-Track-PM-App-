@@ -474,7 +474,8 @@ const VARIATION_COLUMNS: ColumnDef[] = [
 
 const VARIATION_LINE_COLUMNS: ColumnDef[] = [
   { key: 'variation_id', label: 'Variation Order', type: 'select', editable: true },
-  { key: 'change_type', label: 'Change Type', type: 'status', editable: true, options: ['New Item', 'Quantity Change', 'Rate Change'] },
+  { key: 'change_type', label: 'Change Type', type: 'status', editable: true, options: ['New Item', 'Quantity Change', 'Rate Change', 'Quantity & Rate Change'] },
+  { key: 'pricing_scope', label: 'Pricing Scope', type: 'status', editable: true, options: ['Entire Revised Quantity', 'Changed Quantity Only'] },
   { key: 'boq_header_id', label: 'BOQ Header', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'Existing BOQ Item', type: 'select', editable: true },
   { key: 'main_boq_item_id', label: 'Parent Main BOQ Item', type: 'select', editable: true },
@@ -600,7 +601,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   clientInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   subcontractorInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: VARIATION_STATUSES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
-  variationLines: { columns: VARIATION_LINE_COLUMNS, filters: [{ key: 'change_type', label: 'Change Type', options: ['New Item', 'Quantity Change', 'Rate Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
+  variationLines: { columns: VARIATION_LINE_COLUMNS, filters: [{ key: 'change_type', label: 'Change Type', options: ['New Item', 'Quantity Change', 'Rate Change', 'Quantity & Rate Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
   wir: { columns: WIR_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
   laborDuty: { columns: LABOR_DUTY_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -893,18 +894,53 @@ export default function App() {
       } else {
         const item = items.find((row) => row.id === line.boq_item_id);
         if (!item) throw new Error(`Variation line ${line.item_code || line.id} has no valid existing BOQ item.`);
-        const patch = changeType === 'Quantity Change'
-          ? { quantity: Math.max(0, (Number(item.quantity) || 0) + (Number(line.quantity_change) || 0)) }
-          : { unit_rate: Math.max(0, (Number(item.unit_rate) || 0) + ((Number(line.revised_rate) || 0) - (Number(line.original_rate) || 0))) };
-        const quantity = Number(patch.quantity ?? item.quantity) || 0;
-        const rate = Number(patch.unit_rate ?? item.unit_rate) || 0;
-        const updated = await dataRepository.update<Record<string, any>>('boq_items', item.id, {
-          ...patch,
-          amount: Math.round(quantity * rate * 100) / 100,
-          last_modified: new Date().toISOString(),
-          notes: `${item.notes ? `${item.notes}\n` : ''}Approved variation ${variation.variation_number || variation.id} effective ${effectiveDate}.`,
-        });
-        data.applyLocalMutation('boq_items', { type: 'update', row: updated });
+        // Existing BOQ rows are immutable commercial baselines. Every
+        // approved adjustment is represented as one or more supplemental BOQ
+        // rows, preserving the source item and the variation reference.
+        const header = headers.find((row) => row.id === item.boq_header_id);
+        const additions: Array<{ suffix: string; quantity: number; rate: number; label: string }> = [];
+        if (changeType === 'Quantity Change') additions.push({ suffix: 'QTY', quantity: Number(line.quantity_change) || 0, rate: Number(item.unit_rate) || 0, label: 'Quantity adjustment' });
+        if (changeType === 'Rate Change') additions.push({ suffix: 'RATE', quantity: Number(item.quantity) || 0, rate: (Number(line.revised_rate) || 0) - (Number(item.unit_rate) || 0), label: 'Rate adjustment' });
+        if (changeType === 'Quantity & Rate Change') {
+          if (line.pricing_scope === 'Changed Quantity Only') {
+            additions.push({ suffix: 'QTY-RATE', quantity: Number(line.quantity_change) || 0, rate: Number(line.revised_rate) || 0, label: 'Additional quantity at revised rate' });
+          } else {
+            additions.push({ suffix: 'RATE', quantity: Number(item.quantity) || 0, rate: (Number(line.revised_rate) || 0) - (Number(item.unit_rate) || 0), label: 'Rate adjustment on original quantity' });
+            additions.push({ suffix: 'QTY-RATE', quantity: Number(line.quantity_change) || 0, rate: Number(line.revised_rate) || 0, label: 'Additional quantity at revised rate' });
+          }
+        }
+        const reference = String(variation.variation_number || variation.id).replace(/[^A-Za-z0-9-]/g, '');
+        for (const addition of additions.filter((entry) => entry.quantity !== 0 && entry.rate !== 0)) {
+          const supplementCode = `${item.item_code || 'ITEM'}-VO-${reference}-${addition.suffix}`;
+          if (items.some((candidate) => candidate.boq_header_id === item.boq_header_id && candidate.item_code === supplementCode)) {
+            throw new Error(`The variation BOQ item ${supplementCode} was already created.`);
+          }
+          const created = await dataRepository.insert<Record<string, any>>('boq_items', {
+            project_id: item.project_id,
+            project_code: item.project_code || '',
+            boq_code: header?.boq_code || item.boq_code || '',
+            // The system suffix keeps the physical key unique; the original
+            // business code is retained below for reporting and selection.
+            item_code: supplementCode,
+            source_item_code: item.item_code || '',
+            parent_boq_item_id: item.id,
+            variation_id: variation.id,
+            variation_number: variation.variation_number || variation.id,
+            item_name: `${item.item_name || item.description || item.item_code} — ${addition.label}`,
+            description: `Source item ${item.item_code || item.id}; ${addition.label}; approved variation ${variation.variation_number || variation.id}. ${line.description || ''}`.trim(),
+            category: 'Variation',
+            unit: item.unit || line.unit || '',
+            quantity: addition.quantity,
+            unit_rate: addition.rate,
+            amount: Math.round(addition.quantity * addition.rate * 100) / 100,
+            boq_header_id: item.boq_header_id,
+            main_boq_item_id: item.main_boq_item_id || null,
+            item_code_locked: false,
+            last_modified: new Date().toISOString(),
+            notes: `Variation supplement for ${item.item_code || item.id}; variation ${variation.variation_number || variation.id}; effective ${effectiveDate}.`,
+          });
+          data.applyLocalMutation('boq_items', { type: 'insert', row: created });
+        }
       }
       const marked = await dataRepository.update<Record<string, any>>('variation_lines', line.id, { effective_date: effectiveDate, applied_at: new Date().toISOString() });
       data.applyLocalMutation('variation_lines', { type: 'update', row: marked });
