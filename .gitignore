@@ -11,6 +11,7 @@ dist
 dist-ssr
 *.local
 *.tsbuildinfo
+*.backup-phase1a
 
 # Generated audit, checkpoint, and desktop build artifacts
 _Audit/
