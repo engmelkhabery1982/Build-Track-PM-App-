@@ -9,6 +9,7 @@ import { PmoInsights } from '@/components/PmoInsights';
 import { DataEntryWorkspace } from '@/components/DataEntryWorkspace';
 import { CommandPalette } from '@/components/CommandPalette';
 import { WorkQueue } from '@/components/WorkQueue';
+import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -1492,6 +1493,9 @@ export default function App() {
     }
     if (activeView === 'workQueue') {
       return <WorkQueue approvals={data.approvals as Record<string, any>[]} tasks={data.tasks as Record<string, any>[]} clientInvoices={data.clientInvoiceTracking as Record<string, any>[]} subInvoices={data.subcontractorInvoiceTracking as Record<string, any>[]} rfis={data.rfis as Record<string, any>[]} quality={data.quality as Record<string, any>[]} onNavigate={setActiveView} />;
+    }
+    if (activeView === 'auditLog') {
+      return <AuditTrailExplorer records={data.auditLog as Record<string, any>[]} />;
     }
     if (activeView === 'dashboard') {
       return (
