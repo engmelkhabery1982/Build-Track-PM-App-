@@ -600,6 +600,9 @@ const VIEW_TITLES: Record<string, string> = {
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
+  const [recentViews, setRecentViews] = useState<ViewKey[]>(() => {
+    try { const stored = JSON.parse(localStorage.getItem('buildtrack:recent-views') || '[]'); return Array.isArray(stored) ? stored.slice(0, 5) : []; } catch { return []; }
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspaceProjectId, setWorkspaceProjectId] = useState('');
   const [activeRole, setActiveRole] = useState(() => localStorage.getItem('buildtrack:active-role') || 'PMO Admin');
@@ -614,6 +617,13 @@ export default function App() {
   const normalizingScheduleActivities = useRef(false);
 
   useEffect(() => { localStorage.setItem('buildtrack:active-role', activeRole); }, [activeRole]);
+  useEffect(() => {
+    setRecentViews((previous) => {
+      const next = [activeView, ...previous.filter((view) => view !== activeView)].slice(0, 5);
+      localStorage.setItem('buildtrack:recent-views', JSON.stringify(next));
+      return next;
+    });
+  }, [activeView]);
 
   const hashPassword = async (password: string, salt?: string) => {
     const actualSalt = salt || Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, '0')).join('');
@@ -2503,6 +2513,7 @@ export default function App() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3">
+          {recentViews.length > 1 && <div className="mb-4"><p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider px-3 mb-1.5">Recent</p>{recentViews.filter((view) => view !== activeView).slice(0, 4).map((view) => { const item = NAV_ITEMS.find((candidate) => candidate.key === view); if (!item) return null; const Icon = item.icon; return <button key={`recent-${view}`} onClick={() => { setActiveView(view); setSidebarOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-700 hover:text-white"><Icon size={16} className="text-neutral-400" />{item.label}</button>; })}</div>}
           {groups.map((group) => (
             <div key={group} className="mb-4">
               <p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider px-3 mb-1.5">{group}</p>

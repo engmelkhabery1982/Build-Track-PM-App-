@@ -364,14 +364,18 @@ export function DataTableView({
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [showViewPicker, setShowViewPicker] = useState(false);
   const [visibleFilterKeys, setVisibleFilterKeys] = useState<string[]>(() => filters?.map((filter) => filter.key) || []);
-  const [savedViews, setSavedViews] = useState<{ name: string; search: string; filterValues: Record<string, string>; visibleFilterKeys: string[]; projectFilter: string; dateFrom: string; dateTo: string }[]>([]);
+  const [savedViews, setSavedViews] = useState<{ name: string; search: string; filterValues: Record<string, string>; visibleFilterKeys: string[]; visibleColumnKeys?: string[]; projectFilter: string; dateFrom: string; dateTo: string }[]>([]);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [columnResize, setColumnResize] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
   const [importScope, setImportScope] = useState<Record<string, any> | null>(null);
+  const [workContext, setWorkContext] = useState<Record<string, any> | null>(null);
+  const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[] } | null>(null);
+  const [lastImportRows, setLastImportRows] = useState<Record<string, any>[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => columns.map((column) => column.key));
 
   // Entering a work area from Project Workspace establishes that project's
   // context. Once in the table, the normal project selector remains fully
@@ -388,13 +392,35 @@ export function DataTableView({
     } catch { setImportScope(null); }
   }, [tableName]);
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem('buildtrack:work-context');
+      const parsed = stored ? JSON.parse(stored) : null;
+      setWorkContext(parsed && typeof parsed === 'object' ? parsed : null);
+      if (!importScope && parsed?.project_id) setProjectFilter(parsed.project_id);
+    } catch { setWorkContext(null); }
+  }, [tableName, importScope]);
+
+  const activeScope = importScope || workContext;
+  const applicableScope = useMemo(() => Object.fromEntries(
+    Object.entries(activeScope || {}).filter(([key]) => columns.some((column) => column.key === key)),
+  ), [activeScope, columns]);
+
   function clearImportScope() {
     window.localStorage.removeItem(`buildtrack:import-scope:${tableName}`);
     setImportScope(null);
   }
 
+  function clearWorkContext() {
+    window.localStorage.removeItem('buildtrack:work-context');
+    window.localStorage.removeItem(`buildtrack:import-scope:${tableName}`);
+    setWorkContext(null);
+    setImportScope(null);
+    setProjectFilter('all');
+  }
+
   function createScopedDraft() {
-    let draft: Record<string, any> = { ...(createDraft ? createDraft() : createCodeDraft(tableName, data)), ...(importScope || {}) };
+    let draft: Record<string, any> = { ...(createDraft ? createDraft() : createCodeDraft(tableName, data)), ...applicableScope };
     ['company_name', 'project_id', 'contract_id', 'boq_header_id'].forEach((key) => {
       if (draft[key]) draft = applyRelationshipSelection(draft, key, String(draft[key]));
     });
@@ -416,6 +442,7 @@ export function DataTableView({
   const [activeCell, setActiveCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('');
+  const [operationNotice, setOperationNotice] = useState<{ kind: 'error' | 'warning' | 'success'; text: string } | null>(null);
   const [lastUndo, setLastUndo] = useState<{ id: string; before: Record<string, any>; label: string } | null>(null);
   const selectionAnchor = useRef<{ rowId: string; columnKey: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -461,6 +488,30 @@ export function DataTableView({
 
   useEffect(() => {
     try {
+      const stored = window.localStorage.getItem(`buildtrack:visible-columns:${tableName}`);
+      const parsed = stored ? JSON.parse(stored) : null;
+      setVisibleColumnKeys(Array.isArray(parsed) && parsed.length
+        ? parsed.filter((key) => columns.some((column) => column.key === key))
+        : columns.map((column) => column.key));
+    } catch { setVisibleColumnKeys(columns.map((column) => column.key)); }
+  }, [tableName, columns]);
+
+  const visibleColumns = useMemo(() => {
+    const selected = columns.filter((column) => visibleColumnKeys.includes(column.key));
+    return selected.length ? selected : columns.slice(0, 1);
+  }, [columns, visibleColumnKeys]);
+
+  function toggleVisibleColumn(key: string) {
+    setVisibleColumnKeys((current) => {
+      const next = current.includes(key) ? current.filter((value) => value !== key) : [...current, key];
+      if (!next.length) return current;
+      window.localStorage.setItem(`buildtrack:visible-columns:${tableName}`, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    try {
       const stored = window.localStorage.getItem(`buildtrack:saved-views:${tableName}`);
       const parsed = stored ? JSON.parse(stored) : [];
       setSavedViews(Array.isArray(parsed) ? parsed : []);
@@ -502,14 +553,14 @@ export function DataTableView({
   function saveCurrentView() {
     const name = window.prompt('Name this table view:', `My ${title} view`)?.trim();
     if (!name) return;
-    const next = [...savedViews.filter((view) => view.name !== name), { name, search, filterValues, visibleFilterKeys, projectFilter, dateFrom, dateTo }];
+    const next = [...savedViews.filter((view) => view.name !== name), { name, search, filterValues, visibleFilterKeys, visibleColumnKeys, projectFilter, dateFrom, dateTo }];
     setSavedViews(next);
     window.localStorage.setItem(`buildtrack:saved-views:${tableName}`, JSON.stringify(next));
   }
 
   function applySavedView(view: typeof savedViews[number]) {
     setSearch(view.search || ''); setFilterValues(view.filterValues || {}); setVisibleFilterKeys(view.visibleFilterKeys || []);
-    setProjectFilter(view.projectFilter || 'all'); setDateFrom(view.dateFrom || ''); setDateTo(view.dateTo || ''); setShowViewPicker(false);
+    setProjectFilter(view.projectFilter || 'all'); setDateFrom(view.dateFrom || ''); setDateTo(view.dateTo || ''); if (view.visibleColumnKeys?.length) setVisibleColumnKeys(view.visibleColumnKeys.filter((key) => columns.some((column) => column.key === key))); setShowViewPicker(false);
   }
 
   function deleteSavedView(name: string) {
@@ -536,8 +587,8 @@ export function DataTableView({
     if (showProjectFilter && projectFilter !== 'all') {
       result = result.filter((r) => r.project_id === projectFilter);
     }
-    if (importScope?.contract_id && ['boq_items', 'schedules', 'wir_entries'].includes(tableName)) {
-      result = result.filter((row) => row.contract_id === importScope.contract_id);
+    if (activeScope?.contract_id && columns.some((column) => column.key === 'contract_id')) {
+      result = result.filter((row) => row.contract_id === activeScope.contract_id);
     }
     Object.entries(filterValues).forEach(([key, val]) => {
       if (val !== 'all') result = result.filter((r) => String(r[key]) === val);
@@ -1214,10 +1265,11 @@ export function DataTableView({
       if (Array.isArray(inserted)) onMutated({ type: 'insertMany', rows: inserted });
       else onMutated({ type: 'insert', row: inserted });
       const warning = dateWarning?.(Array.isArray(inserted) ? inserted[0] : inserted);
-      if (warning) alert(`Saved with schedule warning: ${warning}`);
+      if (warning) setOperationNotice({ kind: 'warning', text: `Saved with schedule warning: ${warning}` });
+      else setOperationNotice({ kind: 'success', text: 'Record saved successfully.' });
     } catch (error: any) {
       console.error(`Could not add a ${tableName} record.`, error);
-      alert(`Error: ${describeOperationError(error, 'Failed to add the record.')}`);
+      setOperationNotice({ kind: 'error', text: describeOperationError(error, 'Failed to add the record.') });
     } finally {
       setSaving(false);
     }
@@ -1243,9 +1295,10 @@ export function DataTableView({
       onMutated({ type: 'update', row: updated });
       if (before && !onUpdate) setLastUndo({ id: editingId, before: { ...before }, label: 'form edit' });
       const warning = dateWarning?.(updated);
-      if (warning) alert(`Saved with schedule warning: ${warning}`);
+      if (warning) setOperationNotice({ kind: 'warning', text: `Saved with schedule warning: ${warning}` });
+      else setOperationNotice({ kind: 'success', text: 'Record updated successfully.' });
     } catch (error: any) {
-      alert(`Error: ${error.message || 'Failed to update the record.'}`);
+      setOperationNotice({ kind: 'error', text: error.message || 'Failed to update the record.' });
     } finally {
       setSaving(false);
     }
@@ -1321,7 +1374,7 @@ export function DataTableView({
         ['project_id', 'company_name', 'contract_id', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
           out[key] = resolveRelationship(key, out[key]);
         });
-        return { ...out, ...(importScope || {}) };
+        return { ...out, ...applicableScope };
       });
       const stagedRows: Record<string, any>[] = [];
       const mapped = rawMapped.map((raw, index) => {
@@ -1398,31 +1451,60 @@ export function DataTableView({
           if (!row.activity_code) row.activity_code = `${item.item_code || 'ITEM'}-ACT-${String((existingActivityCountByItem.get(item.id) || 0) + (importedActivityCountByItem.get(item.id) || 0)).padStart(3, '0')}`;
         });
       }
-      let success = 0;
-      const insertedRows: Record<string, any>[] = [];
-      const errors: string[] = [];
-      // Validate and persist one row at a time. This is deliberately more
-      // conservative than a bulk insert: a single invalid relationship must
-      // not discard hundreds of valid BOQ, schedule or WIR records.
-      for (let i = 0; i < mapped.length; i += 1) {
-        const row = mapped[i];
-        try {
-          assertRelationshipScope(row);
-          validateRecord?.(row);
-          const inserted = await dataRepository.insert<Record<string, any>>(tableName, row);
-          success += 1;
-          insertedRows.push(inserted);
-        } catch (error: any) {
-          errors.push(`Row ${i + 2}: ${error.message || 'Failed to import.'}`);
-        }
-      }
-      setImportResult({ success, failed: mapped.length - success, errors });
-      if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
+      // Do not write immediately after the user chooses a file.  The user
+      // first reviews the mapped values and the active project/contract
+      // context, then explicitly accepts the import in the preview panel.
+      setImportPreview({ fileName: file.name, rows: mapped });
     } catch (err: any) {
       setImportResult({ success: 0, failed: 0, errors: [err.message || 'Failed to read the Excel file.'] });
     }
     setImporting(false);
     e.target.value = '';
+  }
+
+  async function commitImportPreview() {
+    if (!importPreview) return;
+    setImporting(true);
+    let success = 0;
+    const insertedRows: Record<string, any>[] = [];
+    const errors: string[] = [];
+    // Persist one row at a time so that valid operational records survive an
+    // invalid row, while the outcome clearly tells the user exactly what was
+    // accepted and what must be corrected.
+    for (let i = 0; i < importPreview.rows.length; i += 1) {
+      const row = importPreview.rows[i];
+      try {
+        assertRelationshipScope(row);
+        validateRecord?.(row);
+        const inserted = await dataRepository.insert<Record<string, any>>(tableName, row);
+        success += 1;
+        insertedRows.push(inserted);
+      } catch (error: any) {
+        errors.push(`Row ${i + 2}: ${error.message || 'Failed to import.'}`);
+      }
+    }
+    setImportResult({ success, failed: importPreview.rows.length - success, errors });
+    if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
+    setLastImportRows(insertedRows);
+    if (success > 0) setOperationNotice({ kind: errors.length ? 'warning' : 'success', text: errors.length ? `${success} row(s) imported. ${errors.length} row(s) need correction.` : `${success} row(s) imported successfully. You can undo this import during this session.` });
+    setImportPreview(null);
+    setImporting(false);
+  }
+
+  async function undoLastImport() {
+    if (!lastImportRows.length || readOnly) return;
+    if (!window.confirm(`Remove the ${lastImportRows.length} row(s) imported in the last operation?`)) return;
+    setImporting(true);
+    const failed: string[] = [];
+    for (const row of lastImportRows) {
+      try {
+        await dataRepository.delete(tableName, row.id);
+        onMutated({ type: 'delete', id: row.id });
+      } catch (error: any) { failed.push(error.message || `Could not remove row ${row.id}.`); }
+    }
+    setLastImportRows([]);
+    setImporting(false);
+    setOperationNotice(failed.length ? { kind: 'warning', text: `Import undo completed with ${failed.length} issue(s).` } : { kind: 'success', text: 'The latest import was removed.' });
   }
 
   function handlePrint() { window.print(); }
@@ -2119,6 +2201,7 @@ export function DataTableView({
             <button onClick={handleImportClick} disabled={importing} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:opacity-50 no-print" title="Import data from an Excel file">
               {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Import
             </button>
+            <button onClick={() => void undoLastImport()} disabled={!lastImportRows.length || importing || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 no-print" title={lastImportRows.length ? `Remove ${lastImportRows.length} row(s) from the last import` : 'Undo the latest import'}><Undo2 size={15} /> Undo Import</button>
             <button onClick={downloadExcelTemplate} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Download a blank Excel template with the correct column headers">
               <FileText size={15} /> Template
             </button>
@@ -2135,7 +2218,8 @@ export function DataTableView({
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.xer" onChange={handleImportFile} className="hidden" />
         </div>
 
-        {importScope && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"><span className="font-semibold">Scoped entry active</span><span>{projectMap[importScope.project_id] || 'Selected project'}</span><span className="text-primary-300">/</span><span>{(contracts?.find((contract: any) => contract.id === importScope.contract_id) as any)?.contract_number || 'Selected contract'}</span><span className="text-xs text-primary-600">Project and contract are applied automatically to new rows and imports.</span><button onClick={clearImportScope} className="ml-auto rounded-md px-2 py-1 text-xs font-semibold hover:bg-primary-100">Clear scope</button></div>}
+        {activeScope && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"><span className="font-semibold">Working context</span><span>{projectMap[activeScope.project_id] || 'Selected project'}</span>{activeScope.contract_id && <><span className="text-primary-300">/</span><span>{(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}</span></>}<span className="text-xs text-primary-600">Applicable fields are filled automatically for new rows and imports.</span><button onClick={clearWorkContext} className="ml-auto rounded-md px-2 py-1 text-xs font-semibold hover:bg-primary-100">Clear context</button>{importScope && <button onClick={clearImportScope} className="rounded-md px-2 py-1 text-xs font-medium hover:bg-primary-100">This table only</button>}</div>}
+        {operationNotice && <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${operationNotice.kind === 'error' ? 'border-error-200 bg-error-50 text-error-800' : operationNotice.kind === 'warning' ? 'border-warning-200 bg-warning-50 text-warning-800' : 'border-success-200 bg-success-50 text-success-800'}`}><CircleAlert className="mt-0.5 shrink-0" size={16}/><span className="flex-1">{operationNotice.text}</span><button onClick={() => setOperationNotice(null)} className="rounded p-0.5 hover:bg-black/5" title="Dismiss"><X size={15}/></button></div>}
 
         {/* Filters bar */}
         <div className="mb-3 flex items-center gap-2 flex-wrap">
@@ -2188,9 +2272,10 @@ export function DataTableView({
               <Bookmark size={15} /> Views
             </button>
             {showViewPicker && (
-              <div className="absolute right-0 top-11 z-30 w-72 rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
+              <div className="absolute right-0 top-11 z-30 w-80 rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
                 <button onClick={saveCurrentView} className="mb-2 w-full rounded-lg bg-primary-50 px-3 py-2 text-left text-sm font-semibold text-primary-700 hover:bg-primary-100">Save current filters as a view</button>
                 <button onClick={resetColumnWidths} className="mb-2 w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-neutral-600 hover:bg-neutral-100">Reset column widths</button>
+                <div className="mb-3 border-t border-neutral-100 pt-3"><p className="mb-1 px-2 text-xs font-semibold text-neutral-500">Displayed columns</p><div className="max-h-40 space-y-1 overflow-auto">{columns.map((column) => <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"><input type="checkbox" checked={visibleColumnKeys.includes(column.key)} onChange={() => toggleVisibleColumn(column.key)} className="rounded border-neutral-300 text-primary-600"/>{column.label}</label>)}</div></div>
                 {savedViews.length ? <div className="max-h-56 space-y-1 overflow-auto">{savedViews.map((view) => <div key={view.name} className="flex items-center gap-1 rounded-lg hover:bg-neutral-50"><button onClick={() => applySavedView(view)} className="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm text-neutral-700">{view.name}</button><button onClick={() => deleteSavedView(view.name)} className="rounded p-1 text-neutral-400 hover:bg-error-50 hover:text-error-600" title="Delete saved view"><X size={14}/></button></div>)}</div> : <p className="px-2 py-2 text-xs text-neutral-500">No saved views yet.</p>}
               </div>
             )}
@@ -2290,7 +2375,7 @@ export function DataTableView({
               <thead className="sticky top-0 z-10">
                 <tr className="bg-neutral-100">
                   {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
-                  {columns.map((col) => (
+                  {visibleColumns.map((col) => (
                     <th key={col.key} onClick={() => toggleSort(col.key)}
                       className="relative text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
                       style={columnWidths[col.key] ? { width: `${columnWidths[col.key]}px` } : col.width ? { width: col.width } : undefined}>
@@ -2307,7 +2392,7 @@ export function DataTableView({
               <tbody>
                 {sortedData.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + (showProjectColumn ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
+                    <td colSpan={visibleColumns.length + (showProjectColumn ? 2 : 1)} className="text-center text-sm text-neutral-400 py-12">
                       No records found. {data.length === 0 ? (canAdd ? 'Click "Add New" to create the first record.' : 'Create a main contract to create the first project.') : 'Try adjusting your filters.'}
                     </td>
                   </tr>
@@ -2319,7 +2404,7 @@ export function DataTableView({
                       {showProjectColumn && (
                         <td className={`sticky left-0 z-10 px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>{projectMap[row.project_id] || '—'}</td>
                       )}
-                      {columns.map((col) => {
+                      {visibleColumns.map((col) => {
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
                         const codeControl = getCodeControl(tableName);
                         const codeIsLocked = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
@@ -2395,7 +2480,7 @@ export function DataTableView({
                 <tfoot className="sticky bottom-0 z-10">
                   <tr className="bg-neutral-200/90 backdrop-blur border-t-2 border-neutral-400 font-semibold">
                     {showProjectColumn && <td className="px-2 py-2 text-xs font-bold text-neutral-700 border border-neutral-300"></td>}
-                    {columns.map((col, ci) => (
+                    {visibleColumns.map((col, ci) => (
                       <td key={col.key} className="px-2 py-2 text-xs font-bold text-neutral-800 border border-neutral-300 whitespace-nowrap">
                         {tableName === 'schedules' && !hasSingleScheduleBOQ
                           ? (ci === 0 ? 'FILTER ONE BOQ ITEM FOR TOTALS' : '')
@@ -2415,6 +2500,18 @@ export function DataTableView({
       </div>
 
       {/* Add Modal */}
+      {importPreview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s). No data has been saved yet.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
+            <p className="mt-4 text-sm text-neutral-600">Review the first rows below. Relationship, quantity, date and locked-period rules will run again for every row when you confirm. Invalid rows will be listed after import and will not be saved.</p>
+            <div className="mt-4 overflow-auto rounded-lg border border-neutral-200"><table className="min-w-full border-collapse text-sm"><thead className="bg-neutral-100"><tr>{columns.filter((column) => importPreview.rows.some((row) => row[column.key] !== undefined)).slice(0, 8).map((column) => <th key={column.key} className="whitespace-nowrap border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">{column.label}</th>)}</tr></thead><tbody>{importPreview.rows.slice(0, 10).map((row, index) => <tr key={index} className="odd:bg-neutral-50">{columns.filter((column) => importPreview.rows.some((candidate) => candidate[column.key] !== undefined)).slice(0, 8).map((column) => <td key={column.key} className="max-w-48 truncate whitespace-nowrap border border-neutral-200 px-3 py-2 text-neutral-700">{renderCell(row[column.key], column, relationshipOptions?.[column.key], row)}</td>)}</tr>)}</tbody></table></div>
+            {importPreview.rows.length > 10 && <p className="mt-2 text-xs text-neutral-500">Preview shows the first 10 rows and 8 mapped columns.</p>}
+            <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Importing…' : `Confirm and import ${importPreview.rows.length} row(s)`}</button></div>
+          </div>
+        </div>
+      )}
       {showAdd && !readOnly && (
         minimizedModal === 'add' ? (
           <button onClick={() => setMinimizedModal(null)} className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-xl hover:bg-primary-700">

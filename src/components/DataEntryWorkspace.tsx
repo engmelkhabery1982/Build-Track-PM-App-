@@ -37,6 +37,10 @@ export function DataEntryWorkspace({ projects, contracts, boqHeaders, onOpen }: 
     const scope: Record<string, string> = { project_id: projectId, contract_id: contractId };
     if (target.table === 'boq_items') scope.boq_header_id = boqHeaderId;
     if (target.table === 'wir_entries') scope.company_name = contractId;
+    // Keep one explicit working context for the whole application.  The
+    // target-specific scope below remains for backward compatibility, while
+    // the work context lets related tables start in the same project/contract.
+    window.localStorage.setItem('buildtrack:work-context', JSON.stringify(scope));
     window.localStorage.setItem(`buildtrack:import-scope:${target.table}`, JSON.stringify(scope));
     onOpen(target.view);
   }
