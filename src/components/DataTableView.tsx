@@ -2504,9 +2504,9 @@ export function DataTableView({
                 <tr className="bg-neutral-100">
                   <th className="w-9 bg-neutral-100 px-2 py-2 text-center no-print"><input type="checkbox" checked={sortedData.filter((row) => !row.is_summary_row).length > 0 && sortedData.filter((row) => !row.is_summary_row).every((row) => selectedRowIds.has(row.id))} onChange={toggleAllVisibleRows} aria-label="Select all visible rows" className="rounded border-neutral-300 text-primary-600"/></th>
                   {showProjectColumn && <th className="sticky left-0 z-20 bg-neutral-100 text-left text-xs font-semibold text-neutral-700 px-2 py-2 border border-neutral-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Project Name</th>}
-                  {visibleColumns.map((col) => (
+                  {visibleColumns.map((col, columnIndex) => (
                     <th key={col.key} onClick={(event) => toggleSort(col.key, event.ctrlKey || event.metaKey)}
-                      className="relative text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors"
+                      className={`relative text-left text-xs font-semibold text-neutral-700 px-2 py-2 whitespace-nowrap border border-neutral-300 cursor-pointer hover:bg-neutral-200 select-none transition-colors ${!showProjectColumn && columnIndex === 0 ? 'sticky left-0 z-20 bg-neutral-100 shadow-[2px_0_4px_rgba(0,0,0,0.05)]' : ''}`}
                       style={columnWidths[col.key] ? { width: `${columnWidths[col.key]}px` } : col.width ? { width: col.width } : undefined}>
                       <div className="flex items-center gap-1">
                         {col.label}
@@ -2534,7 +2534,7 @@ export function DataTableView({
                       {showProjectColumn && (
                         <td className={`sticky left-0 z-10 px-2 py-1.5 text-sm text-neutral-600 whitespace-nowrap border border-neutral-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>{projectMap[row.project_id] || '—'}</td>
                       )}
-                      {visibleColumns.map((col) => {
+                      {visibleColumns.map((col, columnIndex) => {
                         const isEditing = inlineEdit?.id === row.id && inlineEdit?.key === col.key;
                         const codeControl = getCodeControl(tableName);
                         const codeIsLocked = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
@@ -2545,7 +2545,7 @@ export function DataTableView({
                             data-grid-cell={`${row.id}:${col.key}`}
                             onClick={(event) => selectCell(row.id, col.key, event)}
                             onDoubleClick={() => { if (canEdit) startInlineEdit(row.id, col.key, row[col.key]); }}
-                            className={`px-2 ${compactRows ? 'py-1' : 'py-1.5'} whitespace-nowrap border border-neutral-200 text-sm ${
+                            className={`px-2 ${compactRows ? 'py-1' : 'py-1.5'} whitespace-nowrap border border-neutral-200 text-sm ${!showProjectColumn && columnIndex === 0 ? `sticky left-0 z-10 shadow-[2px_0_4px_rgba(0,0,0,0.05)] ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}` : ''} ${
                               isEditing ? 'p-0' : ''
                             } ${
                               isEditing ? 'bg-primary-50' : selectedCells.has(`${row.id}:${col.key}`) ? 'bg-primary-100 ring-1 ring-inset ring-primary-500' : isScheduleSummary ? 'bg-primary-50 text-primary-950 font-semibold' : canEdit ? 'bg-white hover:bg-primary-50/50 cursor-cell border-l-primary-100' : 'bg-neutral-50/80 text-neutral-600 cursor-default'
