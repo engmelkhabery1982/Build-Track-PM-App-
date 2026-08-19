@@ -1739,6 +1739,38 @@ export function DataTableView({
     setOperationNotice(errors.length ? { kind: 'warning', text: `Status updated with ${errors.length} issue(s).` } : { kind: 'success', text: `Status updated for ${rows.length} selected row(s).` });
   }
 
+  async function bulkUpdateTextField(key: 'owner' | 'due_date') {
+    const rows = data.filter((row) => selectedRowIds.has(row.id));
+    if (!rows.length || readOnly || !columns.some((column) => column.key === key)) return;
+    const label = key === 'owner' ? 'owner' : 'due date (YYYY-MM-DD)';
+    const value = window.prompt(`Set ${label} for ${rows.length} selected row(s):`, '');
+    if (value === null || !value.trim()) return;
+    if (key === 'due_date' && !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) { setOperationNotice({ kind: 'error', text: 'Enter the due date as YYYY-MM-DD.' }); return; }
+    setSaving(true);
+    const errors: string[] = [];
+    for (const row of rows) {
+      try {
+        const patch = { [key]: value.trim() };
+        assertRelationshipScope({ ...row, ...patch });
+        validateRecord?.({ ...row, ...patch });
+        const updated = await dataRepository.update<Record<string, any>>(tableName, row.id, patch);
+        onMutated({ type: 'update', row: updated });
+      } catch (error: any) { errors.push(error.message || `Could not update row ${row.id}.`); }
+    }
+    setSaving(false);
+    setOperationNotice(errors.length ? { kind: 'warning', text: `Bulk update completed with ${errors.length} issue(s).` } : { kind: 'success', text: `${label} updated for ${rows.length} selected row(s).` });
+  }
+
+  function printSelectedRows() {
+    const rows = displayData.filter((row) => selectedRowIds.has(row.id));
+    if (!rows.length) return;
+    const esc = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char] || char));
+    const windowRef = window.open('', '_blank', 'width=1200,height=800');
+    if (!windowRef) { setOperationNotice({ kind: 'error', text: 'Allow pop-ups to print the selected rows.' }); return; }
+    windowRef.document.write(`<!doctype html><html><head><title>${esc(title)} selected rows</title><style>body{font-family:Arial,sans-serif;margin:28px;color:#1f2937}h1{font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #cbd5e1;padding:7px;text-align:left;font-size:11px}th{background:#f1f5f9}</style></head><body><h1>${esc(title)} — selected rows (${rows.length})</h1><table><thead><tr>${visibleColumns.map((column) => `<th>${esc(column.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${visibleColumns.map((column) => `<td>${esc(row[column.key])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`);
+    windowRef.document.close(); windowRef.focus(); windowRef.print();
+  }
+
   function selectCell(rowId: string, columnKey: string, event: React.MouseEvent<HTMLTableCellElement>) {
     // A click inside a table cell does not automatically focus its scroll
     // container. Without this, Excel shortcuts and arrow navigation never
@@ -2247,7 +2279,10 @@ export function DataTableView({
               <Download size={15} /> Export
             </button>
             {selectedRowIds.size > 0 && <button onClick={() => void exportExcel(displayData.filter((row) => selectedRowIds.has(row.id)))} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print" title="Export selected rows only"><Download size={15} /> Export selected ({selectedRowIds.size})</button>}
+            {selectedRowIds.size > 0 && <button onClick={printSelectedRows} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print"><Printer size={15} /> Print selected</button>}
             {selectedRowIds.size > 0 && columns.some((column) => column.key === 'status' && (column.options?.length || 0) > 0) && <button onClick={() => void bulkUpdateStatus()} disabled={saving || readOnly} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors disabled:opacity-50 no-print">Update status ({selectedRowIds.size})</button>}
+            {selectedRowIds.size > 0 && columns.some((column) => column.key === 'owner') && <button onClick={() => void bulkUpdateTextField('owner')} disabled={saving || readOnly} className="px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 no-print">Assign owner</button>}
+            {selectedRowIds.size > 0 && columns.some((column) => column.key === 'due_date') && <button onClick={() => void bulkUpdateTextField('due_date')} disabled={saving || readOnly} className="px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 no-print">Set due date</button>}
             {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createScopedDraft()); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> {addButtonLabel}
             </button>}
