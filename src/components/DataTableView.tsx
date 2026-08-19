@@ -2068,6 +2068,13 @@ export function DataTableView({
   const allColsForEdit = showProjectFilter && projectPickerInForm !== false
     ? [{ key: 'project_id', label: 'Project Code', type: 'text' as const, options: projects.map((p) => p.id) }, ...editCols]
     : editCols;
+  const draftImpact = useMemo(() => {
+    if (tableName === 'boq_items') { const value = (Number(newRow.quantity) || 0) * (Number(newRow.unit_rate) || 0); return { label: 'Calculated BOQ value', value: fmtMoney(value), detail: 'Quantity × unit rate. This value is saved as the item amount.' }; }
+    if (tableName === 'wir_entries') { const value = (Number(newRow.quantity) || 0) * (Number(newRow.unit_price) || 0); return { label: 'Inspection value impact', value: fmtMoney(value), detail: 'Approved inspection values contribute to progress and earned value.' }; }
+    if (tableName === 'schedules') { const value = (Number(newRow.planned_quantity) || 0) * (Number(newRow.unit_rate) || 0); return { label: 'Activity planned value', value: fmtMoney(value), detail: 'Planned quantity × main unit rate. It contributes to planned value and the schedule baseline.' }; }
+    if (tableName === 'cost_entries') { return { label: 'Cost control impact', value: fmtMoney(Number(newRow.amount) || 0), detail: 'This cost entry updates the linked project cost-control position.' }; }
+    return null;
+  }, [tableName, newRow]);
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
   const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
@@ -2663,6 +2670,7 @@ export function DataTableView({
                 </div>
               ))}
             </div>
+            {draftImpact && <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Expected impact</p><p className="mt-1 text-lg font-bold text-primary-900">{draftImpact.label}: {draftImpact.value}</p><p className="mt-1 text-xs leading-5 text-primary-800">{draftImpact.detail}</p></div>}
             <div className="flex items-center justify-end gap-2 mt-5">
               <button onClick={() => { setMinimizedModal(null); setShowAdd(false); }} className="px-4 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100">Cancel</button>
               <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
