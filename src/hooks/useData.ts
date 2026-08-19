@@ -3,7 +3,7 @@ import { dataRepository } from '@/data';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
-  ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
+  ClientInvoice, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
   InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate,
 } from '@/types';
 
@@ -11,7 +11,7 @@ export type LocalDataMutation =
   | { type: 'insert'; row: Record<string, any> }
   | { type: 'insertMany'; rows: Record<string, any>[] }
   | { type: 'update'; row: Record<string, any> }
-  | { type: 'delete'; id: string };
+  | { type: 'delete'; id: string; row?: Record<string, any> };
 
 export function useData() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -42,6 +42,7 @@ export function useData() {
   const [clientInvoiceTracking, setClientInvoiceTracking] = useState<InvoiceTracking[]>([]);
   const [subcontractorInvoiceTracking, setSubcontractorInvoiceTracking] = useState<InvoiceTracking[]>([]);
   const [variations, setVariations] = useState<Variation[]>([]);
+  const [variationLines, setVariationLines] = useState<VariationLine[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [wirEntries, setWirEntries] = useState<WIREntry[]>([]);
   const [laborDuty, setLaborDuty] = useState<LaborDuty[]>([]);
@@ -68,7 +69,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, dc, wr, ld, eq, tr, pa, pc, rh, rt,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -96,6 +97,7 @@ export function useData() {
         listOptional<InvoiceTracking>('client_invoice_tracking'),
         listOptional<InvoiceTracking>('subcontractor_invoice_tracking'),
         dataRepository.list<Variation>('variations'),
+        listOptional<VariationLine>('variation_lines'),
         dataRepository.list<DocumentEntry>('documents'),
         dataRepository.list<WIREntry>('wir_entries'),
         dataRepository.list<LaborDuty>('labor_duty'),
@@ -133,6 +135,7 @@ export function useData() {
       setClientInvoiceTracking(cit);
       setSubcontractorInvoiceTracking(sit);
       setVariations(va);
+      setVariationLines(vl);
       setDocuments(dc);
       setWirEntries(wr);
       setLaborDuty(ld);
@@ -194,6 +197,7 @@ export function useData() {
       case 'client_invoice_tracking': apply(setClientInvoiceTracking); break;
       case 'subcontractor_invoice_tracking': apply(setSubcontractorInvoiceTracking); break;
       case 'variations': apply(setVariations); break;
+      case 'variation_lines': apply(setVariationLines); break;
       case 'documents': apply(setDocuments); break;
       case 'wir_entries': apply(setWirEntries); break;
       case 'labor_duty': apply(setLaborDuty); break;
@@ -215,7 +219,7 @@ export function useData() {
   return {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
-    clientInvoiceTracking, subcontractorInvoiceTracking, variations,
+    clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };

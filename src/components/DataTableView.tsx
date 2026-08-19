@@ -951,6 +951,22 @@ export function DataTableView({
       const unitRate = Number(out.unit_rate) || 0;
       out.amount = Math.round(qty * unitRate * 100) / 100;
     }
+    if (tableName === 'variation_lines') {
+      const changeType = String(out.change_type || 'Quantity Change');
+      const originalQuantity = Number(out.original_quantity) || 0;
+      const quantityChange = Number(out.quantity_change) || 0;
+      const originalRate = Number(out.original_rate) || 0;
+      const revisedRate = Number(out.revised_rate) || originalRate;
+      out.original_quantity = originalQuantity;
+      out.original_rate = originalRate;
+      out.revised_quantity = Math.round((changeType === 'New Item' ? quantityChange : originalQuantity + (changeType === 'Quantity Change' ? quantityChange : 0)) * 10000) / 10000;
+      out.revised_rate = revisedRate;
+      out.value_impact = Math.round((changeType === 'New Item'
+        ? quantityChange * revisedRate
+        : changeType === 'Rate Change'
+          ? originalQuantity * (revisedRate - originalRate)
+          : quantityChange * originalRate) * 100) / 100;
+    }
     if (tableName === 'wir_entries') {
       const qty = Number(out.quantity) || 0;
       const price = Number(out.unit_price) || 0;
@@ -1079,6 +1095,27 @@ export function DataTableView({
         updated.item_code = `${prefix}${String(next).padStart(3, '0')}`;
       }
     }
+    if (tableName === 'variation_lines' && changedKey === 'variation_id') {
+      updated.project_id = selected?.data?.project_id || updated.project_id || null;
+      updated.contract_id = selected?.data?.contract_id || updated.contract_id || null;
+      updated.effective_date = selected?.data?.approved_date || null;
+      const prefix = `${String(selected?.data?.variation_number || selectedValue || 'VO')}-ITM-`;
+      const next = existingRows
+        .filter((line) => line.variation_id === selectedValue)
+        .map((line) => Number(String(line.item_code || '').replace(prefix, '')) || 0)
+        .reduce((highest, value) => Math.max(highest, value), 0) + 1;
+      if (!updated.item_code) updated.item_code = `${prefix}${String(next).padStart(3, '0')}`;
+    }
+    if (tableName === 'variation_lines' && changedKey === 'boq_item_id') {
+      updated.boq_header_id = selected?.data?.boq_header_id || null;
+      updated.item_code = selected?.data?.item_code || '';
+      updated.description = selected?.data?.item_description || selected?.data?.item_name || '';
+      updated.unit = selected?.data?.unit || '';
+      updated.original_quantity = Number(selected?.data?.quantity) || 0;
+      updated.revised_quantity = updated.original_quantity;
+      updated.original_rate = Number(selected?.data?.unit_rate) || 0;
+      updated.revised_rate = updated.original_rate;
+    }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);
       const next = existingRows.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
@@ -1123,6 +1160,7 @@ export function DataTableView({
     const selectedClientParty = relationshipOptions?.client_party_id?.find((option) => option.value === record.client_party_id);
     const selectedContractorParty = relationshipOptions?.contractor_party_id?.find((option) => option.value === record.contractor_party_id);
     const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
+    const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -1173,6 +1211,25 @@ export function DataTableView({
     }
     if (tableName === 'client_invoices' && selectedContractRow?.parent_main_contract_id) {
       throw new Error('Client invoices must be assigned to the main contract.');
+    }
+    if (tableName === 'variation_lines') {
+      if (!selectedVariation) throw new Error('Select a draft or submitted variation order before saving a variation line.');
+      if (selectedVariation.data?.project_id && record.project_id !== selectedVariation.data.project_id) {
+        throw new Error('The variation line must belong to the same project as its variation order.');
+      }
+      if (selectedVariation.data?.contract_id && record.contract_id !== selectedVariation.data.contract_id) {
+        throw new Error('The variation line must belong to the same contract as its variation order.');
+      }
+      const changeType = String(record.change_type || '');
+      if (!['New Item', 'Quantity Change', 'Rate Change'].includes(changeType)) throw new Error('Choose a valid variation change type.');
+      if (changeType === 'New Item' && !record.boq_header_id) throw new Error('Select the target BOQ header for a new variation item.');
+      if (changeType !== 'New Item' && !record.boq_item_id) throw new Error('Select the existing BOQ item to be changed.');
+      if (changeType === 'New Item' && (!String(record.item_code || '').trim() || !String(record.description || '').trim())) {
+        throw new Error('A new variation item requires an item code and description.');
+      }
+      if (changeType === 'New Item' && (Number(record.quantity_change) || 0) <= 0) throw new Error('A new variation item requires a positive quantity.');
+      if (changeType === 'Quantity Change' && (Number(record.quantity_change) || 0) === 0) throw new Error('Enter a non-zero quantity change.');
+      if (changeType === 'Rate Change' && (Number(record.revised_rate) || 0) < 0) throw new Error('The revised rate cannot be negative.');
     }
     if (tableName === 'subcontractor_invoices' && selectedContractRow && !selectedContractRow.parent_main_contract_id) {
       throw new Error('A subcontractor invoice must be assigned to a subcontract.');
@@ -1842,7 +1899,7 @@ export function DataTableView({
         : [row].filter(Boolean) as Record<string, any>[];
       if (!onDeleteGroup) await dataRepository.delete(tableName, deleteId);
       setDeleteId(null);
-      deletedRows.forEach((deleted) => onMutated({ type: 'delete', id: deleted.id }));
+      deletedRows.forEach((deleted) => onMutated({ type: 'delete', id: deleted.id, row: deleted }));
     } catch (error: any) {
       alert(`Error: ${error.message || 'Failed to delete the record.'}`);
     } finally {

@@ -41,6 +41,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Controls' },
   { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial & Cash' },
   { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial & Cash' },
+  { key: 'variationLines', label: 'Variation Lines', icon: ListOrdered, group: 'Commercial & Cash' },
   { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial & Cash' },
   { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial & Cash' },
   { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
@@ -471,6 +472,25 @@ const VARIATION_COLUMNS: ColumnDef[] = [
   { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
 ];
 
+const VARIATION_LINE_COLUMNS: ColumnDef[] = [
+  { key: 'variation_id', label: 'Variation Order', type: 'select', editable: true },
+  { key: 'change_type', label: 'Change Type', type: 'status', editable: true, options: ['New Item', 'Quantity Change', 'Rate Change'] },
+  { key: 'boq_header_id', label: 'BOQ Header', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'Existing BOQ Item', type: 'select', editable: true },
+  { key: 'main_boq_item_id', label: 'Parent Main BOQ Item', type: 'select', editable: true },
+  { key: 'item_code', label: 'Item Code', type: 'text', editable: true },
+  { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'unit', label: 'Unit', type: 'text', editable: true },
+  { key: 'original_quantity', label: 'Original Qty', type: 'number', editable: false },
+  { key: 'quantity_change', label: 'Qty Change', type: 'number', editable: true },
+  { key: 'revised_quantity', label: 'Revised Qty', type: 'number', editable: false },
+  { key: 'original_rate', label: 'Original Rate', type: 'money', editable: false },
+  { key: 'revised_rate', label: 'Revised Rate', type: 'money', editable: true },
+  { key: 'value_impact', label: 'Value Impact', type: 'money', editable: false },
+  { key: 'effective_date', label: 'Effective Date', type: 'date', editable: false },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
 const DOC_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
@@ -580,6 +600,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   clientInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   subcontractorInvoiceTracking: { columns: INVOICE_TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Invoice Status', options: INVOICE_STATUSES }, { key: 'payment_status', label: 'Payment Status', options: PAYMENT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: VARIATION_STATUSES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
+  variationLines: { columns: VARIATION_LINE_COLUMNS, filters: [{ key: 'change_type', label: 'Change Type', options: ['New Item', 'Quantity Change', 'Rate Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
   wir: { columns: WIR_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
   laborDuty: { columns: LABOR_DUTY_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -593,7 +614,7 @@ const TABLE_NAMES: Record<string, string> = {
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
-  variations: 'variations', documents: 'documents', wir: 'wir_entries',
+  variations: 'variations', variationLines: 'variation_lines', documents: 'documents', wir: 'wir_entries',
   laborDuty: 'labor_duty', equipment: 'equipment', tracking: 'tracking_sheet',
   parties: 'parties', partyContacts: 'party_contacts', rateHistory: 'rate_history',
 };
@@ -604,7 +625,7 @@ const VIEW_TITLES: Record<string, string> = {
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
-  variations: 'Variations', documents: 'Documents', wir: 'Work Inspection Reports',
+  variations: 'Variations', variationLines: 'Variation Lines', documents: 'Documents', wir: 'Work Inspection Reports',
   laborDuty: 'Labor Duty', equipment: 'Equipment', tracking: 'Tracking Sheet',
   parties: 'Clients, Vendors & Subcontractors', partyContacts: 'Party Contacts', rateHistory: 'Rate History',
 };
@@ -811,6 +832,82 @@ export default function App() {
     } else {
       const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', entry);
       data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
+    }
+  }
+
+  async function synchronizeVariationLines(variationId: string) {
+    if (!variationId) return;
+    const [lines, variations, items, headers, contracts] = await Promise.all([
+      dataRepository.list<Record<string, any>>('variation_lines'),
+      dataRepository.list<Record<string, any>>('variations'),
+      dataRepository.list<Record<string, any>>('boq_items'),
+      dataRepository.list<Record<string, any>>('boq_headers'),
+      dataRepository.list<Record<string, any>>('contracts'),
+    ]);
+    const variation = variations.find((row) => row.id === variationId);
+    if (!variation) return;
+    const variationLines = lines.filter((line) => line.variation_id === variationId);
+    const totalImpact = Math.round(variationLines.reduce((sum, line) => sum + (Number(line.value_impact) || 0), 0) * 100) / 100;
+    if (Number(variation.cost_impact) !== totalImpact) {
+      const updated = await dataRepository.update<Record<string, any>>('variations', variationId, { cost_impact: totalImpact });
+      data.applyLocalMutation('variations', { type: 'update', row: updated });
+    }
+
+    // A draft/submitted order is a commercial scenario only. Its BOQ impact is
+    // intentionally deferred until the order is formally approved.
+    if (variation.status !== 'Approved') return;
+    const effectiveDate = variation.approved_date || new Date().toISOString().slice(0, 10);
+    for (const line of variationLines) {
+      if (line.applied_at) continue;
+      const changeType = String(line.change_type || '');
+      const contract = contracts.find((row) => row.id === line.contract_id);
+      if (!contract) throw new Error(`Variation line ${line.item_code || line.id} has no valid contract.`);
+      if (changeType === 'New Item') {
+        if (!line.boq_header_id) throw new Error(`New variation item ${line.item_code || line.id} has no BOQ header.`);
+        if (items.some((item) => item.boq_header_id === line.boq_header_id && item.item_code === line.item_code)) {
+          throw new Error(`BOQ item code ${line.item_code} already exists in the target BOQ.`);
+        }
+        if (contract.parent_main_contract_id && !line.main_boq_item_id) {
+          throw new Error(`New subcontract item ${line.item_code} must be linked to a parent main BOQ item.`);
+        }
+        const header = headers.find((row) => row.id === line.boq_header_id);
+        const created = await dataRepository.insert<Record<string, any>>('boq_items', {
+          project_id: line.project_id,
+          project_code: String((data.projects.find((project: any) => project.id === line.project_id) as any)?.project_code || ''),
+          boq_code: header?.boq_code || '',
+          item_code: line.item_code,
+          item_name: line.description,
+          description: line.description,
+          category: 'Variation',
+          unit: line.unit || '',
+          quantity: Number(line.revised_quantity) || 0,
+          unit_rate: Number(line.revised_rate) || 0,
+          amount: Math.round((Number(line.revised_quantity) || 0) * (Number(line.revised_rate) || 0) * 100) / 100,
+          boq_header_id: line.boq_header_id,
+          main_boq_item_id: line.main_boq_item_id || null,
+          item_code_locked: false,
+          last_modified: new Date().toISOString(),
+          notes: `Created by approved variation ${variation.variation_number || variation.id} effective ${effectiveDate}.`,
+        });
+        data.applyLocalMutation('boq_items', { type: 'insert', row: created });
+      } else {
+        const item = items.find((row) => row.id === line.boq_item_id);
+        if (!item) throw new Error(`Variation line ${line.item_code || line.id} has no valid existing BOQ item.`);
+        const patch = changeType === 'Quantity Change'
+          ? { quantity: Math.max(0, (Number(item.quantity) || 0) + (Number(line.quantity_change) || 0)) }
+          : { unit_rate: Math.max(0, (Number(item.unit_rate) || 0) + ((Number(line.revised_rate) || 0) - (Number(line.original_rate) || 0))) };
+        const quantity = Number(patch.quantity ?? item.quantity) || 0;
+        const rate = Number(patch.unit_rate ?? item.unit_rate) || 0;
+        const updated = await dataRepository.update<Record<string, any>>('boq_items', item.id, {
+          ...patch,
+          amount: Math.round(quantity * rate * 100) / 100,
+          last_modified: new Date().toISOString(),
+          notes: `${item.notes ? `${item.notes}\n` : ''}Approved variation ${variation.variation_number || variation.id} effective ${effectiveDate}.`,
+        });
+        data.applyLocalMutation('boq_items', { type: 'update', row: updated });
+      }
+      const marked = await dataRepository.update<Record<string, any>>('variation_lines', line.id, { effective_date: effectiveDate, applied_at: new Date().toISOString() });
+      data.applyLocalMutation('variation_lines', { type: 'update', row: marked });
     }
   }
 
@@ -2110,6 +2207,18 @@ export default function App() {
         })(),
       },
     }));
+    relationshipOptions.variation_id = data.variations
+      .filter((variation: any) => !['Approved', 'Rejected'].includes(String(variation.status || 'Draft')))
+      .map((variation: any) => ({
+        value: variation.id,
+        label: `${variation.variation_number || variation.id} — ${variation.title || 'Untitled variation'}`,
+        data: {
+          project_id: variation.project_id,
+          contract_id: variation.contract_id,
+          variation_number: variation.variation_number || variation.id,
+          approved_date: variation.approved_date || null,
+        },
+      }));
     if (activeView === 'wir') {
       relationshipOptions.company_name = data.contracts.map((contract: any) => ({
         value: contract.id,
@@ -2177,6 +2286,7 @@ export default function App() {
         item_desc: item.item_name || item.description,
         item_description: item.description,
         unit: item.unit,
+        quantity: item.quantity,
         unit_rate: item.unit_rate,
         unit_price: (() => {
           const itemHeader = data.boqHeaders.find((header) => header.id === item.boq_header_id);
@@ -2325,8 +2435,30 @@ export default function App() {
               void dataRepository.update<Record<string, any>>(target, approval.entity_id, {
                 status: decision,
                 ...(target === 'variations' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
-              }).then((updated) => data.applyLocalMutation(target, { type: 'update', row: updated })).catch((error) =>
+              }).then((updated) => {
+                data.applyLocalMutation(target, { type: 'update', row: updated });
+                if (target === 'variations' && decision === 'Approved') {
+                  return synchronizeVariationLines(updated.id);
+                }
+                return undefined;
+              }).catch((error) =>
                 alert(`Approval was saved, but the linked ${approval.entity_type} could not be updated: ${error.message || 'Unknown error'}`),
+              );
+            }
+          }
+          if (tableName === 'variation_lines') {
+            const affected = mutation.type === 'insertMany'
+              ? [...new Set(mutation.rows.map((row) => String(row.variation_id || '')).filter(Boolean))]
+              : [String((mutation as any).row?.variation_id || '')].filter(Boolean);
+            affected.forEach((variationId) => void synchronizeVariationLines(variationId).catch((error) =>
+              alert(`Variation line was saved, but its commercial total could not be synchronized: ${error.message || 'Unknown error'}`),
+            ));
+          }
+          if (tableName === 'variations' && (mutation.type === 'insert' || mutation.type === 'update')) {
+            const variation = mutation.row as Record<string, any>;
+            if (variation.status === 'Approved') {
+              void synchronizeVariationLines(variation.id).catch((error) =>
+                alert(`Variation was approved, but its BOQ changes could not be posted: ${error.message || 'Unknown error'}`),
               );
             }
           }

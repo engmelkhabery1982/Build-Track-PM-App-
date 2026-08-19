@@ -421,6 +421,29 @@ export interface Variation {
   created_at: string;
 }
 
+/** A controlled financial/quantity change within one variation order. */
+export interface VariationLine {
+  id: string;
+  variation_id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  change_type: 'New Item' | 'Quantity Change' | 'Rate Change';
+  item_code: string;
+  description: string;
+  unit: string;
+  original_quantity: number;
+  quantity_change: number;
+  revised_quantity: number;
+  original_rate: number;
+  revised_rate: number;
+  value_impact: number;
+  effective_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
 export interface DocumentEntry {
   id: string;
   project_id: string;
@@ -605,5 +628,5 @@ export type ViewKey =
   | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
-  | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
+  | 'variations' | 'variationLines' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
   | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates';

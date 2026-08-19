@@ -9,7 +9,7 @@ const TABLES = new Set([
   "rfi_register", "submittals", "quality_register",
   "pmo_snapshots",
   "app_users",
-  "cash_flow", "subcontractor_invoices", "client_invoices", "variations",
+  "cash_flow", "subcontractor_invoices", "client_invoices", "variations", "variation_lines",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
   "parties", "party_contacts", "rate_history",
