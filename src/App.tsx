@@ -1710,6 +1710,9 @@ export default function App() {
       const cashOut = projectCash.reduce((sum: number, entry: any) => sum + (Number(entry.outflow) || 0), 0);
       const activityCount = data.schedules.filter((activity: any) => activity.project_id === selectedProject.id && activity.activity).length;
       const boqCount = data.boqItems.filter((item: any) => item.project_id === selectedProject.id).length;
+      const boqHeaderCount = data.boqHeaders.filter((header: any) => header.project_id === selectedProject.id).length;
+      const costEntryCount = data.costEntries.filter((entry: any) => entry.project_id === selectedProject.id).length;
+      const invoiceCount = [...data.clientInvoices, ...data.subInvoices].filter((invoice: any) => invoice.project_id === selectedProject.id).length;
       const money = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
       const progress = modifiedValue > 0 ? Math.min(100, (completedValue / modifiedValue) * 100) : 0;
       const sections: { label: string; value: string; description: string; view: ViewKey; icon: IconType; tone: string }[] = [
@@ -1727,10 +1730,23 @@ export default function App() {
         { label: 'Cash Flow', view: 'cashflow', icon: Banknote },
         { label: 'Operations', view: 'procurement', icon: Package },
       ];
+      const activateProjectContext = (projectId: string) => {
+        const contract = data.contracts.find((item: any) => item.project_id === projectId && !item.parent_main_contract_id) as Record<string, any> | undefined;
+        window.localStorage.setItem('buildtrack:work-context', JSON.stringify({ project_id: projectId, ...(contract?.id ? { contract_id: contract.id } : {}) }));
+        setWorkspaceProjectId(projectId);
+      };
       const openWorkspaceArea = (view: ViewKey) => {
+        activateProjectContext(selectedProject.id);
         setWorkspaceProjectId(selectedProject.id);
         setActiveView(view);
       };
+      const workflow = [
+        { order: '1', label: 'Commercial setup', detail: mainContract ? `${mainContract.contract_number || 'Main contract'} ready` : 'Create main contract first', count: mainContract ? 1 : 0, view: 'contracts' as ViewKey },
+        { order: '2', label: 'BOQ definition', detail: `${boqHeaderCount} header(s) · ${boqCount} item(s)`, count: boqCount, view: 'boqItems' as ViewKey },
+        { order: '3', label: 'Schedule plan', detail: `${activityCount} activity(s)`, count: activityCount, view: 'schedule' as ViewKey },
+        { order: '4', label: 'Field progress', detail: `${relatedWirs.length} inspection request(s)`, count: relatedWirs.length, view: 'wir' as ViewKey },
+        { order: '5', label: 'Cost & payment', detail: `${costEntryCount} cost entry(s) · ${invoiceCount} invoice line(s)`, count: costEntryCount + invoiceCount, view: 'costEntries' as ViewKey },
+      ];
 
       return (
         <div className="p-4 sm:p-6 space-y-5 overflow-y-auto h-full">
@@ -1742,11 +1758,13 @@ export default function App() {
             </div>
             <label className="block text-sm font-medium text-neutral-700">
               Active project
-              <select value={selectedProject.id} onChange={(event) => setWorkspaceProjectId(event.target.value)} className="mt-1 block min-w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100">
+              <select value={selectedProject.id} onChange={(event) => activateProjectContext(event.target.value)} className="mt-1 block min-w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100">
                 {data.projects.map((project: any) => <option key={project.id} value={project.id}>{project.project_code || project.id} — {project.name}</option>)}
               </select>
             </label>
           </div>
+
+          <section className="rounded-2xl border border-primary-200 bg-gradient-to-r from-primary-50 to-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-primary-700">Project workflow</p><h3 className="mt-1 text-lg font-bold text-neutral-900">Follow the project data flow</h3><p className="mt-1 text-sm text-neutral-600">Each step opens with the active project and main-contract context already selected.</p></div><button onClick={() => openWorkspaceArea('dataEntry')} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">Start guided entry</button></div><div className="mt-5 grid gap-3 lg:grid-cols-5">{workflow.map((step) => <button key={step.order} onClick={() => openWorkspaceArea(step.view)} className={`rounded-xl border p-3 text-left transition hover:shadow-sm ${step.count > 0 ? 'border-success-200 bg-white hover:border-success-300' : 'border-warning-200 bg-warning-50 hover:border-warning-300'}`}><div className="flex items-center justify-between"><span className="rounded-full bg-primary-100 px-2 py-1 text-xs font-bold text-primary-700">{step.order}</span><span className={`text-xs font-semibold ${step.count > 0 ? 'text-success-700' : 'text-warning-700'}`}>{step.count > 0 ? 'READY' : 'NEXT'}</span></div><p className="mt-3 text-sm font-bold text-neutral-900">{step.label}</p><p className="mt-1 text-xs leading-5 text-neutral-500">{step.detail}</p></button>)}</div></section>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {sections.map((section) => {
