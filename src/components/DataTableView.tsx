@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { Fragment, useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark, Undo2 } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
@@ -2075,6 +2075,13 @@ export function DataTableView({
     if (tableName === 'cost_entries') { return { label: 'Cost control impact', value: fmtMoney(Number(newRow.amount) || 0), detail: 'This cost entry updates the linked project cost-control position.' }; }
     return null;
   }, [tableName, newRow]);
+  const formSection = (key: string) => {
+    if (['project_id', 'project_code', 'contract_id', 'company_name', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'party_id', 'client_party_id', 'contractor_party_id', 'supplier_party_id'].includes(key)) return 'Context & relationships';
+    if (key.includes('date') || ['start_date', 'end_date', 'duration_days', 'lag_days', 'calendar_name', 'predecessor_item', 'relationship_type'].includes(key)) return 'Dates & planning';
+    if (['quantity', 'planned_quantity', 'unit_rate', 'unit_price', 'amount', 'item_amount', 'budget', 'cost_impact', 'inflow', 'outflow'].includes(key)) return 'Quantity & financials';
+    if (['notes', 'remarks', 'description', 'variance_reason', 'file_reference'].includes(key)) return 'Notes & attachments';
+    return 'Record details';
+  };
 
   const hasActiveFilters = search || Object.values(filterValues).some((v) => v !== 'all') || projectFilter !== 'all' || dateFrom || dateTo;
   const numericCols = columns.filter((c) => (c.type === 'number' || c.type === 'money') &&
@@ -2663,12 +2670,7 @@ export function DataTableView({
               </div>
             </div>
             <div className="space-y-3">
-              {allColsForEdit.map((col) => (
-                <div key={col.key}>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1">{col.label}</label>
-                  {renderFormField(col, newRow, setNewRow)}
-                </div>
-              ))}
+              {allColsForEdit.map((col, index) => { const section = formSection(col.key); const previous = index > 0 ? formSection(allColsForEdit[index - 1].key) : ''; return <Fragment key={col.key}>{section !== previous && <div className="border-b border-neutral-100 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-primary-700">{section}</div>}<div><label className="block text-xs font-medium text-neutral-600 mb-1">{col.label}</label>{renderFormField(col, newRow, setNewRow)}</div></Fragment>; })}
             </div>
             {draftImpact && <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Expected impact</p><p className="mt-1 text-lg font-bold text-primary-900">{draftImpact.label}: {draftImpact.value}</p><p className="mt-1 text-xs leading-5 text-primary-800">{draftImpact.detail}</p></div>}
             <div className="flex items-center justify-end gap-2 mt-5">
