@@ -370,7 +370,7 @@ export function DataTableView({
   const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
   const [importScope, setImportScope] = useState<Record<string, any> | null>(null);
   const [workContext, setWorkContext] = useState<Record<string, any> | null>(null);
-  const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[] } | null>(null);
+  const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[]; validationErrors: { row: number; message: string }[] } | null>(null);
   const [lastImportRows, setLastImportRows] = useState<Record<string, any>[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -1499,7 +1499,20 @@ export function DataTableView({
       // Do not write immediately after the user chooses a file.  The user
       // first reviews the mapped values and the active project/contract
       // context, then explicitly accepts the import in the preview panel.
-      setImportPreview({ fileName: file.name, rows: mapped });
+      // Preflight every mapped row before any write. This exposes governed
+      // relationship/date/quantity errors in the review dialog and lets the
+      // user import the valid rows only, instead of discovering errors after
+      // part of the file was already saved.
+      const validationErrors: { row: number; message: string }[] = [];
+      mapped.forEach((row, index) => {
+        try {
+          assertRelationshipScope(row);
+          validateRecord?.(row);
+        } catch (error: any) {
+          validationErrors.push({ row: index + 2, message: error.message || 'Validation failed.' });
+        }
+      });
+      setImportPreview({ fileName: file.name, rows: mapped, validationErrors });
     } catch (err: any) {
       setImportResult({ success: 0, failed: 0, errors: [err.message || 'Failed to read the Excel file.'] });
     }
@@ -1516,7 +1529,12 @@ export function DataTableView({
     // Persist one row at a time so that valid operational records survive an
     // invalid row, while the outcome clearly tells the user exactly what was
     // accepted and what must be corrected.
+    const invalidRows = new Set(importPreview.validationErrors.map((issue) => issue.row - 2));
     for (let i = 0; i < importPreview.rows.length; i += 1) {
+      if (invalidRows.has(i)) {
+        errors.push(`Row ${i + 2}: resolve the preflight issue before importing.`);
+        continue;
+      }
       const row = importPreview.rows[i];
       try {
         assertRelationshipScope(row);
@@ -2642,12 +2660,13 @@ export function DataTableView({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s). No data has been saved yet.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to import. No data has been saved yet.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
-            <p className="mt-4 text-sm text-neutral-600">Review the first rows below. Relationship, quantity, date and locked-period rules will run again for every row when you confirm. Invalid rows will be listed after import and will not be saved.</p>
+            <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>
+            {importPreview.validationErrors.length > 0 && <div className="mt-4 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900"><p className="font-semibold">{importPreview.validationErrors.length} row(s) require correction and will be skipped.</p><ul className="mt-2 max-h-28 space-y-1 overflow-auto text-xs">{importPreview.validationErrors.slice(0, 12).map((issue) => <li key={`${issue.row}-${issue.message}`}>• Row {issue.row}: {issue.message}</li>)}</ul>{importPreview.validationErrors.length > 12 && <p className="mt-1 text-xs">Additional issues are hidden from this preview.</p>}</div>}
             <div className="mt-4 overflow-auto rounded-lg border border-neutral-200"><table className="min-w-full border-collapse text-sm"><thead className="bg-neutral-100"><tr>{columns.filter((column) => importPreview.rows.some((row) => row[column.key] !== undefined)).slice(0, 8).map((column) => <th key={column.key} className="whitespace-nowrap border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">{column.label}</th>)}</tr></thead><tbody>{importPreview.rows.slice(0, 10).map((row, index) => <tr key={index} className="odd:bg-neutral-50">{columns.filter((column) => importPreview.rows.some((candidate) => candidate[column.key] !== undefined)).slice(0, 8).map((column) => <td key={column.key} className="max-w-48 truncate whitespace-nowrap border border-neutral-200 px-3 py-2 text-neutral-700">{renderCell(row[column.key], column, relationshipOptions?.[column.key], row)}</td>)}</tr>)}</tbody></table></div>
             {importPreview.rows.length > 10 && <p className="mt-2 text-xs text-neutral-500">Preview shows the first 10 rows and 8 mapped columns.</p>}
-            <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Importing…' : `Confirm and import ${importPreview.rows.length} row(s)`}</button></div>
+            <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing || importPreview.rows.length === importPreview.validationErrors.length} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Importing…' : `Confirm and import ${importPreview.rows.length - importPreview.validationErrors.length} valid row(s)`}</button></div>
           </div>
         </div>
       )}
