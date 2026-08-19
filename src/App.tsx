@@ -6,6 +6,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
 import { PmoInsights } from '@/components/PmoInsights';
+import { DataEntryWorkspace } from '@/components/DataEntryWorkspace';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
 
@@ -14,6 +15,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'dashboard', label: 'PMO Command Center', icon: LayoutDashboard, group: 'Executive' },
   { key: 'alerts', label: 'PMO Alerts', icon: Bell, group: 'Executive' },
   { key: 'dataQuality', label: 'Data Quality Checks', icon: CircleAlert, group: 'Executive' },
+  { key: 'dataEntry', label: 'Guided Data Entry', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'insights', label: 'PMO Insights', icon: BrainCircuit, group: 'Executive' },
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
@@ -1455,6 +1457,9 @@ export default function App() {
   function renderView() {
     if (activeView === 'reportTemplates') {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
+    }
+    if (activeView === 'dataEntry') {
+      return <DataEntryWorkspace projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} boqHeaders={data.boqHeaders as Record<string, any>[]} onOpen={setActiveView} />;
     }
     if (activeView === 'insights') {
       return <PmoInsights

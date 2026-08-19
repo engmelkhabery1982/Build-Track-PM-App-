@@ -368,6 +368,7 @@ export function DataTableView({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [columnResize, setColumnResize] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
+  const [importScope, setImportScope] = useState<Record<string, any> | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -378,6 +379,27 @@ export function DataTableView({
   useEffect(() => {
     if (initialProjectId) setProjectFilter(initialProjectId);
   }, [initialProjectId]);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(`buildtrack:import-scope:${tableName}`);
+      const parsed = stored ? JSON.parse(stored) : null;
+      setImportScope(parsed && typeof parsed === 'object' ? parsed : null);
+      if (parsed?.project_id) setProjectFilter(parsed.project_id);
+    } catch { setImportScope(null); }
+  }, [tableName]);
+
+  function clearImportScope() {
+    window.localStorage.removeItem(`buildtrack:import-scope:${tableName}`);
+    setImportScope(null);
+  }
+
+  function createScopedDraft() {
+    let draft: Record<string, any> = { ...(createDraft ? createDraft() : createCodeDraft(tableName, data)), ...(importScope || {}) };
+    ['company_name', 'project_id', 'contract_id', 'boq_header_id'].forEach((key) => {
+      if (draft[key]) draft = applyRelationshipSelection(draft, key, String(draft[key]));
+    });
+    return draft;
+  }
   const [newRow, setNewRow] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -514,6 +536,9 @@ export function DataTableView({
     if (showProjectFilter && projectFilter !== 'all') {
       result = result.filter((r) => r.project_id === projectFilter);
     }
+    if (importScope?.contract_id && ['boq_items', 'schedules', 'wir_entries'].includes(tableName)) {
+      result = result.filter((row) => row.contract_id === importScope.contract_id);
+    }
     Object.entries(filterValues).forEach(([key, val]) => {
       if (val !== 'all') result = result.filter((r) => String(r[key]) === val);
     });
@@ -528,7 +553,7 @@ export function DataTableView({
       result = result.filter((r) => columns.some((c) => String(r[c.key] || '').toLowerCase().includes(q)));
     }
     return result;
-  }, [data, search, filterValues, projectFilter, columns, showProjectFilter, dateRangeColumn, dateFrom, dateTo]);
+  }, [data, search, filterValues, projectFilter, columns, showProjectFilter, dateRangeColumn, dateFrom, dateTo, importScope, tableName]);
 
   const displayData: Record<string, any>[] = useMemo(() => {
     if (tableName === 'progress_entries') {
@@ -1296,7 +1321,7 @@ export function DataTableView({
         ['project_id', 'company_name', 'contract_id', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'schedule_id', 'predecessor_item'].forEach((key) => {
           out[key] = resolveRelationship(key, out[key]);
         });
-        return out;
+        return { ...out, ...(importScope || {}) };
       });
       const stagedRows: Record<string, any>[] = [];
       const mapped = rawMapped.map((raw, index) => {
@@ -2103,12 +2128,14 @@ export function DataTableView({
             <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
               <Download size={15} /> Export
             </button>
-            {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createDraft ? createDraft() : createCodeDraft(tableName, data)); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
+            {canAdd && <button onClick={() => { setMinimizedModal(null); setNewRow(createScopedDraft()); setShowAdd(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm no-print">
               <Plus size={15} /> {addButtonLabel}
             </button>}
           </div>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.xer" onChange={handleImportFile} className="hidden" />
         </div>
+
+        {importScope && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"><span className="font-semibold">Scoped entry active</span><span>{projectMap[importScope.project_id] || 'Selected project'}</span><span className="text-primary-300">/</span><span>{(contracts?.find((contract: any) => contract.id === importScope.contract_id) as any)?.contract_number || 'Selected contract'}</span><span className="text-xs text-primary-600">Project and contract are applied automatically to new rows and imports.</span><button onClick={clearImportScope} className="ml-auto rounded-md px-2 py-1 text-xs font-semibold hover:bg-primary-100">Clear scope</button></div>}
 
         {/* Filters bar */}
         <div className="mb-3 flex items-center gap-2 flex-wrap">
