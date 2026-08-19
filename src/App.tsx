@@ -2521,6 +2521,7 @@ export default function App() {
             }
           }
         }}
+        onRelatedMutation={(relatedTable, mutation) => data.applyLocalMutation(relatedTable, mutation)}
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}

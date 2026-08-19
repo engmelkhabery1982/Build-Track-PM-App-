@@ -34,7 +34,16 @@ function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
   }
   const calendars = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row.clndr_name || row.clndr_id]));
   const tasks = tables.get('TASK') || [];
-  const taskCodeById = new Map(tasks.map((task) => [task.task_id, task.task_code]));
+  const codeCount = new Map<string, number>();
+  tasks.forEach((task) => codeCount.set(task.task_code || '', (codeCount.get(task.task_code || '') || 0) + 1));
+  // P6 permits repeated visible task codes. BuildTrack requires a unique key
+  // to preserve editability and predecessor links, while retaining the source
+  // code separately for BOQ matching and audit.
+  const uniqueTaskCode = (task: Record<string, string>) => {
+    const source = task.task_code || 'ACT';
+    return (codeCount.get(source) || 0) > 1 ? `${source}-P6-${task.task_id}` : source;
+  };
+  const taskCodeById = new Map(tasks.map((task) => [task.task_id, uniqueTaskCode(task)]));
   const predecessorsByTask = new Map<string, Record<string, string>[]>();
   for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
   return tasks.map((task) => {
@@ -44,13 +53,18 @@ function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     const relation = String(first?.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS';
     const lagHours = Number(first?.lag_hr_cnt) || 0;
     return {
-      'Activity ID': task.task_code || '',
+      'Activity ID': uniqueTaskCode(task),
+      'Source Activity ID': task.task_code || '',
       'Activity Name': task.task_name || '',
       WBS: task.wbs_id || '',
       Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
       Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
       'Original Duration': task.target_drtn || task.remain_drtn || '',
-      'Planned Qty': task.target_work_qty || task.target_equip_qty || '',
+      // Primavera target work/equipment quantities are resource-hours in many
+      // XER exports, not physical BOQ quantities. Leaving this blank routes
+      // direct XER imports through the governed duration-based BOQ allocation
+      // below; a prepared Excel schedule may still provide Planned Qty.
+      'Planned Qty': '',
       Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
       Predecessors: predecessorCodes.join(', '),
       Relationship: relation,
@@ -74,6 +88,15 @@ function normalizeImportDate(value: unknown): string | null {
   if (iso) return iso;
   const parsed = new Date(source);
   return Number.isNaN(parsed.getTime()) ? source : parsed.toISOString().slice(0, 10);
+}
+
+function normalizeImportNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const source = String(value ?? '').trim();
+  if (!source) return 0;
+  const negative = /^\(.*\)$/.test(source);
+  const numeric = Number(source.replace(/[,$£€\s]/g, '').replace(/^\((.*)\)$/, '$1'));
+  return Number.isFinite(numeric) ? (negative ? -numeric : numeric) : 0;
 }
 
 export interface ColumnDef {
@@ -136,6 +159,8 @@ interface DataTableViewProps {
   toolbarAction?: { label: string; title?: string; onClick: () => void | Promise<void> };
   rowAction?: { label: string; title?: string; onClick: (row: Record<string, any>) => void | Promise<void> };
   progressWirs?: Record<string, any>[];
+  /** Allows an import to update a directly governed parent record without a full page reload. */
+  onRelatedMutation?: (tableName: string, mutation: LocalDataMutation) => void;
 }
 
 function statusColor(status: string): string {
@@ -382,7 +407,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, onRelatedMutation, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -397,6 +422,7 @@ export function DataTableView({
   const [workContext, setWorkContext] = useState<Record<string, any> | null>(null);
   const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[]; validationErrors: { row: number; message: string }[] } | null>(null);
   const [lastImportRows, setLastImportRows] = useState<Record<string, any>[]>([]);
+  const [lastImportParentRestores, setLastImportParentRestores] = useState<Record<string, any>[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -907,7 +933,7 @@ export function DataTableView({
       const col = columns.find((c) => c.key === key);
       if (col) {
         if (col.type === 'number' || col.type === 'money') {
-          out[key] = val === '' || val === null || val === undefined ? 0 : Number(val);
+          out[key] = val === '' || val === null || val === undefined ? 0 : normalizeImportNumber(val);
         } else if (col.type === 'boolean') {
           out[key] = val === true || val === 'true';
         } else if (col.type === 'progress') {
@@ -1261,6 +1287,11 @@ export function DataTableView({
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
       const isExecutableActivity = Boolean(String(record.activity || '').trim());
       const plannedQuantity = Number(record.planned_quantity) || 0;
+      if (record.is_non_boq_activity === true) {
+        if (!isExecutableActivity) throw new Error('A non-BOQ Primavera activity requires a name.');
+        if (plannedQuantity !== 0) throw new Error('A non-BOQ Primavera activity cannot carry a BOQ planned quantity.');
+        return;
+      }
       if (!item) throw new Error('Select a valid main BOQ item for the activity.');
       if (isExecutableActivity && plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
       // A blank activity is the BOQ Total row, not an executable activity.
@@ -1280,7 +1311,7 @@ export function DataTableView({
       const itemEnd = String(item.planned_end_date || item.baseline_end_date || '');
       const activityStart = String(record.start_date || '');
       const activityEnd = String(record.end_date || '');
-      if (isExecutableActivity && (!itemStart || !itemEnd)) {
+      if (isExecutableActivity && (!itemStart || !itemEnd) && record._imported_governed_dates !== true) {
         throw new Error('Set the governed BOQ item start and finish dates before adding an activity.');
       }
       const outsideItemDates = (itemStart && activityStart && activityStart < itemStart)
@@ -1454,7 +1485,16 @@ export function DataTableView({
       if (isXer && tableName !== 'schedules') throw new Error('Primavera XER files can be imported only from Schedule & Activities.');
       const rows: Record<string, any>[] = isXer
         ? parsePrimaveraXerTasks(await file.text())
-        : await (async () => { const XLSX = await getXlsx(); const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }) as Record<string, any>[]; })();
+        : await (async () => {
+          const XLSX = await getXlsx();
+          const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+          const preferredSheet = tableName === 'boq_items'
+            ? wb.SheetNames.find((name) => /\bboq\b|budget/i.test(name))
+            : tableName === 'wir_entries'
+              ? wb.SheetNames.find((name) => /\bwir\b|inspection/i.test(name))
+              : undefined;
+          return XLSX.utils.sheet_to_json(wb.Sheets[preferredSheet || wb.SheetNames[0]], { defval: '' }) as Record<string, any>[];
+        })();
       if (rows.length === 0) {
         setImportResult({ success: 0, failed: 0, errors: [isXer ? 'No TASK activities were found in the Primavera XER file.' : 'The Excel file is empty or has no data rows.'] });
         setImporting(false);
@@ -1472,7 +1512,8 @@ export function DataTableView({
       if (tableName === 'schedules') {
         Object.assign(labelToKey, {
           'activity id': 'activity_code', 'activity name': 'activity', 'task name': 'activity',
-          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'start date': 'start_date',
+          'source activity id': 'source_activity_code',
+          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'start': 'start_date', 'start date': 'start_date',
           'finish': 'end_date', 'finish date': 'end_date', 'end date': 'end_date',
           'original duration': 'duration_days', 'planned duration': 'duration_days',
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
@@ -1491,6 +1532,23 @@ export function DataTableView({
           'budgeted total cost': 'planned_value', 'planned cost': 'planned_value',
         });
       }
+      if (tableName === 'boq_items') {
+        Object.assign(labelToKey, {
+          'activity id': 'item_code', 'activity description': 'item_name',
+          'main item work package description': 'description', 'contract qty': 'quantity',
+          'unit rate $': 'unit_rate', 'total amount $': 'amount', 'item no. wbs code': 'source_wbs_code',
+          'item no wbs code': 'source_wbs_code', 'item no. (wbs code)': 'source_wbs_code',
+        });
+      }
+      if (tableName === 'wir_entries') {
+        Object.assign(labelToKey, {
+          'wir reference no.': 'wir_number', 'wir reference no': 'wir_number',
+          'submission date': 'inspection_date', 'activity id': 'boq_item_id',
+          'activity description': 'item_name', 'location zone': 'area',
+          'inspected approved qty': 'quantity', 'inspection status': 'result',
+          'remarks comments': 'remarks',
+        });
+      }
       const resolveRelationship = (key: string, value: any) => {
         if (value === '' || value === null || value === undefined) return value;
         const options = relationshipOptions?.[key];
@@ -1505,7 +1563,12 @@ export function DataTableView({
           || String(option.label).trim().toLowerCase().startsWith(`${search} -`));
         return (direct || label || codedLabel)?.value || value;
       };
-      const rawMapped = rows.map((r) => {
+      const importedSourceRows = rows.filter((row) => tableName === 'boq_items'
+        ? Boolean(String(row['Activity ID'] || '').trim())
+        : tableName === 'wir_entries'
+          ? Boolean(String(row['WIR Reference No.'] || row['WIR Reference No'] || '').trim())
+          : true);
+      const rawMapped = importedSourceRows.map((r) => {
         const out: Record<string, any> = {};
         for (const [k, v] of Object.entries(r)) {
           const key = labelToKey[normalizeHeader(k)] || (columns.some((column) => column.key === k) ? k : null);
@@ -1553,7 +1616,7 @@ export function DataTableView({
         });
         const matchItem = (row: Record<string, any>) => {
           if (row.boq_item_id) return boqItems?.find((item) => item.id === row.boq_item_id);
-          const code = String(row.activity_code || '');
+          const code = String(row.source_activity_code || row.activity_code || '');
           const source = `${code} ${row.wbs_code || ''} ${row.activity || ''}`;
           const codeMatches = schedulableItems.filter((item) => {
             const itemCode = String(item.item_code || '');
@@ -1569,7 +1632,20 @@ export function DataTableView({
         };
         mapped.forEach((row, index) => {
           const item = matchItem(row);
-          if (!item) throw new Error(`Row ${index + 2}: Primavera activity "${row.activity_code || row.activity}" could not be matched to one BOQ item. Use the BOQ item code in Activity ID/WBS, or include the exact BOQ description in the activity name.`);
+          if (!item) {
+            if (!scopedContractId) throw new Error(`Row ${index + 2}: select the project and main contract before importing non-BOQ Primavera activities.`);
+            row.project_id = applicableScope.project_id;
+            row.contract_id = scopedContractId;
+            row.boq_header_id = null;
+            row.boq_item_id = null;
+            row.is_non_boq_activity = true;
+            row.planned_quantity = 0;
+            row.unit_rate = 0;
+            row.budget = 0;
+            row.planned_value = 0;
+            row.notes = `${row.notes || ''}${row.notes ? '\n' : ''}Imported Primavera non-BOQ activity; excluded from BOQ/EVM quantities and values.`;
+            return;
+          }
           const itemOption = relationshipOptions?.boq_item_id?.find((option) => option.value === item.id);
           if (!itemOption?.data?.contract_id) throw new Error(`BOQ item ${item.item_code} has no valid main-contract relationship.`);
           row.boq_item_id = item.id;
@@ -1627,6 +1703,12 @@ export function DataTableView({
           });
         });
         mapped.forEach((row, index) => {
+          if (row.is_non_boq_activity) {
+            const contract = contracts?.find((candidate) => candidate.id === row.contract_id);
+            if (!contract || contract.parent_main_contract_id) throw new Error(`Row ${index + 2}: select a valid main Contract Code.`);
+            if (!String(row.activity || '').trim()) throw new Error(`Row ${index + 2}: Activity is required.`);
+            return;
+          }
           const contract = contracts?.find((candidate) => candidate.id === row.contract_id);
           const item = boqItems?.find((candidate) => candidate.id === row.boq_item_id);
           if (!contract || contract.parent_main_contract_id) throw new Error(`Row ${index + 2}: select a valid main Contract Code.`);
@@ -1653,6 +1735,7 @@ export function DataTableView({
           row.planned_value = row.budget;
           const governedStart = String(item.planned_start_date || item.baseline_start_date || '');
           const governedEnd = String(item.planned_end_date || item.baseline_end_date || '');
+          if ((!governedStart || !governedEnd) && row.start_date && row.end_date) row._imported_governed_dates = true;
           if ((governedStart && row.start_date && String(row.start_date) < governedStart) || (governedEnd && row.end_date && String(row.end_date) > governedEnd)) {
             row.variance_reason = row.variance_reason || 'Imported Primavera dates differ from the governed BOQ period; review required.';
           }
@@ -1688,6 +1771,7 @@ export function DataTableView({
     setImporting(true);
     let success = 0;
     const insertedRows: Record<string, any>[] = [];
+    const parentRestores: Record<string, any>[] = [];
     const errors: string[] = [];
     const importedPredecessors: { activityCode: string; predecessorCode: string }[] = [];
     // Persist one row at a time so that valid operational records survive an
@@ -1703,7 +1787,7 @@ export function DataTableView({
       try {
         assertRelationshipScope(row);
         validateRecord?.(row);
-        const { _primavera_predecessor_code, ...persistedRow } = row;
+        const { _primavera_predecessor_code, _imported_governed_dates, ...persistedRow } = row;
         const inserted = await dataRepository.insert<Record<string, any>>(tableName, persistedRow);
         success += 1;
         insertedRows.push(inserted);
@@ -1728,9 +1812,33 @@ export function DataTableView({
         } catch (error: any) { errors.push(`Activity ${link.activityCode}: predecessor link could not be saved (${error.message || 'unknown error'}).`); }
       }
     }
+    if (tableName === 'schedules' && insertedRows.length) {
+      const importedByItem = new Map<string, Record<string, any>[]>();
+      insertedRows.filter((row) => row.boq_item_id && !row.is_non_boq_activity).forEach((row) => {
+        const key = String(row.boq_item_id);
+        importedByItem.set(key, [...(importedByItem.get(key) || []), row]);
+      });
+      for (const [itemId, activities] of importedByItem) {
+        const item = boqItems?.find((candidate) => candidate.id === itemId) as Record<string, any> | undefined;
+        if (!item) continue;
+        const starts = activities.map((row) => String(row.start_date || '')).filter(Boolean).sort();
+        const ends = activities.map((row) => String(row.end_date || '')).filter(Boolean).sort();
+        const patch: Record<string, any> = {};
+        if (!item.planned_start_date && starts[0]) patch.planned_start_date = starts[0];
+        if (!item.planned_end_date && ends.length) patch.planned_end_date = ends[ends.length - 1];
+        if (!item.baseline_start_date && starts[0]) patch.baseline_start_date = starts[0];
+        if (!item.baseline_end_date && ends.length) patch.baseline_end_date = ends[ends.length - 1];
+        if (Object.keys(patch).length) {
+          parentRestores.push({ id: item.id, planned_start_date: item.planned_start_date || null, planned_end_date: item.planned_end_date || null, baseline_start_date: item.baseline_start_date || null, baseline_end_date: item.baseline_end_date || null });
+          const updated = await dataRepository.update<Record<string, any>>('boq_items', itemId, patch);
+          onRelatedMutation?.('boq_items', { type: 'update', row: updated });
+        }
+      }
+    }
     setImportResult({ success, failed: importPreview.rows.length - success, errors });
     if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
     setLastImportRows(insertedRows);
+    setLastImportParentRestores(parentRestores);
     if (success > 0) setOperationNotice({ kind: errors.length ? 'warning' : 'success', text: errors.length ? `${success} row(s) imported. ${errors.length} row(s) need correction.` : `${success} row(s) imported successfully. You can undo this import during this session.` });
     setImportPreview(null);
     setImporting(false);
@@ -1747,7 +1855,15 @@ export function DataTableView({
         onMutated({ type: 'delete', id: row.id });
       } catch (error: any) { failed.push(error.message || `Could not remove row ${row.id}.`); }
     }
+    for (const restore of lastImportParentRestores) {
+      try {
+        const { id, ...patch } = restore;
+        const updated = await dataRepository.update<Record<string, any>>('boq_items', id, patch);
+        onRelatedMutation?.('boq_items', { type: 'update', row: updated });
+      } catch (error: any) { failed.push(error.message || `Could not restore BOQ dates for ${restore.id}.`); }
+    }
     setLastImportRows([]);
+    setLastImportParentRestores([]);
     setImporting(false);
     setOperationNotice(failed.length ? { kind: 'warning', text: `Import undo completed with ${failed.length} issue(s).` } : { kind: 'success', text: 'The latest import was removed.' });
   }
