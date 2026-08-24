@@ -15,6 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { calculateCpm } from '@/utils/cpm';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -306,6 +307,9 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'predecessor_item', label: 'Predecessor Activity', type: 'select', editable: true },
   { key: 'relationship_type', label: 'Relationship', type: 'select', editable: true, options: ['FS', 'SS', 'FF', 'SF'] },
   { key: 'lag_days', label: 'Lag (days)', type: 'number', editable: true },
+  { key: 'total_float_days', label: 'Total Float (days)', type: 'number', editable: false },
+  { key: 'network_critical', label: 'Network Critical', type: 'boolean', editable: false },
+  { key: 'network_warning', label: 'Network Check', type: 'text', editable: false },
   { key: 'calendar_name', label: 'Calendar', type: 'text', editable: true },
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
@@ -2110,6 +2114,9 @@ export default function App() {
       };
     });
     const headerById = new Map(headersWithContractContext.map((header: any) => [header.id, header]));
+    const cpmByActivity = calculateCpm(data.schedules
+      .filter((activity: any) => String(activity.activity || '').trim())
+      .map((activity: any) => ({ id: activity.id, duration_days: activity.duration_days, predecessor_item: activity.predecessor_item, relationship_type: activity.relationship_type, lag_days: activity.lag_days })));
     const mainBoqItemById = new Map(data.boqItems
       .filter((item: any) => !contractById.get((headerById.get(item.boq_header_id) as any)?.contract_id)?.parent_main_contract_id)
       .map((item: any) => [item.id, item]));
@@ -2298,6 +2305,7 @@ export default function App() {
                 : '';
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
+            const network = cpmByActivity.get(schedule.id);
             const remainingDuration = budget > 0
               ? Math.max(0, Math.round(summaryDuration * (1 - Math.min(1, earned / budget))))
               : summaryDuration;
@@ -2321,6 +2329,9 @@ export default function App() {
               actual_cost: actualCost,
               cost_cpi: cpi,
               schedule_spi: spi,
+              total_float_days: isSummaryRow ? null : network?.totalFloat ?? null,
+              network_critical: isSummaryRow ? false : Boolean(network?.critical),
+              network_warning: isSummaryRow ? '' : network?.cycle ? 'Dependency cycle detected' : '',
               status: `${calendarGapDays !== 0 ? `Calendar ${calendarGapDays > 0 ? 'gap' : 'overlap'}: ${Math.abs(calendarGapDays)} day(s) | ` : ''}${boqDelay ? `${boqDelay} | ` : ''}${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
             };
           })

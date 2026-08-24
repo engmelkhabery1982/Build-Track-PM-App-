@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const governance = await import('../src/data/governanceRules.ts');
 const codes = await import('../src/data/codeControls.ts');
 const schedule = await import('../src/utils/schedulePlanning.ts');
+const cpm = await import('../src/utils/cpm.ts');
 const dictionary = await import('../src/data/dataDictionary.ts');
 const periods = await import('../src/data/reportingPeriodGovernance.ts');
 const quality = await import('../src/data/dataQuality.ts');
@@ -51,6 +52,22 @@ test('planned value uses approved distribution before linear fallback', () => {
 test('calendar additions preserve the ISO date contract', () => {
   assert.equal(schedule.addCalendarDays('2026-01-30', 2), '2026-02-01');
   assert.equal(schedule.addCalendarDays(null, 2), null);
+});
+
+test('CPM respects relationship types and reports dependency cycles', () => {
+  const network = cpm.calculateCpm([
+    { id: 'A', duration_days: 5 },
+    { id: 'B', duration_days: 3, predecessor_item: 'A', relationship_type: 'FS', lag_days: 1 },
+    { id: 'C', duration_days: 2, predecessor_item: 'A', relationship_type: 'SS', lag_days: 2 },
+  ]);
+  assert.equal(network.get('B').earlyStart, 6);
+  assert.equal(network.get('C').earlyStart, 2);
+  const cyclic = cpm.calculateCpm([
+    { id: 'A', duration_days: 1, predecessor_item: 'B', relationship_type: 'FS' },
+    { id: 'B', duration_days: 1, predecessor_item: 'A', relationship_type: 'FS' },
+  ]);
+  assert.equal(cyclic.get('A').cycle, true);
+  assert.equal(cyclic.get('B').cycle, true);
 });
 
 test('locked reporting periods block dated inserts, updates and deletes', () => {
