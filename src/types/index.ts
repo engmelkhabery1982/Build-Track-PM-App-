@@ -553,6 +553,8 @@ export interface ProjectBaseline {
   project_id: string;
   contract_id: string | null;
   baseline_number: string;
+  revision_number?: number;
+  revision_reason?: string;
   baseline_date: string | null;
   status: 'Draft' | 'Approved' | 'Superseded' | string;
   original_contract_value: number;

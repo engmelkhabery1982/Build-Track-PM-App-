@@ -113,6 +113,7 @@ const PROJECT_COLUMNS: ColumnDef[] = [
 
 const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'baseline_number', label: 'Baseline #', type: 'text', editable: true },
+  { key: 'revision_number', label: 'Revision', type: 'number', editable: false },
   { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
   { key: 'baseline_date', label: 'Approval Date', type: 'date', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved', 'Superseded'] },
@@ -122,6 +123,9 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'planned_budget', label: 'Planned Budget', type: 'money', editable: true },
   { key: 'planned_start_date', label: 'Planned Start', type: 'date', editable: true },
   { key: 'planned_end_date', label: 'Planned Finish', type: 'date', editable: true },
+  { key: 'current_schedule_finish', label: 'Current Forecast Finish', type: 'date', editable: false },
+  { key: 'finish_variance_days', label: 'Finish Variance (days)', type: 'number', editable: false },
+  { key: 'revision_reason', label: 'Revision Reason', type: 'text', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const BASELINE_FORM_COLUMNS: ColumnDef[] = [
@@ -129,6 +133,7 @@ const BASELINE_FORM_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
   { key: 'baseline_date', label: 'Approval Date', type: 'date', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Approved'] },
+  { key: 'revision_reason', label: 'Revision Reason', type: 'text', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -2127,7 +2132,20 @@ export default function App() {
         completion_pct: mainItemValue > 0 ? Math.round(itemAmount / mainItemValue * 10000) / 100 : 0,
       };
     });
-    const viewData = activeView === 'contracts'
+    const viewData = activeView === 'baselines'
+      ? rawViewData.map((baseline: any) => {
+        const activityEnds = data.schedules
+          .filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim())
+          .map((activity: any) => String(activity.end_date || ''))
+          .filter(Boolean)
+          .sort();
+        const currentFinish = activityEnds[activityEnds.length - 1] || null;
+        const finishVariance = baseline.planned_end_date && currentFinish
+          ? Math.ceil((new Date(`${currentFinish}T00:00:00`).getTime() - new Date(`${baseline.planned_end_date}T00:00:00`).getTime()) / 86400000)
+          : null;
+        return { ...baseline, current_schedule_finish: currentFinish, finish_variance_days: finishVariance };
+      })
+      : activeView === 'contracts'
       ? contractsWithModifiedValue
       : activeView === 'contractSov'
         ? rawViewData.map((line: any) => {
@@ -2741,8 +2759,12 @@ export default function App() {
           const starts = activities.map((activity: any) => String(activity.start_date || '')).filter(Boolean).sort();
           const ends = activities.map((activity: any) => String(activity.end_date || '')).filter(Boolean).sort();
           const original = Number(contract.contract_value) || 0;
+          const priorBaselines = data.baselines.filter((baseline: any) => baseline.contract_id === contract.id);
+          const revisionNumber = priorBaselines.reduce((highest: number, baseline: any) => Math.max(highest, Number(baseline.revision_number) || 0), 0) + 1;
           return dataRepository.insert<Record<string, any>>('project_baselines', {
             ...baselineDraft, project_id: contract.project_id, status: baselineDraft.status || 'Draft',
+            baseline_number: baselineDraft.baseline_number || `BL-${String(revisionNumber).padStart(3, '0')}`,
+            revision_number: revisionNumber,
             original_contract_value: original, approved_variation_value: variationValue, modified_contract_value: original + variationValue,
             planned_budget: budget, planned_start_date: starts[0] || contract.start_date || null,
             planned_end_date: ends[ends.length - 1] || contract.end_date || null,
@@ -2866,6 +2888,14 @@ export default function App() {
         } : tableName === 'project_baselines' ? async (id, baselinePatch) => {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;
           if (existing?.status === 'Approved') throw new Error('An approved baseline is frozen. Create a new revision instead of changing it.');
+          if (baselinePatch.status === 'Approved') {
+            if (!baselinePatch.baseline_date && !existing?.baseline_date) throw new Error('An approved baseline requires an approval date.');
+            const approvedPredecessors = data.baselines.filter((baseline: any) => baseline.contract_id === existing?.contract_id && baseline.id !== id && baseline.status === 'Approved');
+            for (const predecessor of approvedPredecessors) {
+              const superseded = await dataRepository.update<Record<string, any>>('project_baselines', predecessor.id, { status: 'Superseded' });
+              data.applyLocalMutation('project_baselines', { type: 'update', row: superseded });
+            }
+          }
           return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
         } : tableName === 'client_invoice_tracking' || tableName === 'subcontractor_invoice_tracking'
           ? async (id, trackingPatch) => updateInvoiceTrackingAndCash(tableName, id, trackingPatch)
