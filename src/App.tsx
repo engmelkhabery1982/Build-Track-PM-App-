@@ -574,11 +574,15 @@ const VARIATION_LINE_COLUMNS: ColumnDef[] = [
 const DOC_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'document_number', label: 'Document #', type: 'text', editable: true },
   { key: 'document_name', label: 'Name', type: 'text', editable: true },
   { key: 'document_type', label: 'Type', type: 'status', editable: true, options: DOC_TYPES },
   { key: 'category', label: 'Category', type: 'text', editable: true },
   { key: 'version', label: 'Version', type: 'text', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: DOC_STATUSES },
+  { key: 'revision', label: 'Revision', type: 'text', editable: true },
+  { key: 'supersedes_document_id', label: 'Supersedes', type: 'select', editable: true },
+  { key: 'is_current', label: 'Current Revision', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
   { key: 'upload_date', label: 'Upload Date', type: 'date', editable: true },
   { key: 'related_record_type', label: 'Related Record Type', type: 'status', editable: true, options: ['RFI', 'Submittal', 'NCR', 'Punch Item', 'Variation', 'WIR', 'Other'] },
@@ -2542,6 +2546,13 @@ export default function App() {
         label: `${activity.activity_code || 'ACT'} - ${activity.activity}`,
         data: { project_id: activity.project_id, contract_id: activity.contract_id, boq_item_id: activity.boq_item_id },
       }));
+    relationshipOptions.supersedes_document_id = data.documents
+      .filter((document: any) => document.is_current !== false && document.status !== 'Superseded')
+      .map((document: any) => ({
+        value: document.id,
+        label: `${document.document_number || document.id} — ${document.document_name || 'Untitled document'}`,
+        data: { project_id: document.project_id, contract_id: document.contract_id, document_number: document.document_number },
+      }));
     if (activeView === 'costs' || activeView === 'costEntries' || activeView === 'schedule') {
       const mainContractIds = new Set(data.contracts
         .filter((contract: any) => !contract.parent_main_contract_id)
@@ -2696,6 +2707,19 @@ export default function App() {
             void synchronizeCertificateToInvoiceTracking(mutation.row as Record<string, any>).catch((error) =>
               alert(`Certificate was saved, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
             );
+          }
+          if (tableName === 'documents' && (mutation.type === 'insert' || mutation.type === 'update')) {
+            const document = mutation.row as Record<string, any>;
+            if (document.supersedes_document_id) {
+              void dataRepository.update<Record<string, any>>('documents', document.supersedes_document_id, { is_current: false, status: 'Superseded' })
+                .then((updated) => data.applyLocalMutation('documents', { type: 'update', row: updated }))
+                .catch((error) => alert(`Document was saved, but the superseded revision could not be updated: ${error.message || 'Unknown error'}`));
+              if (document.is_current !== true) {
+                void dataRepository.update<Record<string, any>>('documents', document.id, { is_current: true })
+                  .then((updated) => data.applyLocalMutation('documents', { type: 'update', row: updated }))
+                  .catch((error) => alert(`Document revision was saved, but could not be marked current: ${error.message || 'Unknown error'}`));
+              }
+            }
           }
           if (tableName === 'client_invoices') void data.reloadInvoiceTracking('client_invoice_tracking');
           if (tableName === 'subcontractor_invoices') void data.reloadInvoiceTracking('subcontractor_invoice_tracking');

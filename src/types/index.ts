@@ -535,6 +535,11 @@ export interface DocumentEntry {
   id: string;
   project_id: string;
   contract_id: string | null;
+  document_number?: string;
+  document_number_locked?: boolean;
+  revision?: string;
+  supersedes_document_id?: string | null;
+  is_current?: boolean;
   document_name: string;
   document_type: string;
   category: string;

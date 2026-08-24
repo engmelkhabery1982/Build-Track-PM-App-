@@ -1203,6 +1203,7 @@ export function DataTableView({
     const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
     const selectedCostCode = relationshipOptions?.cost_code_id?.find((option) => option.value === record.cost_code_id);
     const selectedInvoiceTracking = relationshipOptions?.invoice_tracking_id?.find((option) => option.value === record.invoice_tracking_id);
+    const supersededDocument = relationshipOptions?.supersedes_document_id?.find((option) => option.value === record.supersedes_document_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -1231,6 +1232,13 @@ export function DataTableView({
     if (selectedCostCode?.data?.project_id && record.project_id && selectedCostCode.data.project_id !== record.project_id) {
       throw new Error('The selected cost code belongs to a different project.');
     }
+    if (supersededDocument?.data?.project_id && record.project_id && supersededDocument.data.project_id !== record.project_id) {
+      throw new Error('The superseded document belongs to a different project.');
+    }
+    if (supersededDocument?.data?.contract_id && record.contract_id && supersededDocument.data.contract_id !== record.contract_id) {
+      throw new Error('The superseded document belongs to a different contract.');
+    }
+    if (tableName === 'documents' && record.supersedes_document_id === record.id) throw new Error('A document cannot supersede itself.');
     if (record.party_id && !selectedParty) throw new Error('Select a valid active party from Master Data.');
     if (record.client_party_id && !selectedClientParty) throw new Error('Select a valid active client from Master Data.');
     if (record.contractor_party_id && !selectedContractorParty) throw new Error('Select a valid active contractor from Master Data.');
