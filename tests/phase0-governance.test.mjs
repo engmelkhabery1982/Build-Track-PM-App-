@@ -85,6 +85,7 @@ test('calendar additions preserve the ISO date contract', () => {
   assert.equal(schedule.addCalendarDays('2026-01-30', 2), '2026-02-01');
   assert.equal(schedule.addCalendarDays(null, 2), null);
   assert.equal(schedule.addWorkingDays('2026-01-01', 2, '5-Day Week'), '2026-01-05');
+  assert.equal(schedule.subtractWorkingDays('2026-01-05', 2, '5-Day Week'), '2026-01-01');
   assert.equal(schedule.workingDaysBetween('2026-01-01', '2026-01-05', '5-Day Week'), 2);
 });
 
@@ -96,6 +97,12 @@ test('CPM respects relationship types and reports dependency cycles', () => {
   ]);
   assert.equal(network.get('B').earlyStart, 6);
   assert.equal(network.get('C').earlyStart, 2);
+  const multiDependency = cpm.calculateCpm([
+    { id: 'A', duration_days: 2 },
+    { id: 'B', duration_days: 5 },
+    { id: 'C', duration_days: 1, predecessor_items: ['A', 'B'], relationship_type: 'FS' },
+  ]);
+  assert.equal(multiDependency.get('C').earlyStart, 5);
   const cyclic = cpm.calculateCpm([
     { id: 'A', duration_days: 1, predecessor_item: 'B', relationship_type: 'FS' },
     { id: 'B', duration_days: 1, predecessor_item: 'A', relationship_type: 'FS' },

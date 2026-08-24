@@ -349,7 +349,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
 const SCHEDULE_DISTRIBUTION_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
-  { key: 'schedule_id', label: 'Activity ID', type: 'text', editable: true },
+  { key: 'schedule_id', label: 'Activity ID', type: 'select', editable: true },
   { key: 'activity_name', label: 'Activity', type: 'text', editable: true },
   { key: 'period_start', label: 'Period Start', type: 'date', editable: true },
   { key: 'period_end', label: 'Period End', type: 'date', editable: true },
@@ -2223,9 +2223,22 @@ export default function App() {
       };
     });
     const headerById = new Map(headersWithContractContext.map((header: any) => [header.id, header]));
-    const cpmByActivity = calculateCpm(data.schedules
-      .filter((activity: any) => String(activity.activity || '').trim())
-      .map((activity: any) => ({ id: activity.id, duration_days: activity.duration_days, predecessor_item: activity.predecessor_item, relationship_type: activity.relationship_type, lag_days: activity.lag_days })));
+    const executableActivities = data.schedules.filter((activity: any) => String(activity.activity || '').trim());
+    const activityIdByReference = new Map<string, string>();
+    executableActivities.forEach((activity: any) => {
+      [activity.id, activity.activity_code, activity.source_activity_id].filter(Boolean)
+        .forEach((reference) => activityIdByReference.set(String(reference).trim(), activity.id));
+    });
+    const cpmByActivity = calculateCpm(executableActivities.map((activity: any) => ({
+      id: activity.id,
+      duration_days: activity.duration_days,
+      predecessor_item: activity.predecessor_item,
+      predecessor_items: String(activity.predecessors || '').split(',')
+        .map((reference) => activityIdByReference.get(String(reference).trim()) || String(reference).trim())
+        .filter(Boolean),
+      relationship_type: activity.relationship_type,
+      lag_days: activity.lag_days,
+    })));
     const mainBoqItemById = new Map(data.boqItems
       .filter((item: any) => !contractById.get((headerById.get(item.boq_header_id) as any)?.contract_id)?.parent_main_contract_id)
       .map((item: any) => [item.id, item]));
@@ -2670,11 +2683,18 @@ export default function App() {
     }));
     relationshipOptions.schedule_id = data.schedules
       .filter((activity: any) => String(activity.activity || '').trim())
-      .map((activity: any) => ({
-        value: activity.id,
-        label: `${activity.activity_code || 'ACT'} - ${activity.activity}`,
-        data: { project_id: activity.project_id, contract_id: activity.contract_id, boq_item_id: activity.boq_item_id },
-      }));
+      .map((activity: any) => {
+        const item = data.boqItems.find((candidate: any) => candidate.id === activity.boq_item_id) as any;
+        return {
+          value: activity.id,
+          label: `${activity.activity_code || 'ACT'} - ${activity.activity}`,
+          data: {
+            project_id: activity.project_id, contract_id: activity.contract_id, boq_item_id: activity.boq_item_id,
+            activity_name: activity.activity, unit: item?.unit || '', unit_rate: activity.unit_rate ?? item?.unit_rate ?? 0,
+            start_date: activity.start_date, end_date: activity.end_date, planned_quantity: activity.planned_quantity,
+          },
+        };
+      });
     relationshipOptions.supersedes_document_id = data.documents
       .filter((document: any) => document.is_current !== false && document.status !== 'Superseded')
       .map((document: any) => ({

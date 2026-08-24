@@ -46,6 +46,18 @@ export function addWorkingDays(date: string | null | undefined, days: number, ca
   return cursor.toISOString().slice(0, 10);
 }
 
+export function subtractWorkingDays(date: string | null | undefined, days: number, calendarName?: string | null): string | null {
+  if (!date) return null;
+  const cursor = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime())) return null;
+  let remaining = Math.max(0, Number(days) || 0);
+  while (remaining > 0) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    if (isWorkingDay(cursor, calendarName)) remaining -= 1;
+  }
+  return cursor.toISOString().slice(0, 10);
+}
+
 export function schedulePlannedValueToDate(
   activity: Record<string, any>,
   reportDate = new Date().toISOString().slice(0, 10),

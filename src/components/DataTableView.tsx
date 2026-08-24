@@ -16,6 +16,7 @@ import {
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
 import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
+import { addWorkingDays, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
 // actions, so loading it on demand keeps the desktop app responsive at start.
@@ -969,16 +970,12 @@ export function DataTableView({
       const end = String(out.end_date || '');
       const duration = Number(out.duration_days) || 0;
       if (start && end) {
-        const days = Math.ceil((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000);
+        const days = workingDaysBetween(start, end, out.calendar_name);
         if (Number.isFinite(days) && days >= 0) out.duration_days = Math.max(1, days);
       } else if (start && duration > 0) {
-        const finish = new Date(`${start}T00:00:00`);
-        finish.setDate(finish.getDate() + Math.ceil(duration));
-        out.end_date = finish.toISOString().slice(0, 10);
+        out.end_date = addWorkingDays(start, Math.ceil(duration), out.calendar_name);
       } else if (end && duration > 0) {
-        const begin = new Date(`${end}T00:00:00`);
-        begin.setDate(begin.getDate() - Math.ceil(duration));
-        out.start_date = begin.toISOString().slice(0, 10);
+        out.start_date = subtractWorkingDays(end, Math.ceil(duration), out.calendar_name);
       }
       const quantity = Number(out.planned_quantity) || 0;
       const rate = Number(item?.unit_rate ?? out.unit_rate) || 0;
@@ -1370,6 +1367,26 @@ export function DataTableView({
         || (itemEnd && activityEnd && activityEnd > itemEnd);
       if (isExecutableActivity && outsideItemDates && !String(record.variance_reason || '').trim()) {
         throw new Error(`Activity dates are outside the governed BOQ item period (${itemStart || 'not set'} to ${itemEnd || 'not set'}). Enter a variance reason before saving.`);
+      }
+    }
+    if (tableName === 'schedule_distributions') {
+      if (!record.schedule_id || !selectedSchedule) throw new Error('Select a valid schedule activity for the time-phased distribution.');
+      const periodStart = String(record.period_start || '');
+      const periodEnd = String(record.period_end || '');
+      if (!periodStart || !periodEnd) throw new Error('Time-phased distribution requires both period start and period end.');
+      if (periodEnd < periodStart) throw new Error('Distribution period end cannot be earlier than period start.');
+      const activityStart = String(selectedSchedule.data?.start_date || '');
+      const activityEnd = String(selectedSchedule.data?.end_date || '');
+      if ((activityStart && periodStart < activityStart) || (activityEnd && periodEnd > activityEnd)) {
+        throw new Error(`Distribution period must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
+      }
+      const alreadyDistributed = data
+        .filter((row) => row.id !== record.id && row.schedule_id === record.schedule_id)
+        .reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
+      const totalDistributed = alreadyDistributed + (Number(record.planned_quantity) || 0);
+      const activityQuantity = Number(selectedSchedule.data?.planned_quantity) || 0;
+      if (totalDistributed > activityQuantity + 0.000001) {
+        throw new Error(`Time-phased quantity exceeds the activity plan: existing ${alreadyDistributed.toLocaleString()} + new ${(Number(record.planned_quantity) || 0).toLocaleString()} = ${totalDistributed.toLocaleString()}, while the activity allows ${activityQuantity.toLocaleString()}.`);
       }
     }
     if (tableName === 'wir_entries') {
@@ -2042,13 +2059,11 @@ export function DataTableView({
           patch.budget = patch.planned_value;
         }
         if ((key === 'start_date' || key === 'end_date') && merged.start_date && merged.end_date) {
-          const days = Math.ceil((new Date(`${merged.end_date}T00:00:00`).getTime() - new Date(`${merged.start_date}T00:00:00`).getTime()) / 86400000);
+          const days = workingDaysBetween(merged.start_date, merged.end_date, merged.calendar_name);
           if (Number.isFinite(days) && days >= 0) patch.duration_days = Math.max(1, days);
         }
         if (key === 'duration_days' && merged.start_date && Number(val) > 0) {
-          const finish = new Date(`${merged.start_date}T00:00:00`);
-          finish.setDate(finish.getDate() + Math.ceil(Number(val)));
-          patch.end_date = finish.toISOString().slice(0, 10);
+          patch.end_date = addWorkingDays(merged.start_date, Math.ceil(Number(val)), merged.calendar_name);
         }
       }
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
