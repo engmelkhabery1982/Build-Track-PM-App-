@@ -408,6 +408,8 @@ export interface PaymentCertificate {
   certificate_number: string;
   certificate_number_locked: boolean;
   certificate_type: 'Client' | 'Subcontractor' | string;
+  invoice_tracking_id: string | null;
+  payment_date: string | null;
   period_start: string | null;
   period_end: string | null;
   certificate_date: string | null;

@@ -1090,6 +1090,7 @@ export function DataTableView({
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
+      'invoice_tracking_id',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       'baseline_start_date', 'baseline_end_date', 'planned_start_date', 'planned_end_date', 'variance_reason',
@@ -1201,6 +1202,7 @@ export function DataTableView({
     const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
     const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
     const selectedCostCode = relationshipOptions?.cost_code_id?.find((option) => option.value === record.cost_code_id);
+    const selectedInvoiceTracking = relationshipOptions?.invoice_tracking_id?.find((option) => option.value === record.invoice_tracking_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -1276,6 +1278,10 @@ export function DataTableView({
       if (String(record.status || '') === 'Approved' && (!String(record.approved_by || '').trim() || !record.approved_date)) {
         throw new Error('Approved certificates require approver and approval date.');
       }
+      if (record.invoice_tracking_id && !selectedInvoiceTracking) throw new Error('Select a valid invoice register row.');
+      if (selectedInvoiceTracking?.data?.project_id && selectedInvoiceTracking.data.project_id !== record.project_id) throw new Error('The selected invoice belongs to a different project.');
+      if (selectedInvoiceTracking?.data?.contract_id && selectedInvoiceTracking.data.contract_id !== record.contract_id) throw new Error('The selected invoice belongs to a different contract.');
+      if (selectedInvoiceTracking?.data?.certificate_type && selectedInvoiceTracking.data.certificate_type !== certificateType) throw new Error('Certificate type must match the selected invoice register.');
     }
     if (tableName === 'variation_lines') {
       if (!selectedVariation) throw new Error('Select a draft or submitted variation order before saving a variation line.');

@@ -365,6 +365,7 @@ const PAYMENT_CERTIFICATE_COLUMNS: ColumnDef[] = [
   { key: 'certificate_number', label: 'Certificate #', type: 'text', editable: true },
   { key: 'certificate_type', label: 'Certificate Type', type: 'status', editable: true, options: ['Client', 'Subcontractor'] },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'invoice_tracking_id', label: 'Invoice Register', type: 'select', editable: true },
   { key: 'period_start', label: 'Period From', type: 'date', editable: true },
   { key: 'period_end', label: 'Period To', type: 'date', editable: true },
   { key: 'certificate_date', label: 'Certificate Date', type: 'date', editable: true },
@@ -379,6 +380,7 @@ const PAYMENT_CERTIFICATE_COLUMNS: ColumnDef[] = [
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] },
   { key: 'approved_by', label: 'Approved By', type: 'text', editable: true },
   { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
+  { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -1620,6 +1622,26 @@ export default function App() {
     return dataRepository.update<Record<string, any>>(trackingTable, trackingId, patch);
   }
 
+  /** A certificate approves or settles its selected invoice register row. The
+   * invoice register remains the single writer to Cash Flow, so a certificate
+   * can never create a duplicate receipt/payment movement. */
+  async function synchronizeCertificateToInvoiceTracking(certificate: Record<string, any>) {
+    if (!certificate.invoice_tracking_id || !['Approved', 'Paid'].includes(String(certificate.status || ''))) return;
+    const trackingTable = certificate.certificate_type === 'Client'
+      ? 'client_invoice_tracking' as const
+      : 'subcontractor_invoice_tracking' as const;
+    const trackingRows = trackingTable === 'client_invoice_tracking'
+      ? data.clientInvoiceTracking as Record<string, any>[]
+      : data.subcontractorInvoiceTracking as Record<string, any>[];
+    const tracking = trackingRows.find((row) => row.id === certificate.invoice_tracking_id);
+    if (!tracking) throw new Error('The selected invoice register row no longer exists.');
+    const patch = certificate.status === 'Paid'
+      ? { status: 'Approved', payment_status: 'Paid', payment_date: certificate.payment_date || certificate.certificate_date || certificate.approved_date || null }
+      : { status: 'Approved' };
+    const updated = await updateInvoiceTrackingAndCash(trackingTable, tracking.id, patch);
+    data.applyLocalMutation(trackingTable, { type: 'update', row: updated });
+  }
+
   function previewInvoiceWithTemplate(invoiceTable: 'client_invoices' | 'subcontractor_invoices', invoiceRow: Record<string, any>) {
     const reportType = invoiceTable === 'client_invoices' ? 'Client Invoice' : 'Subcontractor Invoice';
     const templates = data.reportTemplates.filter((template: any) => template.report_type === reportType) as Record<string, any>[];
@@ -2376,6 +2398,18 @@ export default function App() {
           approved_date: variation.approved_date || null,
         },
       }));
+    relationshipOptions.invoice_tracking_id = [
+      ...(data.clientInvoiceTracking as Record<string, any>[]).map((row) => ({
+        value: row.id,
+        label: `Client — ${row.invoice_number || row.id}`,
+        data: { project_id: row.project_id, contract_id: row.contract_id, certificate_type: 'Client', gross_certified_value: row.total_work_value || 0 },
+      })),
+      ...(data.subcontractorInvoiceTracking as Record<string, any>[]).map((row) => ({
+        value: row.id,
+        label: `Subcontractor — ${row.invoice_number || row.id}`,
+        data: { project_id: row.project_id, contract_id: row.contract_id, certificate_type: 'Subcontractor', gross_certified_value: row.total_work_value || 0 },
+      })),
+    ];
     if (activeView === 'wir') {
       relationshipOptions.company_name = data.contracts.map((contract: any) => ({
         value: contract.id,
@@ -2618,6 +2652,11 @@ export default function App() {
           if (tableName === 'contracts') {
             void syncMainContractProjectDates(mutation).catch((error) =>
               alert(`Failed to synchronize project dates: ${error.message || 'Unknown error'}`),
+            );
+          }
+          if (tableName === 'payment_certificates' && (mutation.type === 'insert' || mutation.type === 'update')) {
+            void synchronizeCertificateToInvoiceTracking(mutation.row as Record<string, any>).catch((error) =>
+              alert(`Certificate was saved, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
             );
           }
           if (tableName === 'client_invoices') void data.reloadInvoiceTracking('client_invoice_tracking');
