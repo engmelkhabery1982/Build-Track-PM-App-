@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 #[tauri::command]
@@ -32,34 +33,78 @@ fn backup_local_database(app: tauri::AppHandle) -> Result<String, String> {
   // Preserve the WAL companions too, so an active SQLite database can be
   // restored with its most recent committed transactions intact.
   let source = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
-  if !source.exists() { return Err("The local BuildTrack database has not been created yet.".to_string()); }
   let directory = app.path().download_dir().map_err(|error| error.to_string())?.join("BuildTrack Backups");
-  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-  let stamp = chrono_like_timestamp();
-  let backup_directory = directory.join(format!("buildtrack-backup-{}", stamp));
-  fs::create_dir_all(&backup_directory).map_err(|error| error.to_string())?;
-  let target = backup_directory.join("buildtrack.db");
-  fs::copy(&source, &target).map_err(|error| error.to_string())?;
-  for suffix in ["-wal", "-shm"] {
-    let companion = std::path::PathBuf::from(format!("{}{}", source.display(), suffix));
-    if companion.exists() {
-      let companion_target = std::path::PathBuf::from(format!("{}{}", target.display(), suffix));
-      fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
-    }
-  }
   let attachments = app.path().app_data_dir().map_err(|error| error.to_string())?.join("attachments");
-  if attachments.exists() {
-    let attachment_target = backup_directory.join("attachments");
-    copy_directory(&attachments, &attachment_target)?;
-  }
-  fs::write(backup_directory.join("BACKUP_INFO.txt"), format!(
-    "BuildTrack local workspace backup\nCreated (UTC milliseconds): {}\nDatabase: buildtrack.db\nAttachments: {}\n\nRestore only while BuildTrack is closed. Keep this folder intact.",
-    stamp, if attachments.exists() { "included" } else { "none" },
-  )).map_err(|error| error.to_string())?;
+  let backup_directory = backup_workspace(&source, &attachments, &directory)?;
+  verify_backup_workspace(&backup_directory)?;
   Ok(backup_directory.display().to_string())
 }
 
-fn copy_directory(source: &std::path::Path, target: &std::path::Path) -> Result<(), String> {
+#[tauri::command]
+fn verify_local_backup(backup_path: String) -> Result<String, String> {
+  let backup_directory = PathBuf::from(backup_path);
+  verify_backup_workspace(&backup_directory)?;
+  Ok(format!("Backup verified: {}", backup_directory.display()))
+}
+
+fn backup_workspace(source: &Path, attachments: &Path, backup_root: &Path) -> Result<PathBuf, String> {
+  if !source.exists() { return Err("The local BuildTrack database has not been created yet.".to_string()); }
+  fs::create_dir_all(backup_root).map_err(|error| error.to_string())?;
+  let stamp = chrono_like_timestamp();
+  let backup_directory = backup_root.join(format!("buildtrack-backup-{}", stamp));
+  fs::create_dir_all(&backup_directory).map_err(|error| error.to_string())?;
+  let target = backup_directory.join("buildtrack.db");
+  fs::copy(source, &target).map_err(|error| error.to_string())?;
+  for suffix in ["-wal", "-shm"] {
+    let companion = PathBuf::from(format!("{}{}", source.display(), suffix));
+    if companion.exists() {
+      let companion_target = PathBuf::from(format!("{}{}", target.display(), suffix));
+      fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
+    }
+  }
+  if attachments.exists() {
+    copy_directory(attachments, &backup_directory.join("attachments"))?;
+  }
+  let database_bytes = fs::metadata(&target).map_err(|error| error.to_string())?.len();
+  fs::write(backup_directory.join("BACKUP_INFO.txt"), format!(
+    "BuildTrack local workspace backup\nCreated (UTC milliseconds): {}\nDatabase: buildtrack.db\nDatabase bytes: {}\nAttachments: {}\n\nVerified automatically when created. Restore only while BuildTrack is closed. Keep this folder intact.",
+    stamp, database_bytes, if attachments.exists() { "included" } else { "none" },
+  )).map_err(|error| error.to_string())?;
+  Ok(backup_directory)
+}
+
+fn verify_backup_workspace(backup_directory: &Path) -> Result<(), String> {
+  let database = backup_directory.join("buildtrack.db");
+  let metadata = fs::metadata(&database).map_err(|_| "Backup does not contain buildtrack.db.".to_string())?;
+  if metadata.len() < 16 { return Err("Backup database is too small to be a valid SQLite database.".to_string()); }
+  let signature = fs::read(&database).map_err(|error| error.to_string())?;
+  if signature.get(..16) != Some(b"SQLite format 3\0") {
+    return Err("Backup database does not have a valid SQLite signature.".to_string());
+  }
+  if !backup_directory.join("BACKUP_INFO.txt").is_file() {
+    return Err("Backup manifest BACKUP_INFO.txt is missing.".to_string());
+  }
+  Ok(())
+}
+
+#[allow(dead_code)] // Used by the isolated round-trip test; production restore remains manual while the app is closed.
+fn restore_workspace_from_backup(backup_directory: &Path, target_database: &Path, target_attachments: &Path) -> Result<(), String> {
+  verify_backup_workspace(backup_directory)?;
+  if let Some(parent) = target_database.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
+  fs::copy(backup_directory.join("buildtrack.db"), target_database).map_err(|error| error.to_string())?;
+  for suffix in ["-wal", "-shm"] {
+    let source = PathBuf::from(format!("{}{}", backup_directory.join("buildtrack.db").display(), suffix));
+    if source.exists() {
+      let target = PathBuf::from(format!("{}{}", target_database.display(), suffix));
+      fs::copy(source, target).map_err(|error| error.to_string())?;
+    }
+  }
+  let backup_attachments = backup_directory.join("attachments");
+  if backup_attachments.exists() { copy_directory(&backup_attachments, target_attachments)?; }
+  Ok(())
+}
+
+fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
   fs::create_dir_all(target).map_err(|error| error.to_string())?;
   for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
     let entry = entry.map_err(|error| error.to_string())?;
@@ -74,6 +119,34 @@ fn copy_directory(source: &std::path::Path, target: &std::path::Path) -> Result<
 }
 
 fn chrono_like_timestamp() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis()).unwrap_or(0) }
+
+#[cfg(test)]
+mod backup_tests {
+  use super::*;
+
+  #[test]
+  fn backup_verify_and_restore_round_trip_preserves_workspace() {
+    let root = std::env::temp_dir().join(format!("buildtrack-backup-test-{}", chrono_like_timestamp()));
+    let source_dir = root.join("source");
+    let attachments = source_dir.join("attachments");
+    fs::create_dir_all(&attachments).unwrap();
+    let database = source_dir.join("buildtrack.db");
+    fs::write(&database, [b"SQLite format 3\0".as_slice(), b"test workspace"].concat()).unwrap();
+    fs::write(attachments.join("evidence.txt"), b"inspection evidence").unwrap();
+
+    let backup = backup_workspace(&database, &attachments, &root.join("backups")).unwrap();
+    verify_backup_workspace(&backup).unwrap();
+
+    let restore_root = root.join("restored");
+    let restored_database = restore_root.join("buildtrack.db");
+    let restored_attachments = restore_root.join("attachments");
+    restore_workspace_from_backup(&backup, &restored_database, &restored_attachments).unwrap();
+    assert_eq!(fs::read(&database).unwrap(), fs::read(&restored_database).unwrap());
+    assert_eq!(fs::read(attachments.join("evidence.txt")).unwrap(), fs::read(restored_attachments.join("evidence.txt")).unwrap());
+
+    fs::remove_dir_all(root).unwrap();
+  }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -411,6 +484,28 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_variation_lines_variation ON variation_lines(json_extract(payload, '$.variation_id'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 13,
+    description: "index_governed_project_controls_relationships",
+    sql: r#"
+      CREATE INDEX IF NOT EXISTS idx_contracts_project ON contracts(project_id);
+      CREATE INDEX IF NOT EXISTS idx_contracts_parent_main ON contracts(parent_main_contract_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_headers_project_contract ON boq_headers(project_id, contract_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_project_header ON boq_items(project_id, boq_header_id);
+      CREATE INDEX IF NOT EXISTS idx_schedules_project_contract_item ON schedules(project_id, contract_id, boq_item_id);
+      CREATE INDEX IF NOT EXISTS idx_wirs_project_contract_item ON wir_entries(project_id, contract_id, boq_item_id);
+      CREATE INDEX IF NOT EXISTS idx_cost_entries_project_contract_item ON cost_entries(project_id, contract_id, boq_item_id);
+      CREATE INDEX IF NOT EXISTS idx_cash_flow_project_contract ON cash_flow(project_id, contract_id);
+      CREATE INDEX IF NOT EXISTS idx_variations_project_contract ON variations(project_id, contract_id);
+      CREATE INDEX IF NOT EXISTS idx_reporting_periods_project ON reporting_periods(project_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_business_code ON boq_items(boq_header_id, json_extract(payload, '$.item_code'));
+      CREATE INDEX IF NOT EXISTS idx_schedules_activity_code ON schedules(contract_id, json_extract(payload, '$.activity_code'));
+      CREATE INDEX IF NOT EXISTS idx_wirs_business_number ON wir_entries(contract_id, json_extract(payload, '$.wir_number'));
+      CREATE INDEX IF NOT EXISTS idx_variations_business_number ON variations(contract_id, json_extract(payload, '$.variation_number'));
+      CREATE INDEX IF NOT EXISTS idx_cost_entries_date ON cost_entries(project_id, json_extract(payload, '$.date'));
+      CREATE INDEX IF NOT EXISTS idx_wirs_inspection_date ON wir_entries(project_id, json_extract(payload, '$.inspection_date'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()
@@ -419,7 +514,7 @@ pub fn run() {
         .add_migrations("sqlite:buildtrack.db", migrations)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database])
+    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database, verify_local_backup])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

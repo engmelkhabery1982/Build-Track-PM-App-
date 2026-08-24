@@ -54,8 +54,10 @@ export function distributedPlannedValueToDate(
 
 export function addCalendarDays(date: string | null | undefined, days: number): string | null {
   if (!date) return null;
-  const value = new Date(`${date}T00:00:00`);
+  // Use UTC to keep contract dates calendar-based regardless of the desktop
+  // time zone or daylight-saving changes.
+  const value = new Date(`${date}T00:00:00Z`);
   if (Number.isNaN(value.getTime())) return null;
-  value.setDate(value.getDate() + (Number(days) || 0));
+  value.setUTCDate(value.getUTCDate() + (Number(days) || 0));
   return value.toISOString().slice(0, 10);
 }

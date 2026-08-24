@@ -11,6 +11,15 @@ export { getMainContractId } from "./contractScope";
 export { assertValidHierarchyChange } from "./hierarchyRules";
 export { assertRecordGovernance } from "./governanceRules";
 export {
+  assertRecordPeriodIsOpen,
+  assertReportingPeriodDefinition,
+  assertReportingPeriodMutation,
+  isProtectedReportingPeriod,
+  lockedPeriodForRecord,
+} from "./reportingPeriodGovernance";
+export { runDataQualityChecks } from "./dataQuality";
+export { CANONICAL_FIELDS, IMPORT_FIELD_ALIASES, STATUS_SETS, isCanonicalStatus } from "./dataDictionary";
+export {
   assertCodeCanBeLocked,
   assertCodeUpdateAllowed,
   assertCodeIsUnique,

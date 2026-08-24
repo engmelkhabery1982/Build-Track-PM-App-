@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { createCodeDraft, dataRepository, prepareCodeControlledInsert } from '@/data';
+import { assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, runDataQualityChecks, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -68,7 +68,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Field & Governance' },
 ];
 
-const PROJECT_STATUSES = ['Planning', 'In Progress', 'On Hold', 'Completed', 'Delayed'];
+const PROJECT_STATUSES = STATUS_SETS.project;
 const TASK_STATUSES = ['Not Started', 'In Progress', 'Completed', 'Delayed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 const COST_STATUSES = ['Planned', 'Committed', 'Actual', 'Over Budget'];
@@ -77,16 +77,16 @@ const PROC_STATUSES = ['Requested', 'Ordered', 'Partially Delivered', 'Delivered
 const SAFETY_STATUSES = ['Open', 'Investigating', 'Closed'];
 const SAFETY_SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 const SAFETY_TYPES = ['Incident', 'Near Miss', 'Hazard', 'Inspection', 'Violation'];
-const SCHEDULE_STATUSES = ['Not Started', 'In Progress', 'Completed', 'Delayed'];
-const CONTRACT_STATUSES = ['Draft', 'Active', 'Completed', 'Terminated'];
+const SCHEDULE_STATUSES = STATUS_SETS.schedule;
+const CONTRACT_STATUSES = STATUS_SETS.contract;
 const CONTRACT_TYPES = ['Lump Sum', 'Unit Price', 'Cost Plus', 'Time & Materials', 'Design-Build', 'GMP', 'Cost Reimbursable'];
-const INVOICE_STATUSES = ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'];
-const PAYMENT_STATUSES = ['Unpaid', 'Partially Paid', 'Paid'];
-const VARIATION_STATUSES = ['Draft', 'Submitted', 'Pending', 'Approved', 'Rejected'];
+const INVOICE_STATUSES = STATUS_SETS.invoice;
+const PAYMENT_STATUSES = STATUS_SETS.payment;
+const VARIATION_STATUSES = STATUS_SETS.variation;
 const VARIATION_TYPES = ['Scope Change', 'Design Change', 'Site Condition', 'Client Request', 'Cost Adjustment'];
-const DOC_STATUSES = ['Draft', 'Under Review', 'Approved', 'Current', 'Superseded'];
+const DOC_STATUSES = STATUS_SETS.document;
 const DOC_TYPES = ['Drawing', 'Specification', 'Report', 'Permit', 'Contract', 'Invoice', 'Plan', 'Other'];
-const WIR_STATUSES = ['Pending', 'Approved', 'Rejected'];
+const WIR_STATUSES = STATUS_SETS.wir;
 const WIR_RESULTS = ['Pass', 'Fail', 'Conditional Pass'];
 const BOQ_CLASSIFICATIONS = ['Main', 'Subcontractor'];
 
@@ -1722,32 +1722,12 @@ export default function App() {
     }
 
     if (activeView === 'dataQuality') {
-      const checks: { severity: 'Error' | 'Warning' | 'Pass'; title: string; detail: string; view: ViewKey }[] = [];
-      const projectIds = new Set(data.projects.map((project: any) => project.id));
-      const contractById = new Map(data.contracts.map((contract: any) => [contract.id, contract]));
-      const headerById = new Map(data.boqHeaders.map((header: any) => [header.id, header]));
-      const itemById = new Map(data.boqItems.map((item: any) => [item.id, item]));
-      const orphanMainContracts = data.contracts.filter((contract: any) => !contract.parent_main_contract_id && (!contract.project_id || !projectIds.has(contract.project_id)));
-      if (orphanMainContracts.length) checks.push({ severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
-      const projectsWithoutMain = data.projects.filter((project: any) => !data.contracts.some((contract: any) => contract.project_id === project.id && !contract.parent_main_contract_id));
-      if (projectsWithoutMain.length) checks.push({ severity: 'Error', title: 'Project without a main contract', detail: `${projectsWithoutMain.length} project(s) do not have the required main-contract source.`, view: 'contracts' });
-      const invalidSubcontracts = data.contracts.filter((contract: any) => contract.parent_main_contract_id && (!contractById.has(contract.parent_main_contract_id) || contractById.get(contract.parent_main_contract_id)?.project_id !== contract.project_id));
-      if (invalidSubcontracts.length) checks.push({ severity: 'Error', title: 'Invalid subcontract hierarchy', detail: `${invalidSubcontracts.length} subcontract(s) have a missing or cross-project parent contract.`, view: 'contracts' });
-      const invalidHeaders = data.boqHeaders.filter((header: any) => { const contract = contractById.get(header.contract_id); return !contract || contract.project_id !== header.project_id; });
-      if (invalidHeaders.length) checks.push({ severity: 'Error', title: 'BOQ header scope mismatch', detail: `${invalidHeaders.length} BOQ header(s) are not aligned with their contract and project.`, view: 'boq' });
-      const invalidItems = data.boqItems.filter((item: any) => { const header = headerById.get(item.boq_header_id); return !header || header.project_id !== item.project_id; });
-      if (invalidItems.length) checks.push({ severity: 'Error', title: 'BOQ item scope mismatch', detail: `${invalidItems.length} BOQ item(s) are missing a valid header or project relation.`, view: 'boqItems' });
-      const invalidSchedules = data.schedules.filter((row: any) => { const item = itemById.get(row.boq_item_id); const contract = contractById.get(row.contract_id); return !item || !contract || item.project_id !== row.project_id || contract.project_id !== row.project_id; });
-      if (invalidSchedules.length) checks.push({ severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
-      const excessivePlans = data.boqItems.filter((item: any) => data.schedules.filter((row: any) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum: number, row: any) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
-      if (excessivePlans.length) checks.push({ severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
-      const invalidWirs = data.wirEntries.filter((row: any) => !contractById.has(row.contract_id) || !itemById.has(row.boq_item_id));
-      if (invalidWirs.length) checks.push({ severity: 'Error', title: 'Inspection request missing scope', detail: `${invalidWirs.length} WIR record(s) are missing a valid contract or BOQ item.`, view: 'wir' });
-      const unscopedCosts = data.costEntries.filter((row: any) => !row.project_id || !row.contract_id || !row.boq_item_id);
-      if (unscopedCosts.length) checks.push({ severity: 'Warning', title: 'Cost entry without full allocation', detail: `${unscopedCosts.length} cost entry(ies) will not be reliably reflected by BOQ control reports.`, view: 'costEntries' });
-      if (!checks.length) checks.push({ severity: 'Pass', title: 'Relationship integrity passed', detail: 'All checked project, contract, BOQ, schedule, WIR and cost relationships are internally consistent.', view: 'dashboard' });
+      const checks = runDataQualityChecks({
+        projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[],
+      });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
-      return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only validation of the local PMO data model. No records are changed by these checks.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
+      return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
     }
 
     if (activeView === 'portfolio') {
@@ -1954,7 +1934,7 @@ export default function App() {
     if (!config) return null;
     const tableName = TABLE_NAMES[activeView];
     const title = VIEW_TITLES[activeView];
-    const roleReadOnly = activeRole === 'Executive Viewer' || (activeRole === 'Site Engineer' && ['contracts', 'variations', 'costs', 'cost_entries', 'cash_flow', 'project_baselines', 'reporting_periods', 'approval_requests'].includes(tableName)) || (tableName === 'app_users' && activeRole !== 'PMO Admin');
+    const roleReadOnly = activeRole === 'Executive Viewer' || (activeRole === 'Site Engineer' && ['contracts', 'variations', 'costs', 'cost_entries', 'cash_flow', 'project_baselines', 'reporting_periods', 'approval_requests'].includes(tableName)) || (tableName === 'app_users' && activeRole !== 'PMO Admin') || (tableName === 'reporting_periods' && activeRole !== 'PMO Admin');
     // The navigation key is "boq", while the loaded state is named
     // "boqHeaders". Reading the navigation key made successfully saved BOQs
     // look as if they had disappeared.
@@ -2454,15 +2434,11 @@ export default function App() {
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
             : null;
         } : undefined}
-        validateRecord={config.dateRangeColumn && !['reporting_periods', 'project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
-          const projectId = row.project_id;
-          const recordDate = row[config.dateRangeColumn!];
-          if (!projectId || !recordDate) return;
-          const lockedPeriod = data.reportingPeriods.find((period: any) =>
-            period.project_id === projectId && ['Locked', 'Closed'].includes(period.status) &&
-            period.start_date && period.end_date && String(recordDate) >= String(period.start_date) && String(recordDate) <= String(period.end_date),
-          );
-          if (lockedPeriod) throw new Error(`Reporting period "${lockedPeriod.period_name || lockedPeriod.id}" is ${lockedPeriod.status}. Reopen it before changing a dated record.`);
+        validateRecord={tableName === 'reporting_periods' ? (row) => {
+          assertReportingPeriodDefinition(row, data.reportingPeriods);
+        } : config.dateRangeColumn && !['project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
+          const governedRow = tableName === 'projects' ? { ...row, project_id: row.id } : row;
+          assertRecordPeriodIsOpen(data.reportingPeriods, governedRow);
         } : undefined}
         onMutated={(mutation) => {
           data.applyLocalMutation(tableName, mutation);

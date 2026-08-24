@@ -1,4 +1,5 @@
 import type { DataRepository, DataRow, ListOptions } from "./repository";
+import { assertRecordPeriodIsOpen, assertReportingPeriodDefinition, assertReportingPeriodMutation } from "./reportingPeriodGovernance";
 
 const TABLES = new Set([
   "projects", "tasks", "costs", "cost_entries", "procurement", "safety",
@@ -46,7 +47,13 @@ export class SqliteRepository implements DataRepository {
   private async database() {
     if (!this.databasePromise) {
       this.databasePromise = import("@tauri-apps/plugin-sql")
-        .then(({ default: Database }) => Database.load("sqlite:buildtrack.db"));
+        .then(async ({ default: Database }) => {
+          const database = await Database.load("sqlite:buildtrack.db");
+          // SQLite does not enforce declared foreign keys unless enabled for
+          // every connection. This makes the schema constraints effective.
+          await database.execute("PRAGMA foreign_keys = ON");
+          return database;
+        });
     }
     return this.databasePromise;
   }
@@ -90,6 +97,28 @@ export class SqliteRepository implements DataRepository {
     );
   }
 
+  private async assertReportingPeriodMutationAllowed(
+    database: Awaited<ReturnType<SqliteRepository['database']>>,
+    operation: 'insert' | 'update' | 'delete',
+    tableName: string,
+    next?: Record<string, any>,
+    before?: Record<string, any>,
+  ): Promise<void> {
+    // Audit entries are generated after a permitted mutation and must remain
+    // append-only evidence, not be blocked by the period they describe.
+    if (tableName === 'audit_log') return;
+    const storedPeriods = await database.select<StoredRow[]>("SELECT * FROM reporting_periods");
+    const periods = storedPeriods.map((period) => this.unpack<Record<string, any>>(period));
+    if (tableName === 'reporting_periods') {
+      assertReportingPeriodMutation(operation, next, before);
+      if (operation !== 'delete' && next) assertReportingPeriodDefinition(next, periods);
+      return;
+    }
+    const governedNext = tableName === 'projects' && next ? { ...next, project_id: next.id } : next;
+    const governedBefore = tableName === 'projects' && before ? { ...before, project_id: before.id } : before;
+    assertRecordPeriodIsOpen(periods, governedNext, governedBefore);
+  }
+
   async list<T extends DataRow>(tableName: string, options: ListOptions = {}): Promise<T[]> {
     assertKnownTable(tableName);
     const database = await this.database();
@@ -105,6 +134,7 @@ export class SqliteRepository implements DataRepository {
     const database = await this.database();
     const now = new Date().toISOString();
     const record = { ...row, id: (row as any).id || createId(), created_at: (row as any).created_at || now } as Record<string, any>;
+    await this.assertReportingPeriodMutationAllowed(database, 'insert', tableName, record);
     // The first desktop release created compact schemas for Projects and
     // Contracts. Keep their write shape compatible with both that database
     // and the newer migration, while relationships remain in the payload.
@@ -166,6 +196,7 @@ export class SqliteRepository implements DataRepository {
     const existing = this.unpack<T>(await this.findStored(id, tableName));
     const record = { ...existing, ...patch, id } as Record<string, any>;
     const database = await this.database();
+    await this.assertReportingPeriodMutationAllowed(database, 'update', tableName, record, existing as Record<string, any>);
     if (tableName === "projects") {
       await database.execute(
         "UPDATE projects SET payload = $1 WHERE id = $2",
@@ -222,6 +253,7 @@ export class SqliteRepository implements DataRepository {
     assertKnownTable(tableName);
     const existing = this.unpack<Record<string, any>>(await this.findStored(id, tableName));
     const database = await this.database();
+    await this.assertReportingPeriodMutationAllowed(database, 'delete', tableName, undefined, existing);
     await database.execute(`DELETE FROM ${tableName} WHERE id = $1`, [id]);
     await this.writeAudit(database, 'Delete', tableName, existing, existing);
   }

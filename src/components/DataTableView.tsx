@@ -105,7 +105,7 @@ export interface ColumnDef {
   type?: 'text' | 'password' | 'number' | 'money' | 'date' | 'status' | 'progress' | 'boolean' | 'select' | 'evm';
   width?: string;
   editable?: boolean;
-  options?: string[];
+  options?: readonly string[];
   autoFillFrom?: string;
   autoFillKey?: string;
 }
@@ -113,7 +113,7 @@ export interface ColumnDef {
 export interface FilterDef {
   key: string;
   label: string;
-  options: string[];
+  options: readonly string[];
 }
 
 export interface SelectOption {
