@@ -47,6 +47,19 @@ fn verify_local_backup(backup_path: String) -> Result<String, String> {
   Ok(format!("Backup verified: {}", backup_directory.display()))
 }
 
+#[tauri::command]
+fn stage_local_restore(app: tauri::AppHandle, backup_path: String) -> Result<String, String> {
+  let backup_directory = PathBuf::from(backup_path);
+  verify_backup_workspace(&backup_directory)?;
+  // SQLite can retain an active handle while the UI is open.  Stage a verified
+  // copy and apply it during the next startup before the front end opens it.
+  let staging = app.path().app_config_dir().map_err(|error| error.to_string())?.join("restore-pending");
+  if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
+  copy_directory(&backup_directory, &staging)?;
+  verify_backup_workspace(&staging)?;
+  Ok("Restore is ready. Close and reopen BuildTrack to apply the verified backup.".to_string())
+}
+
 fn backup_workspace(source: &Path, attachments: &Path, backup_root: &Path) -> Result<PathBuf, String> {
   if !source.exists() { return Err("The local BuildTrack database has not been created yet.".to_string()); }
   fs::create_dir_all(backup_root).map_err(|error| error.to_string())?;
@@ -101,6 +114,16 @@ fn restore_workspace_from_backup(backup_directory: &Path, target_database: &Path
   }
   let backup_attachments = backup_directory.join("attachments");
   if backup_attachments.exists() { copy_directory(&backup_attachments, target_attachments)?; }
+  Ok(())
+}
+
+fn apply_staged_restore(app: &tauri::AppHandle) -> Result<(), String> {
+  let config_directory = app.path().app_config_dir().map_err(|error| error.to_string())?;
+  let staging = config_directory.join("restore-pending");
+  if !staging.exists() { return Ok(()); }
+  let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  restore_workspace_from_backup(&staging, &config_directory.join("buildtrack.db"), &app_data.join("attachments"))?;
+  fs::remove_dir_all(staging).map_err(|error| error.to_string())?;
   Ok(())
 }
 
@@ -604,6 +627,51 @@ pub fn run() {
         ON site_daily_reports(project_id, contract_id, json_extract(payload, '$.report_date'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 19,
+    description: "expose_financial_reporting_columns",
+    sql: r#"
+      -- Generated columns keep legacy JSON rows readable while exposing the
+      -- financial reporting facts to SQLite's query planner and future APIs.
+      ALTER TABLE cost_entries ADD COLUMN financial_date TEXT GENERATED ALWAYS AS (json_extract(payload, '$.date')) VIRTUAL;
+      ALTER TABLE cost_entries ADD COLUMN financial_amount REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE cost_entries ADD COLUMN financial_type TEXT GENERATED ALWAYS AS (json_extract(payload, '$.cost_type')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_cost_entries_financial_reporting ON cost_entries(project_id, contract_id, financial_date, financial_type);
+
+      ALTER TABLE cash_flow ADD COLUMN financial_date TEXT GENERATED ALWAYS AS (json_extract(payload, '$.date')) VIRTUAL;
+      ALTER TABLE cash_flow ADD COLUMN financial_inflow REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.inflow'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE cash_flow ADD COLUMN financial_outflow REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.outflow'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE cash_flow ADD COLUMN financial_status TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
+      ALTER TABLE cash_flow ADD COLUMN movement_type_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.movement_type')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_cash_flow_financial_reporting ON cash_flow(project_id, contract_id, financial_date, movement_type_sql, financial_status);
+
+      ALTER TABLE variations ADD COLUMN approved_date_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.approved_date')) VIRTUAL;
+      ALTER TABLE variations ADD COLUMN cost_impact_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.cost_impact'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE variations ADD COLUMN status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_variations_financial_reporting ON variations(project_id, contract_id, approved_date_sql, status_sql);
+
+      ALTER TABLE client_invoices ADD COLUMN invoice_date_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.invoice_date')) VIRTUAL;
+      ALTER TABLE client_invoices ADD COLUMN due_date_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.due_date')) VIRTUAL;
+      ALTER TABLE client_invoices ADD COLUMN amount_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE client_invoices ADD COLUMN payment_status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.payment_status')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_client_invoice_financial_reporting ON client_invoices(project_id, contract_id, invoice_date_sql, payment_status_sql);
+
+      ALTER TABLE subcontractor_invoices ADD COLUMN invoice_date_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.invoice_date')) VIRTUAL;
+      ALTER TABLE subcontractor_invoices ADD COLUMN amount_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE subcontractor_invoices ADD COLUMN payment_status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.payment_status')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_sub_invoice_financial_reporting ON subcontractor_invoices(project_id, contract_id, invoice_date_sql, payment_status_sql);
+
+      ALTER TABLE payment_certificates ADD COLUMN certificate_date_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.certificate_date')) VIRTUAL;
+      ALTER TABLE payment_certificates ADD COLUMN gross_value_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.gross_certified_value'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE payment_certificates ADD COLUMN status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_payment_certificate_financial_reporting ON payment_certificates(project_id, contract_id, certificate_date_sql, status_sql);
+
+      ALTER TABLE contract_sov_lines ADD COLUMN budget_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.original_budget'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE contract_sov_lines ADD COLUMN forecast_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.forecast_at_completion'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE contract_sov_lines ADD COLUMN status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_contract_sov_financial_reporting ON contract_sov_lines(project_id, contract_id, status_sql);
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()
@@ -612,8 +680,9 @@ pub fn run() {
         .add_migrations("sqlite:buildtrack.db", migrations)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database, verify_local_backup])
+    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database, verify_local_backup, stage_local_restore])
     .setup(|app| {
+      apply_staged_restore(app.handle())?;
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
