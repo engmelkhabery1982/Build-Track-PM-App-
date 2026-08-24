@@ -3,12 +3,14 @@ import type { ViewKey } from '@/types';
 
 type QueueItem = { title: string; detail: string; due?: string; type: string; view: ViewKey; urgency: 'high' | 'medium' | 'low' };
 
-export function WorkQueue({ approvals, tasks, clientInvoices, subInvoices, rfis, quality, dailyReports = [], onNavigate }: {
+export function WorkQueue({ approvals, tasks, clientInvoices, subInvoices, rfis, submittals = [], documents = [], quality, dailyReports = [], onNavigate }: {
   approvals: Record<string, any>[];
   tasks: Record<string, any>[];
   clientInvoices: Record<string, any>[];
   subInvoices: Record<string, any>[];
   rfis: Record<string, any>[];
+  submittals?: Record<string, any>[];
+  documents?: Record<string, any>[];
   quality: Record<string, any>[];
   dailyReports?: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
@@ -20,6 +22,8 @@ export function WorkQueue({ approvals, tasks, clientInvoices, subInvoices, rfis,
     ...clientInvoices.filter((row) => row.due_date && row.due_date < today && row.payment_status !== 'Paid').map((row) => ({ title: `Collect ${row.invoice_number || 'client invoice'}`, detail: `Due ${row.due_date} · ${row.payment_status || 'Unpaid'}`, due: row.due_date, type: 'Collection', view: 'clientInvoiceTracking' as ViewKey, urgency: 'high' as const })),
     ...subInvoices.filter((row) => row.status === 'Approved' && row.payment_status !== 'Paid').map((row) => ({ title: `Pay ${row.invoice_number || 'subcontract invoice'}`, detail: `Approved · ${row.payment_status || 'Unpaid'}`, due: row.due_date, type: 'Liability', view: 'subcontractorInvoiceTracking' as ViewKey, urgency: 'medium' as const })),
     ...rfis.filter((row) => !['Closed', 'Answered'].includes(row.status)).map((row) => ({ title: row.subject || row.title || 'Open RFI', detail: row.status || 'Open', due: row.due_date, type: 'RFI', view: 'rfi' as ViewKey, urgency: row.due_date && row.due_date < today ? 'high' as const : 'low' as const })),
+    ...submittals.filter((row) => row.status === 'Submitted').map((row) => ({ title: row.title || row.submittal_number || 'Submittal awaiting review', detail: `Submitted ${row.submitted_date || 'without a date'}`, due: row.submitted_date, type: 'Submittal', view: 'submittals' as ViewKey, urgency: row.submitted_date && row.submitted_date < today ? 'medium' as const : 'low' as const })),
+    ...documents.filter((row) => row.status === 'Under Review').map((row) => ({ title: row.document_name || row.document_number || 'Document awaiting review', detail: `Revision ${row.revision || row.version || '-'}`, due: row.upload_date, type: 'Document', view: 'documents' as ViewKey, urgency: 'low' as const })),
     ...quality.filter((row) => row.status !== 'Closed').map((row) => ({ title: row.title || row.description || 'Open quality item', detail: row.status || 'Open', due: row.due_date, type: 'Quality', view: 'quality' as ViewKey, urgency: row.severity === 'Critical' || row.severity === 'High' ? 'high' as const : 'low' as const })),
     ...dailyReports.filter((row) => row.status !== 'Reviewed').map((row) => ({ title: `Review daily report ${row.report_number || ''}`, detail: `${row.report_date || 'No date'} · ${row.status || 'Draft'}`, due: row.report_date, type: 'Site report', view: 'dailyReports' as ViewKey, urgency: row.report_date && row.report_date < today ? 'medium' as const : 'low' as const })),
   ].sort((a, b) => (a.urgency === 'high' ? -1 : b.urgency === 'high' ? 1 : String(a.due || '9999').localeCompare(String(b.due || '9999'))));

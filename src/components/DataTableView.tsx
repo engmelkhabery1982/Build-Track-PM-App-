@@ -1269,13 +1269,15 @@ export function DataTableView({
         throw new Error('A reviewed submittal requires reviewer and response date.');
       }
     }
+    if (['wir_entries', 'rfi_register', 'quality_register', 'site_daily_reports'].includes(tableName)) {
+      if (record.latitude !== '' && record.latitude !== null && record.latitude !== undefined && (!Number.isFinite(Number(record.latitude)) || Number(record.latitude) < -90 || Number(record.latitude) > 90)) throw new Error('Latitude must be a valid value between -90 and 90.');
+      if (record.longitude !== '' && record.longitude !== null && record.longitude !== undefined && (!Number.isFinite(Number(record.longitude)) || Number(record.longitude) < -180 || Number(record.longitude) > 180)) throw new Error('Longitude must be a valid value between -180 and 180.');
+    }
     if (tableName === 'quality_register') {
       const status = String(record.status || '');
       if (['Verified', 'Closed'].includes(status) && (!String(record.corrective_action || '').trim() || !record.closed_date)) {
         throw new Error('A verified or closed quality record requires corrective action and closed date.');
       }
-      if (record.latitude !== '' && record.latitude !== null && record.latitude !== undefined && (Number(record.latitude) < -90 || Number(record.latitude) > 90)) throw new Error('Latitude must be between -90 and 90.');
-      if (record.longitude !== '' && record.longitude !== null && record.longitude !== undefined && (Number(record.longitude) < -180 || Number(record.longitude) > 180)) throw new Error('Longitude must be between -180 and 180.');
     }
     if (tableName === 'site_daily_reports') {
       if (!record.report_date) throw new Error('A site daily report requires a report date.');

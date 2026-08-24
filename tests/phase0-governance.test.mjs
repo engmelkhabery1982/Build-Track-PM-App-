@@ -143,3 +143,23 @@ test('acceptance data-quality dashboard detects relationship, quantity and perio
   assert.ok(findings.some((finding) => finding.title === 'Cost entry without full allocation'));
   assert.ok(findings.some((finding) => finding.title === 'Reporting-period governance issue'));
 });
+
+test('field and document controls detect scope, coordinate, review and revision failures', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'project-1' }],
+    contracts: [{ id: 'contract-1', project_id: 'project-1' }],
+    boqHeaders: [{ id: 'header-1', project_id: 'project-1', contract_id: 'contract-1' }],
+    boqItems: [{ id: 'item-1', project_id: 'project-1', contract_id: 'contract-1', boq_header_id: 'header-1', item_code: 'A-01', quantity: 10 }],
+    schedules: [{ id: 'activity-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1' }],
+    wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    rfis: [{ id: 'rfi-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', schedule_id: 'activity-1', latitude: 91 }],
+    submittals: [{ id: 'sub-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', schedule_id: 'activity-1', status: 'Approved', reviewer: '', response_date: null }],
+    documents: [{ id: 'doc-1', project_id: 'project-1', supersedes_document_id: 'missing-document' }],
+    quality: [],
+    dailyReports: [{ id: 'daily-1', project_id: 'project-1', contract_id: 'contract-1', report_date: null, work_summary: '', manpower_count: -1 }],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Invalid field coordinates'));
+  assert.ok(findings.some((finding) => finding.title === 'Incomplete submittal review'));
+  assert.ok(findings.some((finding) => finding.title === 'Invalid document revision chain'));
+  assert.ok(findings.some((finding) => finding.title === 'Incomplete site daily report'));
+});

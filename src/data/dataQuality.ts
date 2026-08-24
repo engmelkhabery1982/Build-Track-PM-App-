@@ -18,6 +18,11 @@ export interface DataQualitySource {
   costEntries: Record<string, any>[];
   reportingPeriods: Record<string, any>[];
   baselines: Record<string, any>[];
+  documents?: Record<string, any>[];
+  rfis?: Record<string, any>[];
+  submittals?: Record<string, any>[];
+  quality?: Record<string, any>[];
+  dailyReports?: Record<string, any>[];
 }
 
 function pushIf(findings: DataQualityFinding[], condition: boolean, finding: DataQualityFinding): void {
@@ -37,6 +42,12 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const contractById = new Map(data.contracts.map((row) => [row.id, row]));
   const headerById = new Map(data.boqHeaders.map((row) => [row.id, row]));
   const itemById = new Map(data.boqItems.map((row) => [row.id, row]));
+  const scheduleById = new Map(data.schedules.map((row) => [row.id, row]));
+  const documents = data.documents || [];
+  const rfis = data.rfis || [];
+  const submittals = data.submittals || [];
+  const quality = data.quality || [];
+  const dailyReports = data.dailyReports || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -64,6 +75,31 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const unscopedCosts = data.costEntries.filter((row) => !row.project_id || !row.contract_id || !row.boq_item_id);
   pushIf(findings, unscopedCosts.length > 0, { severity: 'Warning', title: 'Cost entry without full allocation', detail: `${unscopedCosts.length} cost entry(ies) will not be reliably reflected by BOQ control reports.`, view: 'costEntries' });
 
+  const fieldRows: Array<Record<string, any> & { view: string }> = [
+    ...data.wirEntries.map((row) => ({ ...row, view: 'wir' })),
+    ...rfis.map((row) => ({ ...row, view: 'rfi' })),
+    ...submittals.map((row) => ({ ...row, view: 'submittals' })),
+    ...quality.map((row) => ({ ...row, view: 'quality' })),
+    ...dailyReports.map((row) => ({ ...row, view: 'dailyReports' })),
+  ];
+  const invalidFieldScope = fieldRows.filter((row) => {
+    const contract = row.contract_id ? contractById.get(row.contract_id) : undefined;
+    const item = row.boq_item_id ? itemById.get(row.boq_item_id) : undefined;
+    const schedule = row.schedule_id ? scheduleById.get(row.schedule_id) : undefined;
+    return (row.contract_id && (!contract || contract.project_id !== row.project_id))
+      || (row.boq_item_id && (!item || item.project_id !== row.project_id || (row.contract_id && item.contract_id !== row.contract_id)))
+      || (row.schedule_id && (!schedule || schedule.project_id !== row.project_id || (row.contract_id && schedule.contract_id !== row.contract_id)));
+  });
+  pushIf(findings, invalidFieldScope.length > 0, { severity: 'Error', title: 'Field register relationship mismatch', detail: `${invalidFieldScope.length} field register row(s) have a project, contract, BOQ item, or activity outside their scope.`, view: invalidFieldScope[0]?.view || 'rfi' });
+  const invalidCoordinates = fieldRows.filter((row) => (row.latitude !== '' && row.latitude !== null && row.latitude !== undefined && (!Number.isFinite(Number(row.latitude)) || Number(row.latitude) < -90 || Number(row.latitude) > 90)) || (row.longitude !== '' && row.longitude !== null && row.longitude !== undefined && (!Number.isFinite(Number(row.longitude)) || Number(row.longitude) < -180 || Number(row.longitude) > 180)));
+  pushIf(findings, invalidCoordinates.length > 0, { severity: 'Error', title: 'Invalid field coordinates', detail: `${invalidCoordinates.length} field record(s) have latitude or longitude outside valid geographic limits.`, view: invalidCoordinates[0]?.view || 'quality' });
+  const invalidDocumentRevisions = documents.filter((row) => row.supersedes_document_id && (row.supersedes_document_id === row.id || !documents.some((candidate) => candidate.id === row.supersedes_document_id)));
+  pushIf(findings, invalidDocumentRevisions.length > 0, { severity: 'Error', title: 'Invalid document revision chain', detail: `${invalidDocumentRevisions.length} document(s) supersede a missing document or themselves.`, view: 'documents' });
+  const incompleteSubmittalReviews = submittals.filter((row) => ['Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'].includes(String(row.status || '')) && (!String(row.reviewer || '').trim() || !row.response_date));
+  pushIf(findings, incompleteSubmittalReviews.length > 0, { severity: 'Error', title: 'Incomplete submittal review', detail: `${incompleteSubmittalReviews.length} reviewed submittal(s) are missing a reviewer or response date.`, view: 'submittals' });
+  const incompleteDailyReports = dailyReports.filter((row) => !row.report_date || !String(row.work_summary || '').trim() || Number(row.manpower_count || 0) < 0);
+  pushIf(findings, incompleteDailyReports.length > 0, { severity: 'Error', title: 'Incomplete site daily report', detail: `${incompleteDailyReports.length} daily report(s) are missing a date/work summary or have invalid manpower.`, view: 'dailyReports' });
+
   const periodIssues = data.reportingPeriods.filter((period) => {
     try { assertReportingPeriodDefinition(period, data.reportingPeriods); return false; } catch { return true; }
   });
@@ -71,6 +107,6 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const duplicateApprovedBaselines = duplicateCount(data.baselines.filter((row) => row.status === 'Approved'), (row) => String(row.contract_id || ''));
   pushIf(findings, duplicateApprovedBaselines > 0, { severity: 'Warning', title: 'Multiple approved baselines', detail: `${duplicateApprovedBaselines} contract(s) have more than one approved baseline; confirm the current baseline.`, view: 'baselines' });
 
-  if (!findings.length) findings.push({ severity: 'Pass', title: 'Acceptance data-quality checks passed', detail: 'All checked project, commercial, BOQ, schedule, field, cost, baseline and reporting-period controls are internally consistent.', view: 'dashboard' });
+  if (!findings.length) findings.push({ severity: 'Pass', title: 'Acceptance data-quality checks passed', detail: 'All checked project, commercial, BOQ, schedule, field, document, cost, baseline and reporting-period controls are internally consistent.', view: 'dashboard' });
   return findings;
 }

@@ -643,10 +643,10 @@ export interface AuditLogEntry {
   id: string; project_id: string; contract_id: string | null; entity_type: string; entity_id: string;
   action: string; actor: string; summary: string; before?: Record<string, any> | null; after?: Record<string, any> | null; created_at: string;
 }
-export interface RFIEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; rfi_number: string; rfi_number_locked?: boolean; subject: string; raised_by: string; raised_date: string | null; due_date: string | null; response: string; response_date: string | null; status: string; impact: string; file_reference?: string; notes: string; created_at: string; }
+export interface RFIEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; rfi_number: string; rfi_number_locked?: boolean; subject: string; raised_by: string; location?: string; latitude?: number | null; longitude?: number | null; raised_date: string | null; due_date: string | null; response: string; response_date: string | null; status: string; impact: string; file_reference?: string; notes: string; created_at: string; }
 export interface SubmittalEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; submittal_number: string; submittal_number_locked?: boolean; title: string; document_type: string; submitted_by: string; submitted_date: string | null; reviewer: string; response_date: string | null; status: string; revision: string; file_reference?: string; notes: string; created_at: string; }
 export interface QualityEntry { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; reference_number: string; reference_number_locked?: boolean; record_type: string; title: string; location: string; latitude?: number | null; longitude?: number | null; raised_date: string | null; owner: string; due_date: string | null; closed_date: string | null; severity: string; status: string; corrective_action: string; file_reference?: string; notes: string; created_at: string; }
-export interface SiteDailyReport { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; report_number: string; report_number_locked?: boolean; report_date: string | null; weather: string; work_summary: string; manpower_count: number; equipment_summary: string; issues: string; next_day_plan: string; photo_reference: string; status: string; notes: string; created_at: string; }
+export interface SiteDailyReport { id: string; project_id: string; contract_id: string | null; boq_item_id: string | null; schedule_id?: string | null; report_number: string; report_number_locked?: boolean; report_date: string | null; location?: string; latitude?: number | null; longitude?: number | null; weather: string; work_summary: string; manpower_count: number; equipment_summary: string; issues: string; next_day_plan: string; photo_reference: string; status: string; notes: string; created_at: string; }
 export interface PMOSnapshot { id: string; project_id: string; contract_id: string | null; snapshot_name: string; data_date: string | null; status: string; planned_value: number; earned_value: number; actual_cost: number; cpi: number | null; spi: number | null; eac: number; notes: string; created_at: string; }
 export interface AppUser { id: string; username: string; display_name: string; role: string; status: string; password_hash?: string; password_salt?: string; last_login_at?: string | null; created_at: string; }
 
@@ -665,11 +665,14 @@ export interface WIREntry {
   company_name: string;
   wir_number: string;
   area: string;
+  latitude?: number | null;
+  longitude?: number | null;
   work_type: string;
   inspection_date: string | null;
   inspector: string;
   result: string;
   remarks: string;
+  file_reference?: string;
   status: string;
   unit: string;
   quantity: number;

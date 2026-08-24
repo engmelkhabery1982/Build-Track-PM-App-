@@ -786,39 +786,6 @@ pub fn run() {
       CREATE TRIGGER IF NOT EXISTS financial_ledger_procurement_ad AFTER DELETE ON procurement BEGIN DELETE FROM financial_ledger WHERE source_table = 'procurement' AND source_id = OLD.id; END;
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 22,
-    description: "govern_sov_cost_changes_and_commitment_ledger",
-    sql: r#"
-      -- A cost change is allocated to exactly one SOV line. The repository
-      -- writes this real column as well as the audit payload.
-      ALTER TABLE cost_changes ADD COLUMN contract_sov_line_id TEXT;
-      CREATE INDEX IF NOT EXISTS idx_cost_changes_sov_line ON cost_changes(contract_sov_line_id, project_id, contract_id, json_extract(payload, '$.status'));
-      UPDATE cost_changes SET contract_sov_line_id = json_extract(payload, '$.contract_sov_line_id')
-        WHERE contract_sov_line_id IS NULL;
-
-      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
-        SELECT 'cost-change:' || id, 'cost_changes', id, project_id, contract_id, boq_item_id, COALESCE(json_extract(payload, '$.approved_date'), json_extract(payload, '$.effective_date')), 'Cost Change', CASE WHEN CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL)), json_extract(payload, '$.status'), created_at FROM cost_changes;
-      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
-        SELECT 'commitment:' || id, 'procurement', id, project_id, contract_id, boq_item_id, COALESCE(json_extract(payload, '$.order_date'), json_extract(payload, '$.date')), 'Commitment', 'Commitment', CAST(COALESCE(json_extract(payload, '$.total_cost'), CAST(COALESCE(json_extract(payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(payload, '$.unit_cost'), 0) AS REAL)) AS REAL), json_extract(payload, '$.status'), created_at FROM procurement;
-
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_changes_ai AFTER INSERT ON cost_changes BEGIN
-        INSERT OR REPLACE INTO financial_ledger VALUES ('cost-change:' || NEW.id, 'cost_changes', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, COALESCE(json_extract(NEW.payload, '$.approved_date'), json_extract(NEW.payload, '$.effective_date')), 'Cost Change', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
-      END;
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_changes_au AFTER UPDATE ON cost_changes BEGIN
-        INSERT OR REPLACE INTO financial_ledger VALUES ('cost-change:' || NEW.id, 'cost_changes', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, COALESCE(json_extract(NEW.payload, '$.approved_date'), json_extract(NEW.payload, '$.effective_date')), 'Cost Change', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
-      END;
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_changes_ad AFTER DELETE ON cost_changes BEGIN DELETE FROM financial_ledger WHERE source_table = 'cost_changes' AND source_id = OLD.id; END;
-
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_procurement_ai AFTER INSERT ON procurement BEGIN
-        INSERT OR REPLACE INTO financial_ledger VALUES ('commitment:' || NEW.id, 'procurement', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, COALESCE(json_extract(NEW.payload, '$.order_date'), json_extract(NEW.payload, '$.date')), 'Commitment', 'Commitment', CAST(COALESCE(json_extract(NEW.payload, '$.total_cost'), CAST(COALESCE(json_extract(NEW.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(NEW.payload, '$.unit_cost'), 0) AS REAL)) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
-      END;
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_procurement_au AFTER UPDATE ON procurement BEGIN
-        INSERT OR REPLACE INTO financial_ledger VALUES ('commitment:' || NEW.id, 'procurement', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, COALESCE(json_extract(NEW.payload, '$.order_date'), json_extract(NEW.payload, '$.date')), 'Commitment', 'Commitment', CAST(COALESCE(json_extract(NEW.payload, '$.total_cost'), CAST(COALESCE(json_extract(NEW.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(NEW.payload, '$.unit_cost'), 0) AS REAL)) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
-      END;
-      CREATE TRIGGER IF NOT EXISTS financial_ledger_procurement_ad AFTER DELETE ON procurement BEGIN DELETE FROM financial_ledger WHERE source_table = 'procurement' AND source_id = OLD.id; END;
-    "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()
