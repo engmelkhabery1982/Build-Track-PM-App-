@@ -434,6 +434,7 @@ export function DataTableView({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
+  const [workbookSheetPicker, setWorkbookSheetPicker] = useState<{ file: File; sheetNames: string[] } | null>(null);
   const [inlineEdit, setInlineEdit] = useState<{ id: string; key: string } | null>(null);
   const [inlineValue, setInlineValue] = useState<any>(null);
   const [sortRules, setSortRules] = useState<{ key: string; dir: 'asc' | 'desc' }[]>([]);
@@ -1549,6 +1550,26 @@ export function DataTableView({
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+    if (!file.name.toLowerCase().endsWith('.xer')) {
+      try {
+        const XLSX = await getXlsx();
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+        if (workbook.SheetNames.length > 1) {
+          setWorkbookSheetPicker({ file, sheetNames: workbook.SheetNames });
+          return;
+        }
+        await importFile(file, workbook.SheetNames[0]);
+        return;
+      } catch (error: any) {
+        setImportResult({ success: 0, failed: 0, errors: [error.message || 'Failed to read the Excel workbook.'] });
+        return;
+      }
+    }
+    await importFile(file);
+  }
+
+  async function importFile(file: File, selectedSheetName?: string) {
     setImporting(true);
     setImportResult(null);
     try {
@@ -1564,12 +1585,12 @@ export function DataTableView({
             : tableName === 'wir_entries'
               ? wb.SheetNames.find((name) => /\bwir\b|inspection/i.test(name))
               : undefined;
-          return XLSX.utils.sheet_to_json(wb.Sheets[preferredSheet || wb.SheetNames[0]], { defval: '' }) as Record<string, any>[];
+          const sheetName = selectedSheetName || preferredSheet || wb.SheetNames[0];
+          return XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' }) as Record<string, any>[];
         })();
       if (rows.length === 0) {
         setImportResult({ success: 0, failed: 0, errors: [isXer ? 'No TASK activities were found in the Primavera XER file.' : 'The Excel file is empty or has no data rows.'] });
         setImporting(false);
-        e.target.value = '';
         return;
       }
       const normalizeHeader = (value: unknown) => String(value || '')
@@ -1838,7 +1859,6 @@ export function DataTableView({
       setImportResult({ success: 0, failed: 0, errors: [err.message || 'Failed to read the Excel file.'] });
     }
     setImporting(false);
-    e.target.value = '';
   }
 
   async function commitImportPreview() {
@@ -2730,7 +2750,7 @@ export function DataTableView({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-neutral-50">
-      <div className="p-6 max-w-7xl mx-auto w-full flex-1 flex flex-col overflow-hidden animate-fade-in">
+      <div className={`${tableName === 'schedules' ? 'p-3 max-w-none' : 'p-6 max-w-7xl mx-auto'} w-full flex-1 flex flex-col overflow-hidden animate-fade-in`}>
         {/* Header */}
         <div className="mb-4 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
@@ -3069,13 +3089,23 @@ export function DataTableView({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to import. No data has been saved yet.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900"><span className="font-semibold">Final step:</span> click <span className="font-semibold">Save rows to table</span> below to write these records. Closing this window does not save anything.</div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
             <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>
             {importPreview.validationErrors.length > 0 && <div className="mt-4 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900"><p className="font-semibold">{importPreview.validationErrors.length} row(s) require correction and will be skipped.</p><ul className="mt-2 max-h-28 space-y-1 overflow-auto text-xs">{importPreview.validationErrors.slice(0, 12).map((issue) => <li key={`${issue.row}-${issue.message}`}>• Row {issue.row}: {issue.message}</li>)}</ul>{importPreview.validationErrors.length > 12 && <p className="mt-1 text-xs">Additional issues are hidden from this preview.</p>}</div>}
             <div className="mt-4 overflow-auto rounded-lg border border-neutral-200"><table className="min-w-full border-collapse text-sm"><thead className="bg-neutral-100"><tr>{columns.filter((column) => importPreview.rows.some((row) => row[column.key] !== undefined)).slice(0, 8).map((column) => <th key={column.key} className="whitespace-nowrap border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">{column.label}</th>)}</tr></thead><tbody>{importPreview.rows.slice(0, 10).map((row, index) => <tr key={index} className="odd:bg-neutral-50">{columns.filter((column) => importPreview.rows.some((candidate) => candidate[column.key] !== undefined)).slice(0, 8).map((column) => <td key={column.key} className="max-w-48 truncate whitespace-nowrap border border-neutral-200 px-3 py-2 text-neutral-700">{renderCell(row[column.key], column, relationshipOptions?.[column.key], row)}</td>)}</tr>)}</tbody></table></div>
             {importPreview.rows.length > 10 && <p className="mt-2 text-xs text-neutral-500">Preview shows the first 10 rows and 8 mapped columns.</p>}
-            <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing || importPreview.rows.length === importPreview.validationErrors.length} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Importing…' : `Confirm and import ${importPreview.rows.length - importPreview.validationErrors.length} valid row(s)`}</button></div>
+            <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing || importPreview.rows.length === importPreview.validationErrors.length} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Saving…' : `Save ${importPreview.rows.length - importPreview.validationErrors.length} row(s) to table`}</button></div>
+          </div>
+        </div>
+      )}
+      {workbookSheetPicker && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Choose Excel worksheet</h3><p className="mt-1 text-sm text-neutral-500">{workbookSheetPicker.file.name} contains {workbookSheetPicker.sheetNames.length} worksheets. Select the sheet to import.</p></div><button onClick={() => setWorkbookSheetPicker(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="mt-5 max-h-80 space-y-2 overflow-auto">{workbookSheetPicker.sheetNames.map((sheetName) => <button key={sheetName} onClick={() => { const pending = workbookSheetPicker.file; setWorkbookSheetPicker(null); void importFile(pending, sheetName); }} className="flex w-full items-center justify-between rounded-xl border border-neutral-200 px-4 py-3 text-left text-sm font-semibold text-neutral-800 transition hover:border-primary-300 hover:bg-primary-50"><span className="truncate">{sheetName}</span><span className="ml-3 shrink-0 text-xs font-medium text-primary-700">Import this sheet →</span></button>)}</div>
+            <div className="mt-5 flex justify-end"><button onClick={() => setWorkbookSheetPicker(null)} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button></div>
           </div>
         </div>
       )}
