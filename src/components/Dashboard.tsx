@@ -388,6 +388,7 @@ export function Dashboard({
       ...datedSchedules.flatMap((schedule) => [schedule.start_date, schedule.end_date]),
       ...fWirs.map((wir) => wir.inspection_date),
       ...costEntries.filter((entry) => pid === 'all' || entry.project_id === pid).map((entry) => entry.date),
+      ...fCashFlow.map((entry) => entry.date),
     ].filter((date): date is string => Boolean(date)).sort();
     if (dates.length === 0) return [];
     const projectStart = dates[0];
@@ -401,7 +402,7 @@ export function Dashboard({
       const mainItem = item?.main_boq_item_id ? boqItems.find((candidate) => candidate.id === item.main_boq_item_id) : item;
       return Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
     };
-    const points: { label: string; planned: number; earned: number; actual: number; date: string }[] = [];
+    const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
     for (let i = 0; i <= numPoints; i++) {
       const dayOffset = (i / numPoints) * totalDays;
@@ -410,10 +411,12 @@ export function Dashboard({
       const planned = datedSchedules.reduce((sum, schedule) => sum + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, dateStr), 0);
       const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
       const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-      points.push({ label: dateStr, planned, earned, actual, date: dateStr });
+      const forecast = actual + fCashFlow.filter((entry: any) => entry.movement_type === 'Forecast' && String(entry.date || '') <= dateStr).reduce((sum: number, entry: any) => sum + (Number(entry.outflow) || 0), 0);
+      const cash = fCashFlow.filter((entry: any) => String(entry.date || '') <= dateStr).reduce((sum: number, entry: any) => sum + (Number(entry.inflow) || 0) - (Number(entry.outflow) || 0), 0);
+      points.push({ label: dateStr, planned, earned, actual, forecast, cash, date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {

@@ -5,6 +5,8 @@ interface SCurvePoint {
   planned: number;
   earned: number;
   actual: number;
+  forecast?: number;
+  cash?: number;
   date: string;
 }
 
@@ -28,7 +30,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   }, [data]);
 
   const xScale = (i: number) => (i / Math.max(data.length - 1, 1)) * chartW;
-  const maximum = Math.max(...data.flatMap((point) => [point.planned, point.earned, point.actual]), 1);
+  const maximum = Math.max(...data.flatMap((point) => [point.planned, point.earned, point.actual, point.forecast || 0, Math.abs(point.cash || 0)]), 1);
   const yScale = (v: number) => chartH - (Math.max(0, v) / maximum) * chartH;
 
   const plannedPath = data
@@ -41,6 +43,8 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   const earnedPath = data
     .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.earned).toFixed(1)}`)
     .join(' ');
+  const forecastPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.forecast || 0).toFixed(1)}`).join(' ');
+  const cashPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(Math.max(0, d.cash || 0)).toFixed(1)}`).join(' ');
 
   const plannedArea = `${plannedPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
   const actualArea = `${actualPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
@@ -101,6 +105,8 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
           <path d={actualArea} fill="url(#actualGrad)" />
           <path d={actualPath} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeLinejoin="round" />
           <path d={earnedPath} fill="none" stroke="#8b5cf6" strokeWidth={2.5} strokeLinejoin="round" strokeDasharray="6 4" />
+          <path d={forecastPath} fill="none" stroke="#f97316" strokeWidth={2} strokeLinejoin="round" strokeDasharray="3 4" />
+          <path d={cashPath} fill="none" stroke="#14b8a6" strokeWidth={2} strokeLinejoin="round" strokeDasharray="8 3" />
 
           {/* Data points */}
           {data.map((d, i) => (
