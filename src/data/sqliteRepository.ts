@@ -8,6 +8,7 @@ const TABLES = new Set([
   "project_baselines", "reporting_periods", "governance_register",
   "approval_requests", "audit_log",
   "rfi_register", "submittals", "quality_register",
+  "site_daily_reports",
   "pmo_snapshots",
   "app_users",
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations", "variation_lines",

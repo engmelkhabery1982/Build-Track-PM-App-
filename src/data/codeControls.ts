@@ -1,4 +1,4 @@
-export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'parties' | 'cost_codes' | 'wbs_nodes' | 'contract_sov_lines' | 'procurement' | 'payment_certificates' | 'documents';
+export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'parties' | 'cost_codes' | 'wbs_nodes' | 'contract_sov_lines' | 'procurement' | 'payment_certificates' | 'documents' | 'rfi_register' | 'submittals' | 'quality_register' | 'site_daily_reports';
 
 export interface CodeControl {
   codeField: string;
@@ -54,6 +54,10 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
   procurement: { codeField: 'purchase_order_number', lockField: 'purchase_order_number_locked', defaultPrefix: 'PO', scopeFields: ['contract_id'] },
   payment_certificates: { codeField: 'certificate_number', lockField: 'certificate_number_locked', defaultPrefix: 'PC', scopeFields: ['contract_id', 'certificate_type'] },
   documents: { codeField: 'document_number', lockField: 'document_number_locked', defaultPrefix: 'DOC', scopeFields: ['project_id', 'contract_id'] },
+  rfi_register: { codeField: 'rfi_number', lockField: 'rfi_number_locked', defaultPrefix: 'RFI', scopeFields: ['contract_id'] },
+  submittals: { codeField: 'submittal_number', lockField: 'submittal_number_locked', defaultPrefix: 'SUB', scopeFields: ['contract_id'] },
+  quality_register: { codeField: 'reference_number', lockField: 'reference_number_locked', defaultPrefix: 'QMS', scopeFields: ['contract_id', 'record_type'] },
+  site_daily_reports: { codeField: 'report_number', lockField: 'report_number_locked', defaultPrefix: 'SDR', scopeFields: ['project_id', 'contract_id'] },
 };
 
 function isCodeControlledTable(tableName: string): tableName is CodeControlledTable {

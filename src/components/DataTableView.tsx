@@ -1294,6 +1294,31 @@ export function DataTableView({
       if (selectedInvoiceTracking?.data?.contract_id && selectedInvoiceTracking.data.contract_id !== record.contract_id) throw new Error('The selected invoice belongs to a different contract.');
       if (selectedInvoiceTracking?.data?.certificate_type && selectedInvoiceTracking.data.certificate_type !== certificateType) throw new Error('Certificate type must match the selected invoice register.');
     }
+    if (tableName === 'rfi_register') {
+      const status = String(record.status || '');
+      if (['Answered', 'Closed'].includes(status) && (!String(record.response || '').trim() || !record.response_date)) {
+        throw new Error('An answered or closed RFI requires a response and response date.');
+      }
+    }
+    if (tableName === 'submittals') {
+      const status = String(record.status || '');
+      if (['Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'].includes(status) && (!String(record.reviewer || '').trim() || !record.response_date)) {
+        throw new Error('A reviewed submittal requires reviewer and response date.');
+      }
+    }
+    if (tableName === 'quality_register') {
+      const status = String(record.status || '');
+      if (['Verified', 'Closed'].includes(status) && (!String(record.corrective_action || '').trim() || !record.closed_date)) {
+        throw new Error('A verified or closed quality record requires corrective action and closed date.');
+      }
+      if (record.latitude !== '' && record.latitude !== null && record.latitude !== undefined && (Number(record.latitude) < -90 || Number(record.latitude) > 90)) throw new Error('Latitude must be between -90 and 90.');
+      if (record.longitude !== '' && record.longitude !== null && record.longitude !== undefined && (Number(record.longitude) < -180 || Number(record.longitude) > 180)) throw new Error('Longitude must be between -180 and 180.');
+    }
+    if (tableName === 'site_daily_reports') {
+      if (!record.report_date) throw new Error('A site daily report requires a report date.');
+      if (!String(record.work_summary || '').trim()) throw new Error('A site daily report requires a work-performed summary.');
+      if (Number(record.manpower_count || 0) < 0) throw new Error('Manpower cannot be negative.');
+    }
     if (tableName === 'variation_lines') {
       if (!selectedVariation) throw new Error('Select a draft or submitted variation order before saving a variation line.');
       if (selectedVariation.data?.project_id && record.project_id !== selectedVariation.data.project_id) {
@@ -2483,7 +2508,7 @@ export function DataTableView({
     if (['project_id', 'project_code', 'contract_id', 'company_name', 'boq_header_id', 'boq_item_id', 'main_boq_item_id', 'party_id', 'client_party_id', 'contractor_party_id', 'supplier_party_id'].includes(key)) return 'Context & relationships';
     if (key.includes('date') || ['start_date', 'end_date', 'duration_days', 'lag_days', 'calendar_name', 'predecessor_item', 'relationship_type'].includes(key)) return 'Dates & planning';
     if (['quantity', 'planned_quantity', 'unit_rate', 'unit_price', 'amount', 'item_amount', 'budget', 'cost_impact', 'inflow', 'outflow'].includes(key)) return 'Quantity & financials';
-    if (['notes', 'remarks', 'description', 'variance_reason', 'file_reference'].includes(key)) return 'Notes & attachments';
+    if (['notes', 'remarks', 'description', 'variance_reason', 'file_reference', 'photo_reference'].includes(key)) return 'Notes & attachments';
     return 'Record details';
   };
 
@@ -2515,7 +2540,7 @@ export function DataTableView({
     const isLockedCode = codeControl?.codeField === col.key && Boolean(row[codeControl.lockField]);
     const isReadOnly = (col.editable === false && col.key !== 'project_id') || isLockedCode;
 
-    if (col.key === 'file_reference') {
+    if (col.key === 'file_reference' || col.key === 'photo_reference') {
       return <div className="space-y-2"><input value={row[col.key] || ''} onChange={(event) => setRow({ ...row, [col.key]: event.target.value })} placeholder="Local path or URL" className="w-full text-sm px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400" />
         <input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { if ('__TAURI_INTERNALS__' in window) { const { invoke } = await import('@tauri-apps/api/core'); const bytes = Array.from(new Uint8Array(await file.arrayBuffer())); const path = await invoke<string>('save_document_attachment', { fileName: file.name, bytes }); setRow({ ...row, [col.key]: path }); } else setRow({ ...row, [col.key]: file.name }); } catch (error: any) { alert(`Could not attach file: ${error.message || 'Unknown error'}`); } }} className="block w-full text-xs text-neutral-600" />
       </div>;

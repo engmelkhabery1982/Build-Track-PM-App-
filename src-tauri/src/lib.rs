@@ -586,6 +586,24 @@ pub fn run() {
         ON payment_certificates(project_id, contract_id, json_extract(payload, '$.status'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 18,
+    description: "add_site_daily_reports",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS site_daily_reports (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_site_daily_report_number
+        ON site_daily_reports(project_id, lower(json_extract(payload, '$.report_number')));
+      CREATE INDEX IF NOT EXISTS idx_site_daily_reports_scope_date
+        ON site_daily_reports(project_id, contract_id, json_extract(payload, '$.report_date'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

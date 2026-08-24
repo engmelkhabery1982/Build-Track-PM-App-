@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine,
+  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -31,6 +31,7 @@ export function useData() {
   const [rfis, setRfis] = useState<RFIEntry[]>([]);
   const [submittals, setSubmittals] = useState<SubmittalEntry[]>([]);
   const [quality, setQuality] = useState<QualityEntry[]>([]);
+  const [siteDailyReports, setSiteDailyReports] = useState<SiteDailyReport[]>([]);
   const [snapshots, setSnapshots] = useState<PMOSnapshot[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -73,7 +74,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, pcert,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -90,6 +91,7 @@ export function useData() {
         listOptional<ApprovalRequest>('approval_requests'),
         listOptional<AuditLogEntry>('audit_log'),
         listOptional<RFIEntry>('rfi_register'), listOptional<SubmittalEntry>('submittals'), listOptional<QualityEntry>('quality_register'),
+        listOptional<SiteDailyReport>('site_daily_reports'),
         listOptional<PMOSnapshot>('pmo_snapshots'),
         listOptional<AppUser>('app_users'),
         dataRepository.list<Contract>('contracts'),
@@ -129,6 +131,7 @@ export function useData() {
       setApprovals(ap);
       setAuditLog(al);
       setRfis(rf); setSubmittals(su); setQuality(qu);
+      setSiteDailyReports(sdr);
       setSnapshots(sn);
       setUsers(us);
       setContracts(ct);
@@ -195,6 +198,7 @@ export function useData() {
       case 'rfi_register': apply(setRfis); break;
       case 'submittals': apply(setSubmittals); break;
       case 'quality_register': apply(setQuality); break;
+      case 'site_daily_reports': apply(setSiteDailyReports); break;
       case 'pmo_snapshots': apply(setSnapshots); break;
       case 'app_users': apply(setUsers); break;
       case 'contracts': apply(setContracts); break;
@@ -230,7 +234,7 @@ export function useData() {
   }, [listOptional]);
 
   return {
-    projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, snapshots, users,
+    projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, paymentCertificates, loading,

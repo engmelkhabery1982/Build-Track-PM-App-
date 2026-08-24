@@ -68,6 +68,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'rfi', label: 'RFI Register', icon: FileText, group: 'Field & Governance' },
   { key: 'submittals', label: 'Submittals', icon: ClipboardList, group: 'Field & Governance' },
   { key: 'quality', label: 'NCR & Punch Register', icon: ClipboardCheck, group: 'Field & Governance' },
+  { key: 'dailyReports', label: 'Site Daily Reports', icon: ClipboardList, group: 'Field & Governance' },
   { key: 'safety', label: 'Safety', icon: ShieldAlert, group: 'Field & Governance' },
   { key: 'documents', label: 'Documents', icon: FolderOpen, group: 'Field & Governance' },
   { key: 'tracking', label: 'Tracking Sheet', icon: ClipboardCheck, group: 'Field & Governance' },
@@ -186,19 +187,35 @@ const GOVERNANCE_COLUMNS: ColumnDef[] = [
 ];
 
 const APPROVAL_COLUMNS: ColumnDef[] = [
-  { key: 'request_number', label: 'Request #', type: 'text', editable: true }, { key: 'entity_type', label: 'Subject Type', type: 'text', editable: true, options: ['Variation', 'Baseline', 'Invoice', 'Risk Decision', 'Document'] }, { key: 'entity_id', label: 'Subject Reference', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'requested_by', label: 'Requested By', type: 'text', editable: true }, { key: 'requested_date', label: 'Requested Date', type: 'date', editable: true }, { key: 'approver', label: 'Approver', type: 'text', editable: true }, { key: 'decision_date', label: 'Decision Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'request_number', label: 'Request #', type: 'text', editable: true }, { key: 'entity_type', label: 'Subject Type', type: 'text', editable: true, options: ['Variation', 'Baseline', 'Invoice', 'Risk Decision', 'Document', 'RFI', 'Submittal', 'Quality Record'] }, { key: 'entity_id', label: 'Subject Reference', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'requested_by', label: 'Requested By', type: 'text', editable: true }, { key: 'requested_date', label: 'Requested Date', type: 'date', editable: true }, { key: 'approver', label: 'Approver', type: 'text', editable: true }, { key: 'decision_date', label: 'Decision Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const AUDIT_COLUMNS: ColumnDef[] = [
   { key: 'created_at', label: 'Timestamp', type: 'date', editable: false }, { key: 'action', label: 'Action', type: 'status', editable: false }, { key: 'entity_type', label: 'Entity', type: 'text', editable: false }, { key: 'entity_id', label: 'Record ID', type: 'text', editable: false }, { key: 'actor', label: 'Actor', type: 'text', editable: false }, { key: 'summary', label: 'Summary', type: 'text', editable: false },
 ];
 const RFI_COLUMNS: ColumnDef[] = [
-  { key: 'rfi_number', label: 'RFI #', type: 'text', editable: true }, { key: 'subject', label: 'Subject', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'raised_by', label: 'Raised By', type: 'text', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'response', label: 'Response', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Open', 'Answered', 'Closed'] }, { key: 'impact', label: 'Impact', type: 'status', editable: true, options: ['None', 'Cost', 'Time', 'Cost & Time'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'rfi_number', label: 'RFI #', type: 'text', editable: true }, { key: 'subject', label: 'Subject', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'schedule_id', label: 'Activity', type: 'select', editable: true }, { key: 'raised_by', label: 'Raised By', type: 'text', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'response', label: 'Response', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', editable: true, type: 'status', options: ['Draft', 'Open', 'Answered', 'Closed'] }, { key: 'impact', label: 'Impact', type: 'status', editable: true, options: ['None', 'Cost', 'Time', 'Cost & Time'] }, { key: 'file_reference', label: 'Attachment', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const SUBMITTAL_COLUMNS: ColumnDef[] = [
-  { key: 'submittal_number', label: 'Submittal #', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'document_type', label: 'Type', type: 'status', editable: true, options: ['Material', 'Shop Drawing', 'Method Statement', 'Sample', 'Calculation', 'Other'] }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'submitted_by', label: 'Submitted By', type: 'text', editable: true }, { key: 'submitted_date', label: 'Submitted Date', type: 'date', editable: true }, { key: 'reviewer', label: 'Reviewer', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'] }, { key: 'revision', label: 'Revision', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'submittal_number', label: 'Submittal #', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'document_type', label: 'Type', type: 'status', editable: true, options: ['Material', 'Shop Drawing', 'Method Statement', 'Sample', 'Calculation', 'Other'] }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'schedule_id', label: 'Activity', type: 'select', editable: true }, { key: 'submitted_by', label: 'Submitted By', type: 'text', editable: true }, { key: 'submitted_date', label: 'Submitted Date', type: 'date', editable: true }, { key: 'reviewer', label: 'Reviewer', type: 'text', editable: true }, { key: 'response_date', label: 'Response Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'] }, { key: 'revision', label: 'Revision', type: 'text', editable: true }, { key: 'file_reference', label: 'Attachment', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const QUALITY_COLUMNS: ColumnDef[] = [
-  { key: 'reference_number', label: 'Reference #', type: 'text', editable: true }, { key: 'record_type', label: 'Type', type: 'status', editable: true, options: ['NCR', 'Punch Item', 'Observation'] }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'location', label: 'Location', type: 'text', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'owner', label: 'Owner', type: 'text', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'closed_date', label: 'Closed Date', type: 'date', editable: true }, { key: 'severity', label: 'Severity', type: 'status', editable: true, options: ['Low', 'Medium', 'High', 'Critical'] }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'corrective_action', label: 'Corrective Action', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'reference_number', label: 'Reference #', type: 'text', editable: true }, { key: 'record_type', label: 'Type', type: 'status', editable: true, options: ['NCR', 'Punch Item', 'Observation'] }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true }, { key: 'schedule_id', label: 'Activity', type: 'select', editable: true }, { key: 'location', label: 'Location', type: 'text', editable: true }, { key: 'latitude', label: 'Latitude', type: 'number', editable: true }, { key: 'longitude', label: 'Longitude', type: 'number', editable: true }, { key: 'raised_date', label: 'Raised Date', type: 'date', editable: true }, { key: 'owner', label: 'Owner', type: 'text', editable: true }, { key: 'due_date', label: 'Due Date', type: 'date', editable: true }, { key: 'closed_date', label: 'Closed Date', type: 'date', editable: true }, { key: 'severity', label: 'Severity', type: 'status', editable: true, options: ['Low', 'Medium', 'High', 'Critical'] }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'corrective_action', label: 'Corrective Action', type: 'text', editable: true }, { key: 'file_reference', label: 'Attachment', type: 'text', editable: true }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const DAILY_REPORT_COLUMNS: ColumnDef[] = [
+  { key: 'report_number', label: 'Daily Report #', type: 'text', editable: true },
+  { key: 'report_date', label: 'Report Date', type: 'date', editable: true },
+  { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
+  { key: 'weather', label: 'Weather', type: 'text', editable: true, options: ['Clear', 'Cloudy', 'Rain', 'Windy', 'Hot', 'Other'] },
+  { key: 'work_summary', label: 'Work Performed', type: 'text', editable: true },
+  { key: 'manpower_count', label: 'Manpower', type: 'number', editable: true },
+  { key: 'equipment_summary', label: 'Equipment Used', type: 'text', editable: true },
+  { key: 'issues', label: 'Issues / Delays', type: 'text', editable: true },
+  { key: 'next_day_plan', label: 'Next-Day Plan', type: 'text', editable: true },
+  { key: 'photo_reference', label: 'Photo / Attachment Reference', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Reviewed'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
@@ -666,6 +683,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   rfi: { columns: RFI_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Open', 'Answered', 'Closed'] }, { key: 'impact', label: 'Impact', options: ['None', 'Cost', 'Time', 'Cost & Time'] }], showProjectFilter: true, dateRangeColumn: 'raised_date' },
   submittals: { columns: SUBMITTAL_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Approved as Noted', 'Revise & Resubmit', 'Rejected'] }], showProjectFilter: true, dateRangeColumn: 'submitted_date' },
   quality: { columns: QUALITY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'severity', label: 'Severity', options: ['Low', 'Medium', 'High', 'Critical'] }], showProjectFilter: true, dateRangeColumn: 'raised_date' },
+  dailyReports: { columns: DAILY_REPORT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Reviewed'] }, { key: 'weather', label: 'Weather', options: ['Clear', 'Cloudy', 'Rain', 'Windy', 'Hot', 'Other'] }], showProjectFilter: true, dateRangeColumn: 'report_date' },
   tasks: { columns: TASK_COLUMNS, filters: [{ key: 'status', label: 'Status', options: TASK_STATUSES }, { key: 'priority', label: 'Priority', options: PRIORITIES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   costs: { columns: COST_COLUMNS, filters: [{ key: 'category', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true },
   costCodes: { columns: COST_CODE_COLUMNS, filters: [{ key: 'classification', label: 'Classification', options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
@@ -699,7 +717,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', paymentCertificates: 'payment_certificates',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', paymentCertificates: 'payment_certificates',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -710,7 +728,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', paymentCertificates: 'Payment Certificates',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', paymentCertificates: 'Payment Certificates',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1820,8 +1838,12 @@ export default function App() {
       if (pendingApprovals.length) alerts.push({ severity: 'Warning', title: 'Approval decisions pending', detail: `${pendingApprovals.length} approval request(s) require review or resubmission.`, view: 'approvals' });
       const openRfis = data.rfis.filter((row: any) => row.status !== 'Closed');
       if (openRfis.length) alerts.push({ severity: 'Warning', title: 'Open RFIs', detail: `${openRfis.length} RFI(s) remain open and may affect delivery.`, view: 'rfi' });
+      const overdueRfis = data.rfis.filter((row: any) => row.due_date && row.due_date < today && !['Answered', 'Closed'].includes(row.status));
+      if (overdueRfis.length) alerts.push({ severity: 'Critical', title: 'Overdue RFIs', detail: `${overdueRfis.length} RFI(s) passed their response due date.`, view: 'rfi' });
       const qualityOpen = data.quality.filter((row: any) => row.status !== 'Closed');
       if (qualityOpen.length) alerts.push({ severity: 'Warning', title: 'Quality items remain open', detail: `${qualityOpen.length} NCR / punch item(s) need closure.`, view: 'quality' });
+      const overdueQuality = data.quality.filter((row: any) => row.due_date && row.due_date < today && !['Verified', 'Closed'].includes(row.status));
+      if (overdueQuality.length) alerts.push({ severity: 'Critical', title: 'Overdue quality actions', detail: `${overdueQuality.length} quality action(s) passed their due date.`, view: 'quality' });
       const overdueClientInvoices = data.clientInvoices.filter((row: any) => row.due_date && row.due_date < today && !['Paid', 'Closed'].includes(row.payment_status));
       if (overdueClientInvoices.length) alerts.push({ severity: 'Warning', title: 'Client collections overdue', detail: `${overdueClientInvoices.length} client invoice(s) are past their due date.`, view: 'clientinvoices' });
       const unreviewedDocs = data.documents.filter((row: any) => row.status === 'Under Review');
@@ -2075,6 +2097,8 @@ export default function App() {
                     ? data.submittals
                     : activeView === 'quality'
                       ? data.quality
+                      : activeView === 'dailyReports'
+                        ? data.siteDailyReports
       : activeView === 'boqItems'
         ? data.boqItems
         : activeView === 'wir'
@@ -2666,11 +2690,16 @@ export default function App() {
             const decision = approval.status === 'Approved' ? 'Approved' : approval.status === 'Rejected' ? 'Rejected' : null;
             const target = approval.entity_type === 'Variation' ? 'variations'
               : approval.entity_type === 'Baseline' ? 'project_baselines'
-                : approval.entity_type === 'Submittal' ? 'submittals' : null;
+                : approval.entity_type === 'Submittal' ? 'submittals'
+                  : approval.entity_type === 'RFI' ? 'rfi_register'
+                    : approval.entity_type === 'Quality Record' ? 'quality_register' : null;
             if (decision && target && approval.entity_id) {
               void dataRepository.update<Record<string, any>>(target, approval.entity_id, {
-                status: decision,
+                status: target === 'rfi_register' ? (decision === 'Approved' ? 'Answered' : 'Open')
+                  : target === 'quality_register' ? (decision === 'Approved' ? 'In Progress' : 'Open')
+                    : decision,
                 ...(target === 'variations' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
+                ...(target === 'rfi_register' && decision === 'Approved' ? { status: 'Answered', response_date: approval.decision_date || new Date().toISOString().slice(0, 10) } : {}),
               }).then((updated) => {
                 data.applyLocalMutation(target, { type: 'update', row: updated });
                 if (target === 'variations' && decision === 'Approved') {
