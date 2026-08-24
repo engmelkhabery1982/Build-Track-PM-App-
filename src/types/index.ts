@@ -429,6 +429,7 @@ export interface LaborDuty {
   id: string;
   project_id: string;
   contract_id: string | null;
+  schedule_id?: string | null;
   project_code: string;
   date: string | null;
   worker_name: string;
@@ -447,6 +448,7 @@ export interface Equipment {
   id: string;
   project_id: string;
   contract_id: string | null;
+  schedule_id?: string | null;
   project_code: string;
   date: string | null;
   equipment_name: string;

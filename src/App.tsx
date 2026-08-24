@@ -611,6 +611,7 @@ const WIR_COLUMNS: ColumnDef[] = [
 const LABOR_DUTY_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'worker_name', label: 'Worker Name', type: 'text', editable: true },
   { key: 'role', label: 'Role', type: 'text', editable: true, options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] },
@@ -627,6 +628,7 @@ const LABOR_DUTY_COLUMNS: ColumnDef[] = [
 const EQUIPMENT_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'equipment_name', label: 'Equipment Name', type: 'text', editable: true },
   { key: 'equipment_type', label: 'Type', type: 'text', editable: true, options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] },
@@ -2533,6 +2535,13 @@ export default function App() {
       label: `${activity.activity_code || 'ACT'} - ${activity.activity || activity.id}`,
       data: { project_id: activity.project_id, contract_id: activity.contract_id },
     }));
+    relationshipOptions.schedule_id = data.schedules
+      .filter((activity: any) => String(activity.activity || '').trim())
+      .map((activity: any) => ({
+        value: activity.id,
+        label: `${activity.activity_code || 'ACT'} - ${activity.activity}`,
+        data: { project_id: activity.project_id, contract_id: activity.contract_id, boq_item_id: activity.boq_item_id },
+      }));
     if (activeView === 'costs' || activeView === 'costEntries' || activeView === 'schedule') {
       const mainContractIds = new Set(data.contracts
         .filter((contract: any) => !contract.parent_main_contract_id)

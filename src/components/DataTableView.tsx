@@ -1225,6 +1225,9 @@ export function DataTableView({
     if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
       throw new Error('The selected activity belongs to a different project.');
     }
+    if (selectedSchedule?.data?.contract_id && record.contract_id && selectedSchedule.data.contract_id !== record.contract_id) {
+      throw new Error('The selected activity belongs to a different contract.');
+    }
     if (selectedCostCode?.data?.project_id && record.project_id && selectedCostCode.data.project_id !== record.project_id) {
       throw new Error('The selected cost code belongs to a different project.');
     }
