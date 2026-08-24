@@ -906,6 +906,22 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 23,
+            description: "repair_schedule_project_scope_from_contract",
+            sql: r#"
+      -- Older P6 schedule-only rows could retain the selected contract while
+      -- missing project_id because project_id is a controlled UI relation.
+      -- Repair both the relational column and JSON payload from that contract.
+      UPDATE schedules
+      SET project_id = (SELECT project_id FROM contracts WHERE contracts.id = schedules.contract_id),
+          payload = json_set(payload, '$.project_id', (SELECT project_id FROM contracts WHERE contracts.id = schedules.contract_id))
+      WHERE (project_id IS NULL OR project_id = '')
+        AND contract_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM contracts WHERE contracts.id = schedules.contract_id AND contracts.project_id IS NOT NULL);
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

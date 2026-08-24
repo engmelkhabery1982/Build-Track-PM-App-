@@ -81,3 +81,24 @@ print('ok')
   }).trim();
   assert.equal(result, 'ok');
 });
+
+test('schedule scope repair derives missing project IDs from the selected contract', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*23,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 23 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE contracts (id TEXT PRIMARY KEY, project_id TEXT)')
+db.execute('CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL)')
+db.execute("INSERT INTO contracts VALUES ('contract-1', 'project-1')")
+db.execute("INSERT INTO schedules VALUES ('schedule-1', NULL, 'contract-1', ?)", (json.dumps({'activity_code':'EC1000','project_id':None}),))
+db.executescript(sys.stdin.read())
+project_id, payload = db.execute("SELECT project_id, payload FROM schedules WHERE id='schedule-1'").fetchone()
+assert project_id == 'project-1'
+assert json.loads(payload)['project_id'] == 'project-1'
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

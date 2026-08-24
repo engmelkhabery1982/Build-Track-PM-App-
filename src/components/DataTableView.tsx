@@ -1726,7 +1726,12 @@ export function DataTableView({
           const item = matchItem(row);
           if (!item) {
             if (!scopedContractId) throw new Error(`Row ${index + 2}: select the project and main contract before importing non-BOQ Primavera activities.`);
-            row.project_id = applicableScope.project_id;
+            const scopedContract = contracts?.find((contract) => contract.id === scopedContractId);
+            if (!scopedContract?.project_id) throw new Error(`Row ${index + 2}: the selected contract has no valid project relationship.`);
+            // project_id is a controlled relation rather than a visible grid
+            // column, so it is not present in applicableScope. Always derive
+            // it from the selected contract for non-BOQ P6 activities.
+            row.project_id = scopedContract.project_id;
             row.contract_id = scopedContractId;
             row.boq_header_id = null;
             row.boq_item_id = null;
