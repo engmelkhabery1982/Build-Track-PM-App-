@@ -188,7 +188,7 @@ const GOVERNANCE_COLUMNS: ColumnDef[] = [
 ];
 
 const APPROVAL_COLUMNS: ColumnDef[] = [
-  { key: 'request_number', label: 'Request #', type: 'text', editable: true }, { key: 'entity_type', label: 'Subject Type', type: 'text', editable: true, options: ['Variation', 'Cost Change', 'Baseline', 'Invoice', 'Risk Decision', 'Document', 'RFI', 'Submittal', 'Quality Record'] }, { key: 'entity_id', label: 'Subject Reference', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'requested_by', label: 'Requested By', type: 'text', editable: true }, { key: 'requested_date', label: 'Requested Date', type: 'date', editable: true }, { key: 'approver', label: 'Approver', type: 'text', editable: true }, { key: 'decision_date', label: 'Decision Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
+  { key: 'request_number', label: 'Request #', type: 'text', editable: true }, { key: 'entity_type', label: 'Subject Type', type: 'text', editable: true, options: ['Variation', 'Cost Change', 'Payment Certificate', 'Baseline', 'Invoice', 'Risk Decision', 'Document', 'RFI', 'Submittal', 'Quality Record'] }, { key: 'entity_id', label: 'Subject Reference', type: 'text', editable: true }, { key: 'title', label: 'Title', type: 'text', editable: true }, { key: 'contract_id', label: 'Contract', type: 'select', editable: true }, { key: 'requested_by', label: 'Requested By', type: 'text', editable: true }, { key: 'requested_date', label: 'Requested Date', type: 'date', editable: true }, { key: 'approver', label: 'Approver', type: 'text', editable: true }, { key: 'decision_date', label: 'Decision Date', type: 'date', editable: true }, { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Returned'] }, { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const AUDIT_COLUMNS: ColumnDef[] = [
   { key: 'created_at', label: 'Timestamp', type: 'date', editable: false }, { key: 'action', label: 'Action', type: 'status', editable: false }, { key: 'entity_type', label: 'Entity', type: 'text', editable: false }, { key: 'entity_id', label: 'Record ID', type: 'text', editable: false }, { key: 'actor', label: 'Actor', type: 'text', editable: false }, { key: 'summary', label: 'Summary', type: 'text', editable: false },
@@ -2717,6 +2717,7 @@ export default function App() {
             const decision = approval.status === 'Approved' ? 'Approved' : approval.status === 'Rejected' ? 'Rejected' : null;
             const target = approval.entity_type === 'Variation' ? 'variations'
               : approval.entity_type === 'Cost Change' ? 'cost_changes'
+              : approval.entity_type === 'Payment Certificate' ? 'payment_certificates'
               : approval.entity_type === 'Baseline' ? 'project_baselines'
                 : approval.entity_type === 'Submittal' ? 'submittals'
                   : approval.entity_type === 'RFI' ? 'rfi_register'
@@ -2728,6 +2729,7 @@ export default function App() {
                     : decision,
                 ...(target === 'variations' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
                 ...(target === 'cost_changes' && decision === 'Approved' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
+                ...(target === 'payment_certificates' && decision === 'Approved' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
                 ...(target === 'rfi_register' && decision === 'Approved' ? { status: 'Answered', response_date: approval.decision_date || new Date().toISOString().slice(0, 10) } : {}),
               }).then((updated) => {
                 data.applyLocalMutation(target, { type: 'update', row: updated });
