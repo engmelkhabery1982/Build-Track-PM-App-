@@ -672,6 +672,24 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_contract_sov_financial_reporting ON contract_sov_lines(project_id, contract_id, status_sql);
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 20,
+    description: "add_governed_cost_changes",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS cost_changes (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_change_number
+        ON cost_changes(contract_id, lower(json_extract(payload, '$.cost_change_number')));
+      CREATE INDEX IF NOT EXISTS idx_cost_changes_scope_status
+        ON cost_changes(project_id, contract_id, json_extract(payload, '$.status'), json_extract(payload, '$.effective_date'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

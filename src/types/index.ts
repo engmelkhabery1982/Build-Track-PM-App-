@@ -122,6 +122,28 @@ export interface ContractSOVLine {
   created_at: string;
 }
 
+/** Approved internal budget movement.  It is separate from a client Variation
+ * so commercial revenue and delivery-cost forecast remain independently governed. */
+export interface CostChange {
+  id: string;
+  project_id: string;
+  contract_id: string;
+  boq_item_id: string | null;
+  cost_code_id: string | null;
+  cost_change_number: string;
+  cost_change_number_locked: boolean;
+  title: string;
+  description: string;
+  change_type: 'Budget Transfer' | 'Scope Cost' | 'Forecast Adjustment' | 'Procurement Change' | string;
+  amount: number;
+  effective_date: string | null;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | string;
+  approved_by: string;
+  approved_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
 export interface CostEntry {
   id: string;
   project_id: string;
@@ -724,4 +746,4 @@ export type ViewKey =
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
-  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'paymentCertificates';
+  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'costChanges' | 'paymentCertificates';

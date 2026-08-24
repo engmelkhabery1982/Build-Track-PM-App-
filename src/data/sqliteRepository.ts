@@ -17,6 +17,7 @@ const TABLES = new Set([
   "parties", "party_contacts", "rate_history",
   "report_templates",
   "cost_codes", "wbs_nodes", "contract_sov_lines", "payment_certificates",
+  "cost_changes",
 ]);
 
 type StoredRow = {

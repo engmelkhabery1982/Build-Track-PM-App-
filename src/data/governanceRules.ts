@@ -30,6 +30,9 @@ function isPresent(value: unknown): boolean {
 
 export function assertRecordGovernance(tableName: string, record: Record<string, unknown>): void {
   for (const [field, value] of Object.entries(record)) {
+    // Internal budget transfers and client variations may reduce a value;
+    // all other governed financial records remain non-negative.
+    if (field === 'amount' && ['cost_changes', 'variations'].includes(tableName)) continue;
     if (!NON_NEGATIVE_FIELDS.has(field) || !isPresent(value)) continue;
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) throw new Error(`${field.replace(/_/g, ' ')} must be a valid number.`);

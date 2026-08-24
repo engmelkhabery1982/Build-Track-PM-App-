@@ -1319,6 +1319,14 @@ export function DataTableView({
       if (!String(record.work_summary || '').trim()) throw new Error('A site daily report requires a work-performed summary.');
       if (Number(record.manpower_count || 0) < 0) throw new Error('Manpower cannot be negative.');
     }
+    if (tableName === 'cost_changes') {
+      if (!String(record.title || '').trim()) throw new Error('A cost change requires a title.');
+      if (!record.effective_date) throw new Error('A cost change requires an effective date.');
+      if (!Number.isFinite(Number(record.amount)) || Number(record.amount) === 0) throw new Error('A cost change amount cannot be zero.');
+      if (String(record.status || '') === 'Approved' && (!String(record.approved_by || '').trim() || !record.approved_date)) {
+        throw new Error('An approved cost change requires approver and approval date.');
+      }
+    }
     if (tableName === 'variation_lines') {
       if (!selectedVariation) throw new Error('Select a draft or submitted variation order before saving a variation line.');
       if (selectedVariation.data?.project_id && record.project_id !== selectedVariation.data.project_id) {

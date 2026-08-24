@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine,
+  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -56,6 +56,7 @@ export function useData() {
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
   const [wbsNodes, setWbsNodes] = useState<WBSNode[]>([]);
   const [contractSovLines, setContractSovLines] = useState<ContractSOVLine[]>([]);
+  const [costChanges, setCostChanges] = useState<CostChange[]>([]);
   const [paymentCertificates, setPaymentCertificates] = useState<PaymentCertificate[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,7 +75,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, pcert,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -113,7 +114,7 @@ export function useData() {
         listOptional<PartyContact>('party_contacts'),
         listOptional<RateHistory>('rate_history'),
         listOptional<ReportTemplate>('report_templates'),
-        listOptional<CostCode>('cost_codes'), listOptional<WBSNode>('wbs_nodes'), listOptional<ContractSOVLine>('contract_sov_lines'), listOptional<PaymentCertificate>('payment_certificates'),
+        listOptional<CostCode>('cost_codes'), listOptional<WBSNode>('wbs_nodes'), listOptional<ContractSOVLine>('contract_sov_lines'), listOptional<CostChange>('cost_changes'), listOptional<PaymentCertificate>('payment_certificates'),
       ]);
 
       setProjects(p);
@@ -154,6 +155,7 @@ export function useData() {
       setCostCodes(cc);
       setWbsNodes(wn);
       setContractSovLines(sov);
+      setCostChanges(cchg);
       setPaymentCertificates(pcert);
     } finally {
       if (showLoading) setLoading(false);
@@ -223,6 +225,7 @@ export function useData() {
       case 'cost_codes': apply(setCostCodes); break;
       case 'wbs_nodes': apply(setWbsNodes); break;
       case 'contract_sov_lines': apply(setContractSovLines); break;
+      case 'cost_changes': apply(setCostChanges); break;
       case 'payment_certificates': apply(setPaymentCertificates); break;
     }
   }, []);
@@ -237,7 +240,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
-    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, paymentCertificates, loading,
+    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }
