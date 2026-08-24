@@ -15,65 +15,12 @@ import {
 } from '@/data';
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
+import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
 // actions, so loading it on demand keeps the desktop app responsive at start.
 let xlsxModule: Promise<typeof import('xlsx')> | undefined;
 const getXlsx = () => xlsxModule ||= import('xlsx');
-
-function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
-  const tables = new Map<string, Record<string, string>[]>();
-  let table = '';
-  let fields: string[] = [];
-  for (const line of content.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
-    if (!line) continue;
-    const cells = line.split('\t');
-    if (cells[0] === '%T') { table = cells[1] || ''; fields = []; if (!tables.has(table)) tables.set(table, []); continue; }
-    if (cells[0] === '%F') { fields = cells.slice(1); continue; }
-    if (cells[0] === '%R' && table && fields.length) tables.get(table)?.push(Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? ''])));
-  }
-  const calendars = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row.clndr_name || row.clndr_id]));
-  const tasks = tables.get('TASK') || [];
-  const codeCount = new Map<string, number>();
-  tasks.forEach((task) => codeCount.set(task.task_code || '', (codeCount.get(task.task_code || '') || 0) + 1));
-  // P6 permits repeated visible task codes. BuildTrack requires a unique key
-  // to preserve editability and predecessor links, while retaining the source
-  // code separately for BOQ matching and audit.
-  const uniqueTaskCode = (task: Record<string, string>) => {
-    const source = task.task_code || 'ACT';
-    return (codeCount.get(source) || 0) > 1 ? `${source}-P6-${task.task_id}` : source;
-  };
-  const taskCodeById = new Map(tasks.map((task) => [task.task_id, uniqueTaskCode(task)]));
-  const predecessorsByTask = new Map<string, Record<string, string>[]>();
-  for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
-  return tasks.map((task) => {
-    const links = predecessorsByTask.get(task.task_id) || [];
-    const predecessorCodes = links.map((link) => taskCodeById.get(link.pred_task_id)).filter(Boolean) as string[];
-    const first = links[0];
-    const relation = String(first?.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS';
-    const lagHours = Number(first?.lag_hr_cnt) || 0;
-    return {
-      'Activity ID': uniqueTaskCode(task),
-      'Source Activity ID': task.task_code || '',
-      'Activity Name': task.task_name || '',
-      WBS: task.wbs_id || '',
-      Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
-      Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
-      'Original Duration': task.target_drtn || task.remain_drtn || '',
-      // Primavera target work/equipment quantities are resource-hours in many
-      // XER exports, not physical BOQ quantities. Leaving this blank routes
-      // direct XER imports through the governed duration-based BOQ allocation
-      // below; a prepared Excel schedule may still provide Planned Qty.
-      'Planned Qty': '',
-      Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
-      Predecessors: predecessorCodes.join(', '),
-      Relationship: relation,
-      'Lag (days)': lagHours ? Math.round((lagHours / 8) * 100) / 100 : 0,
-      Critical: task.driving_path_flag === 'Y' || task.critical_path_flag === 'Y',
-      Notes: task.task_descr || '',
-    };
-  }).filter((row) => row['Activity ID'] && row['Activity Name']);
-}
 
 function normalizeImportDate(value: unknown): string | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);

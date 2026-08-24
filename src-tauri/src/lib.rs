@@ -690,6 +690,69 @@ pub fn run() {
         ON cost_changes(project_id, contract_id, json_extract(payload, '$.status'), json_extract(payload, '$.effective_date'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 21,
+    description: "add_normalized_financial_ledger",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS financial_ledger (
+        id TEXT PRIMARY KEY,
+        source_table TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id TEXT,
+        contract_id TEXT,
+        boq_item_id TEXT,
+        transaction_date TEXT,
+        ledger_type TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        amount REAL NOT NULL DEFAULT 0,
+        status TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(source_table, source_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_financial_ledger_reporting ON financial_ledger(project_id, contract_id, transaction_date, ledger_type, direction, status);
+
+      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
+        SELECT 'cost:' || id, 'cost_entries', id, project_id, contract_id, boq_item_id, json_extract(payload, '$.date'), 'Actual Cost', 'Outflow', CAST(COALESCE(json_extract(payload, '$.amount'), 0) AS REAL), json_extract(payload, '$.cost_type'), created_at FROM cost_entries;
+      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
+        SELECT 'cash:' || id, 'cash_flow', id, project_id, contract_id, boq_item_id, json_extract(payload, '$.date'), 'Cash Flow', CASE WHEN CAST(COALESCE(json_extract(payload, '$.inflow'), 0) AS REAL) > 0 THEN 'Inflow' ELSE 'Outflow' END, ABS(CAST(COALESCE(json_extract(payload, '$.inflow'), 0) AS REAL) - CAST(COALESCE(json_extract(payload, '$.outflow'), 0) AS REAL)), json_extract(payload, '$.status'), created_at FROM cash_flow;
+      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
+        SELECT 'variation:' || id, 'variations', id, project_id, contract_id, boq_item_id, json_extract(payload, '$.approved_date'), 'Commercial Variation', CASE WHEN CAST(COALESCE(json_extract(payload, '$.cost_impact'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(payload, '$.cost_impact'), 0) AS REAL)), json_extract(payload, '$.status'), created_at FROM variations;
+      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
+        SELECT 'certificate:' || id, 'payment_certificates', id, project_id, contract_id, boq_item_id, json_extract(payload, '$.certificate_date'), 'Payment Certificate', CASE WHEN json_extract(payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END, CAST(COALESCE(json_extract(payload, '$.gross_certified_value'), 0) AS REAL), json_extract(payload, '$.status'), created_at FROM payment_certificates;
+
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_entries_ai AFTER INSERT ON cost_entries BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('cost:' || NEW.id, 'cost_entries', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.date'), 'Actual Cost', 'Outflow', CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL), json_extract(NEW.payload, '$.cost_type'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_entries_au AFTER UPDATE ON cost_entries BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('cost:' || NEW.id, 'cost_entries', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.date'), 'Actual Cost', 'Outflow', CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL), json_extract(NEW.payload, '$.cost_type'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cost_entries_ad AFTER DELETE ON cost_entries BEGIN DELETE FROM financial_ledger WHERE source_table = 'cost_entries' AND source_id = OLD.id; END;
+
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cash_flow_ai AFTER INSERT ON cash_flow BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('cash:' || NEW.id, 'cash_flow', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.date'), 'Cash Flow', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.inflow'), 0) AS REAL) > 0 THEN 'Inflow' ELSE 'Outflow' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.inflow'), 0) AS REAL) - CAST(COALESCE(json_extract(NEW.payload, '$.outflow'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cash_flow_au AFTER UPDATE ON cash_flow BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('cash:' || NEW.id, 'cash_flow', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.date'), 'Cash Flow', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.inflow'), 0) AS REAL) > 0 THEN 'Inflow' ELSE 'Outflow' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.inflow'), 0) AS REAL) - CAST(COALESCE(json_extract(NEW.payload, '$.outflow'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_cash_flow_ad AFTER DELETE ON cash_flow BEGIN DELETE FROM financial_ledger WHERE source_table = 'cash_flow' AND source_id = OLD.id; END;
+
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_variations_ai AFTER INSERT ON variations BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('variation:' || NEW.id, 'variations', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.approved_date'), 'Commercial Variation', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.cost_impact'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.cost_impact'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_variations_au AFTER UPDATE ON variations BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('variation:' || NEW.id, 'variations', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.approved_date'), 'Commercial Variation', CASE WHEN CAST(COALESCE(json_extract(NEW.payload, '$.cost_impact'), 0) AS REAL) >= 0 THEN 'Increase' ELSE 'Decrease' END, ABS(CAST(COALESCE(json_extract(NEW.payload, '$.cost_impact'), 0) AS REAL)), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_variations_ad AFTER DELETE ON variations BEGIN DELETE FROM financial_ledger WHERE source_table = 'variations' AND source_id = OLD.id; END;
+
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_payment_certificates_ai AFTER INSERT ON payment_certificates BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('certificate:' || NEW.id, 'payment_certificates', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.certificate_date'), 'Payment Certificate', CASE WHEN json_extract(NEW.payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END, CAST(COALESCE(json_extract(NEW.payload, '$.gross_certified_value'), 0) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_payment_certificates_au AFTER UPDATE ON payment_certificates BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('certificate:' || NEW.id, 'payment_certificates', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.certificate_date'), 'Payment Certificate', CASE WHEN json_extract(NEW.payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END, CAST(COALESCE(json_extract(NEW.payload, '$.gross_certified_value'), 0) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS financial_ledger_payment_certificates_ad AFTER DELETE ON payment_certificates BEGIN DELETE FROM financial_ledger WHERE source_table = 'payment_certificates' AND source_id = OLD.id; END;
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

@@ -8,6 +8,7 @@ const cpm = await import('../src/utils/cpm.ts');
 const dictionary = await import('../src/data/dataDictionary.ts');
 const periods = await import('../src/data/reportingPeriodGovernance.ts');
 const quality = await import('../src/data/dataQuality.ts');
+const primavera = await import('../src/data/primaveraImport.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
@@ -43,6 +44,20 @@ test('import dictionary maps governed schedule and commercial headers', () => {
   assert.equal(dictionary.IMPORT_FIELD_ALIASES['invoice #'], 'invoice_number');
   assert.ok(dictionary.CANONICAL_FIELDS.schedule.includes('boq_item_id'));
   assert.ok(dictionary.CANONICAL_FIELDS.financial.includes('actual_cost'));
+});
+
+test('Primavera XER import preserves calendar, logic, dates and duplicate activity IDs', () => {
+  const xer = `%T\tCALENDAR\n%F\tclndr_id\tclndr_name\n%R\t1\tSix Day Calendar\n%T\tTASK\n%F\ttask_id\ttask_code\ttask_name\twbs_id\tclndr_id\ttarget_start_date\ttarget_end_date\ttarget_drtn\tdriving_path_flag\ttask_descr\n%R\t10\tACT-100\tExcavate\tWBS-01\t1\t2026-01-01 08:00\t2026-01-05 17:00\t5\tY\tInitial excavation\n%R\t11\tACT-100\tBackfill\tWBS-01\t1\t2026-01-06 08:00\t2026-01-08 17:00\t3\tN\tBackfill works\n%T\tTASKPRED\n%F\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt\n%R\t11\t10\tPR_FS\t8\n`;
+  const rows = primavera.parsePrimaveraXerTasks(xer);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]['Activity ID'], 'ACT-100-P6-10');
+  assert.equal(rows[1]['Activity ID'], 'ACT-100-P6-11');
+  assert.equal(rows[1].Predecessors, 'ACT-100-P6-10');
+  assert.equal(rows[1].Relationship, 'FS');
+  assert.equal(rows[1]['Lag (days)'], 1);
+  assert.equal(rows[0].Calendar, 'Six Day Calendar');
+  assert.equal(rows[0].Start, '2026-01-01');
+  assert.equal(rows[0].Critical, true);
 });
 
 test('new governed commercial and field records receive scoped codes', () => {
