@@ -1754,6 +1754,10 @@ export function DataTableView({
         const missingQuantityByItem = new Map<string, Record<string, any>[]>();
         const explicitQuantityByItem = new Map<string, number>();
         mapped.forEach((row) => {
+          // Design, procurement and approval activities in a P6/XER schedule
+          // intentionally have no BOQ quantity. They are schedule-only rows,
+          // so they must never enter the BOQ balance allocation calculation.
+          if (row.is_non_boq_activity) return;
           const key = String(row.boq_item_id || '');
           const quantity = Number(row.planned_quantity) || 0;
           if (quantity > 0) explicitQuantityByItem.set(key, (explicitQuantityByItem.get(key) || 0) + quantity);
