@@ -11,6 +11,41 @@ export function scheduleBudget(activity: Record<string, any>): number {
   return Math.round(value * 100) / 100;
 }
 
+export const WORK_CALENDARS = ['Calendar Days', '5-Day Week', '6-Day Week', '24/7'] as const;
+
+function isWorkingDay(date: Date, calendarName?: string | null): boolean {
+  const day = date.getUTCDay();
+  if (calendarName === '5-Day Week') return day >= 1 && day <= 5;
+  if (calendarName === '6-Day Week') return day !== 5; // Friday is the weekly non-working day.
+  return true;
+}
+
+/** Returns the duration in the selected calendar between ISO start/end dates. */
+export function workingDaysBetween(start: string, end: string, calendarName?: string | null): number {
+  const first = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime()) || last <= first) return 0;
+  let total = 0;
+  const cursor = new Date(first);
+  while (cursor < last) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (cursor <= last && isWorkingDay(cursor, calendarName)) total += 1;
+  }
+  return total;
+}
+
+export function addWorkingDays(date: string | null | undefined, days: number, calendarName?: string | null): string | null {
+  if (!date) return null;
+  const cursor = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime())) return null;
+  let remaining = Math.max(0, Number(days) || 0);
+  while (remaining > 0) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (isWorkingDay(cursor, calendarName)) remaining -= 1;
+  }
+  return cursor.toISOString().slice(0, 10);
+}
+
 export function schedulePlannedValueToDate(
   activity: Record<string, any>,
   reportDate = new Date().toISOString().slice(0, 10),
@@ -24,9 +59,10 @@ export function schedulePlannedValueToDate(
   const startMs = new Date(`${start}T00:00:00`).getTime();
   const endMs = new Date(`${end}T00:00:00`).getTime();
   const reportMs = new Date(`${reportDate}T00:00:00`).getTime();
-  const duration = endMs - startMs;
+  const duration = workingDaysBetween(start, end, activity.calendar_name);
+  const elapsed = workingDaysBetween(start, reportDate, activity.calendar_name);
   if (duration <= 0) return reportDate >= start ? budget : 0;
-  return Math.round(Math.max(0, Math.min(1, (reportMs - startMs) / duration)) * budget * 100) / 100;
+  return Math.round(Math.max(0, Math.min(1, elapsed / duration)) * budget * 100) / 100;
 }
 
 /**

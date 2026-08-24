@@ -52,6 +52,8 @@ test('planned value uses approved distribution before linear fallback', () => {
 test('calendar additions preserve the ISO date contract', () => {
   assert.equal(schedule.addCalendarDays('2026-01-30', 2), '2026-02-01');
   assert.equal(schedule.addCalendarDays(null, 2), null);
+  assert.equal(schedule.addWorkingDays('2026-01-01', 2, '5-Day Week'), '2026-01-05');
+  assert.equal(schedule.workingDaysBetween('2026-01-01', '2026-01-05', '5-Day Week'), 2);
 });
 
 test('CPM respects relationship types and reports dependency cycles', () => {

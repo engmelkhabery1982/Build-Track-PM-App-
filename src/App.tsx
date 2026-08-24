@@ -14,7 +14,7 @@ import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
-import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm } from '@/utils/cpm';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
@@ -310,7 +310,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'total_float_days', label: 'Total Float (days)', type: 'number', editable: false },
   { key: 'network_critical', label: 'Network Critical', type: 'boolean', editable: false },
   { key: 'network_warning', label: 'Network Check', type: 'text', editable: false },
-  { key: 'calendar_name', label: 'Calendar', type: 'text', editable: true },
+  { key: 'calendar_name', label: 'Calendar', type: 'status', editable: true, options: [...WORK_CALENDARS] },
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
@@ -2808,9 +2808,11 @@ export default function App() {
           }
           const start = scheduleRow.start_date ? new Date(`${scheduleRow.start_date}T00:00:00`) : null;
           const end = scheduleRow.end_date ? new Date(`${scheduleRow.end_date}T00:00:00`) : null;
+          const calendarName = String(scheduleRow.calendar_name || 'Calendar Days');
           const calculatedDuration = start && end
-            ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
+            ? Math.max(1, workingDaysBetween(scheduleRow.start_date, scheduleRow.end_date, calendarName))
             : Number(scheduleRow.duration_days) || 0;
+          const resolvedEndDate = scheduleRow.end_date || addWorkingDays(scheduleRow.start_date || null, calculatedDuration, calendarName);
           const plannedQuantity = Number(scheduleRow.planned_quantity) || 0;
           if (plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
           const alreadyPlanned = data.schedules
@@ -2834,6 +2836,8 @@ export default function App() {
             boq_item_code: item.item_code || '',
             boq_item_name: item.item_name || item.description || '',
             duration_days: calculatedDuration,
+            end_date: resolvedEndDate,
+            calendar_name: calendarName,
             unit_rate: Number(item.unit_rate) || 0,
             planned_quantity: plannedQuantity,
             budget: plannedValue,
