@@ -243,6 +243,8 @@ export interface Schedule {
   start_date: string | null;
   end_date: string | null;
   duration_days: number;
+  planned_labor_hours?: number;
+  planned_equipment_hours?: number;
   budget: number;
   planned_value: number;
   progress: number;

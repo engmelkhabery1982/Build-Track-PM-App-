@@ -319,6 +319,11 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
+  { key: 'planned_labor_hours', label: 'Planned Man-hours', type: 'number', editable: true },
+  { key: 'actual_labor_hours', label: 'Actual Man-hours', type: 'number', editable: false },
+  { key: 'planned_equipment_hours', label: 'Planned Equipment-hours', type: 'number', editable: true },
+  { key: 'linked_equipment_records', label: 'Equipment Assignments', type: 'number', editable: false },
+  { key: 'planned_productivity', label: 'Planned Qty / MH', type: 'number', editable: false },
   { key: 'remaining_duration_days', label: 'Remaining Duration', type: 'number', editable: false },
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
   { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
@@ -2336,6 +2341,10 @@ export default function App() {
               cost.contract_id === mainContractId &&
               cost.boq_item_id === mainItemId,
             ) as any;
+            const actualLaborHours = data.laborDuty
+              .filter((entry: any) => entry.schedule_id === schedule.id)
+              .reduce((sum: number, entry: any) => sum + (Number(entry.total_hours) || ((Number(entry.no_of_workers) || 0) * (Number(entry.hours_per_day) || 0) * (Number(entry.days) || 0))), 0);
+            const linkedEquipmentRecords = data.equipment.filter((entry: any) => entry.schedule_id === schedule.id).length;
             const earned = Math.round(earnedWorkValue * allocation * 100) / 100;
             const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
             const budget = isSummaryRow && childActivities.length > 0
@@ -2389,6 +2398,9 @@ export default function App() {
               start_date: summaryStart,
               end_date: summaryEnd,
               duration_days: summaryDuration,
+              actual_labor_hours: isSummaryRow ? childActivities.reduce((sum: number, activity: any) => sum + data.laborDuty.filter((entry: any) => entry.schedule_id === activity.id).reduce((hours: number, entry: any) => hours + (Number(entry.total_hours) || 0), 0), 0) : actualLaborHours,
+              linked_equipment_records: isSummaryRow ? childActivities.reduce((sum: number, activity: any) => sum + data.equipment.filter((entry: any) => entry.schedule_id === activity.id).length, 0) : linkedEquipmentRecords,
+              planned_productivity: Number(schedule.planned_labor_hours) > 0 ? Math.round((plannedQuantity / Number(schedule.planned_labor_hours)) * 10000) / 10000 : null,
               remaining_duration_days: remainingDuration,
               unit_rate: Number(mainItem?.unit_rate) || Number(schedule.unit_rate) || 0,
               budget,
