@@ -1806,7 +1806,7 @@ export default function App() {
       />;
     }
     if (activeView === 'workQueue') {
-      return <WorkQueue approvals={data.approvals as Record<string, any>[]} tasks={data.tasks as Record<string, any>[]} clientInvoices={data.clientInvoiceTracking as Record<string, any>[]} subInvoices={data.subcontractorInvoiceTracking as Record<string, any>[]} rfis={data.rfis as Record<string, any>[]} quality={data.quality as Record<string, any>[]} onNavigate={setActiveView} />;
+      return <WorkQueue approvals={data.approvals as Record<string, any>[]} tasks={data.tasks as Record<string, any>[]} clientInvoices={data.clientInvoiceTracking as Record<string, any>[]} subInvoices={data.subcontractorInvoiceTracking as Record<string, any>[]} rfis={data.rfis as Record<string, any>[]} quality={data.quality as Record<string, any>[]} dailyReports={data.siteDailyReports as Record<string, any>[]} onNavigate={setActiveView} />;
     }
     if (activeView === 'auditLog') {
       return <AuditTrailExplorer records={data.auditLog as Record<string, any>[]} />;
@@ -2742,6 +2742,7 @@ export default function App() {
             const approval = mutation.row as Record<string, any>;
             const decision = approval.status === 'Approved' ? 'Approved' : approval.status === 'Rejected' ? 'Rejected' : null;
             const target = approval.entity_type === 'Variation' ? 'variations'
+              : approval.entity_type === 'Document' ? 'documents'
               : approval.entity_type === 'Cost Change' ? 'cost_changes'
               : approval.entity_type === 'Payment Certificate' ? 'payment_certificates'
               : approval.entity_type === 'Baseline' ? 'project_baselines'
@@ -2756,6 +2757,7 @@ export default function App() {
                 ...(target === 'variations' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
                 ...(target === 'cost_changes' && decision === 'Approved' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
                 ...(target === 'payment_certificates' && decision === 'Approved' ? { approved_date: approval.decision_date || new Date().toISOString().slice(0, 10), approved_by: approval.approver || 'Approval Workflow' } : {}),
+                ...(target === 'documents' && decision === 'Approved' ? { status: 'Approved' } : {}),
                 ...(target === 'rfi_register' && decision === 'Approved' ? { status: 'Answered', response_date: approval.decision_date || new Date().toISOString().slice(0, 10) } : {}),
               }).then((updated) => {
                 data.applyLocalMutation(target, { type: 'update', row: updated });
