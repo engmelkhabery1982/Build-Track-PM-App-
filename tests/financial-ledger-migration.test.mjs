@@ -45,3 +45,39 @@ print('ok')
   }).trim();
   assert.equal(result, 'ok');
 });
+
+test('commercial ledger migration allocates Cost Changes and commitments in SQLite', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*22,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 22 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('''CREATE TABLE financial_ledger (
+  id TEXT PRIMARY KEY, source_table TEXT NOT NULL, source_id TEXT NOT NULL,
+  project_id TEXT, contract_id TEXT, boq_item_id TEXT, transaction_date TEXT,
+  ledger_type TEXT NOT NULL, direction TEXT NOT NULL, amount REAL NOT NULL DEFAULT 0,
+  status TEXT, created_at TEXT NOT NULL, UNIQUE(source_table, source_id)
+)''')
+for table in ('cost_changes', 'procurement'):
+    db.execute(f'''CREATE TABLE {table} (
+      id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, boq_item_id TEXT,
+      payload TEXT NOT NULL, created_at TEXT NOT NULL
+    )''')
+db.executescript(sys.stdin.read())
+created = '2026-08-24T12:00:00Z'
+db.execute("INSERT INTO cost_changes (id, project_id, contract_id, boq_item_id, contract_sov_line_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", ('cc-1', 'p-1', 'c-1', 'b-1', 'sov-1', json.dumps({'effective_date':'2026-08-20','amount':-75,'status':'Approved'}), created))
+db.execute("INSERT INTO procurement VALUES (?, ?, ?, ?, ?, ?)", ('po-1', 'p-1', 'c-1', 'b-1', json.dumps({'order_date':'2026-08-21','quantity':4,'unit_cost':30,'status':'Ordered'}), created))
+assert db.execute("SELECT amount, direction, ledger_type FROM financial_ledger WHERE source_id='cc-1'").fetchone() == (75.0, 'Decrease', 'Cost Change')
+assert db.execute("SELECT amount, direction, ledger_type FROM financial_ledger WHERE source_id='po-1'").fetchone() == (120.0, 'Commitment', 'Commitment')
+db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'order_date':'2026-08-22','total_cost':140,'status':'Ordered'}),))
+assert db.execute("SELECT amount, transaction_date FROM financial_ledger WHERE source_id='po-1'").fetchone() == (140.0, '2026-08-22')
+db.execute("DELETE FROM cost_changes WHERE id='cc-1'")
+assert db.execute("SELECT count(*) FROM financial_ledger WHERE source_id='cc-1'").fetchone()[0] == 0
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], {
+    input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+  assert.equal(result, 'ok');
+});

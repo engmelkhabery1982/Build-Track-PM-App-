@@ -128,6 +128,7 @@ export interface CostChange {
   id: string;
   project_id: string;
   contract_id: string;
+  contract_sov_line_id: string | null;
   boq_item_id: string | null;
   cost_code_id: string | null;
   cost_change_number: string;

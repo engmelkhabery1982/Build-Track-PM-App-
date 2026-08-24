@@ -16,6 +16,7 @@ import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPa
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm } from '@/utils/cpm';
+import { calculateCertificateValues, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -401,6 +402,7 @@ const CONTRACT_SOV_COLUMNS: ColumnDef[] = [
 const COST_CHANGE_COLUMNS: ColumnDef[] = [
   { key: 'cost_change_number', label: 'Cost Change #', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
+  { key: 'contract_sov_line_id', label: 'SOV Line', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
   { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
@@ -1682,11 +1684,59 @@ export default function App() {
     return dataRepository.update<Record<string, any>>(trackingTable, trackingId, patch);
   }
 
+  async function removeStandaloneCertificateCash(certificateId: string) {
+    const generated = data.cashFlow.filter((row: any) =>
+      ['payment_certificate_forecast', 'payment_certificate_actual'].includes(String(row.source_type || ''))
+      && String(row.source_id || '') === certificateId,
+    ) as Record<string, any>[];
+    for (const row of generated) {
+      await dataRepository.delete('cash_flow', row.id);
+      data.applyLocalMutation('cash_flow', { type: 'delete', id: row.id, row });
+    }
+  }
+
+  /** A certificate without an invoice-register link is still a governed
+   * commercial event. It produces exactly one Forecast or Actual cash row,
+   * never both, and is removed when the certificate is no longer approved. */
+  async function synchronizeStandaloneCertificateCash(certificate: Record<string, any>) {
+    await removeStandaloneCertificateCash(String(certificate.id || ''));
+    const movementType = certificateCashStatus(certificate);
+    if (!movementType) return;
+    const values = calculateCertificateValues(certificate);
+    const direction = certificateCashDirection(certificate);
+    const date = movementType === 'Actual'
+      ? certificate.payment_date || certificate.certificate_date || certificate.approved_date
+      : certificate.certificate_date || certificate.approved_date;
+    if (!date) throw new Error('An approved payment certificate requires a certificate or approval date for Cash Flow.');
+    const row = {
+      project_id: certificate.project_id,
+      contract_id: certificate.contract_id,
+      date,
+      description: `${movementType === 'Actual' ? 'Payment certificate settled' : 'Payment certificate forecast'}: ${certificate.certificate_number || certificate.id}`,
+      category: direction === 'Inflow' ? 'Client Receipt' : 'Subcontractor Payment',
+      inflow: direction === 'Inflow' ? values.net_certified_value : 0,
+      outflow: direction === 'Outflow' ? values.net_certified_value : 0,
+      net: direction === 'Inflow' ? values.net_certified_value : -values.net_certified_value,
+      cumulative_balance: 0,
+      movement_type: movementType,
+      status: movementType === 'Actual' ? 'Settled' : 'Open',
+      source_type: `payment_certificate_${movementType.toLowerCase()}`,
+      source_id: certificate.id,
+    };
+    const inserted = await dataRepository.insert<Record<string, any>>('cash_flow', row);
+    data.applyLocalMutation('cash_flow', { type: 'insert', row: inserted });
+  }
+
   /** A certificate approves or settles its selected invoice register row. The
-   * invoice register remains the single writer to Cash Flow, so a certificate
-   * can never create a duplicate receipt/payment movement. */
+   * invoice register remains the single writer to Cash Flow when linked, so a
+   * certificate can never create a duplicate receipt/payment movement. */
   async function synchronizeCertificateToInvoiceTracking(certificate: Record<string, any>) {
-    if (!certificate.invoice_tracking_id || !['Approved', 'Paid'].includes(String(certificate.status || ''))) return;
+    if (!certificate.invoice_tracking_id) {
+      await synchronizeStandaloneCertificateCash(certificate);
+      return;
+    }
+    await removeStandaloneCertificateCash(String(certificate.id || ''));
+    if (!['Approved', 'Paid'].includes(String(certificate.status || ''))) return;
     const trackingTable = certificate.certificate_type === 'Client'
       ? 'client_invoice_tracking' as const
       : 'subcontractor_invoice_tracking' as const;
@@ -2235,10 +2285,7 @@ export default function App() {
             })
             .reduce((sum: number, variationLine: any) => sum + (Number(variationLine.value_impact) || 0), 0);
           const approvedCostChangeValue = data.costChanges
-            .filter((change: any) => change.status === 'Approved'
-              && change.contract_id === line.contract_id
-              && (!change.boq_item_id || change.boq_item_id === line.boq_item_id)
-              && (!change.cost_code_id || change.cost_code_id === line.cost_code_id))
+            .filter((change: any) => change.contract_id === line.contract_id && costChangeAppliesToSovLine(change, line))
             .reduce((sum: number, change: any) => sum + (Number(change.amount) || 0), 0);
           const committedCost = data.procurement
             .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
@@ -2265,17 +2312,12 @@ export default function App() {
         })
       : activeView === 'paymentCertificates'
         ? rawViewData.map((certificate: any) => {
-          const gross = Number(certificate.gross_certified_value) || 0;
-          const retention = Math.round(gross * (Number(certificate.retention_rate) || 0) / 100 * 100) / 100;
-          const beforeTax = gross - retention - (Number(certificate.advance_recovery) || 0) - (Number(certificate.deductions) || 0);
-          const tax = Math.round(Math.max(0, beforeTax) * (Number(certificate.tax_rate) || 0) / 100 * 100) / 100;
+          const values = calculateCertificateValues(certificate);
           const contract = contractById.get(certificate.contract_id) as any;
           return {
             ...certificate,
             contract_role: contract?.contract_role || 'Main Contract',
-            retention_amount: retention,
-            tax_amount: tax,
-            net_certified_value: Math.round((beforeTax + tax) * 100) / 100,
+            ...values,
           };
         })
       : activeView === 'boq'
@@ -2455,6 +2497,16 @@ export default function App() {
       .filter((code: any) => code.status !== 'Inactive')
       .map((code: any) => ({ value: code.id, label: `${code.cost_code || code.id} — ${code.name || 'Unnamed cost code'}`, data: { project_id: code.project_id, cost_code: code.cost_code, cost_code_name: code.name, classification: code.classification } }));
     relationshipOptions.parent_cost_code_id = relationshipOptions.cost_code_id;
+    relationshipOptions.contract_sov_line_id = data.contractSovLines
+      .filter((line: any) => line.status !== 'Closed')
+      .map((line: any) => ({
+        value: line.id,
+        label: `${line.sov_line_code || line.id} — ${line.description || 'Unnamed SOV line'}`,
+        data: {
+          project_id: line.project_id, contract_id: line.contract_id, boq_header_id: line.boq_header_id,
+          boq_item_id: line.boq_item_id, cost_code_id: line.cost_code_id,
+        },
+      }));
     relationshipOptions.wbs_id = data.wbsNodes
       .filter((node: any) => node.status !== 'Inactive')
       .map((node: any) => ({ value: node.id, label: `${node.wbs_code || node.id} — ${node.name || 'Unnamed WBS'}`, data: { project_id: node.project_id, contract_id: node.contract_id, wbs_code: node.wbs_code } }));
@@ -2791,10 +2843,20 @@ export default function App() {
               alert(`Failed to synchronize project dates: ${error.message || 'Unknown error'}`),
             );
           }
-          if (tableName === 'payment_certificates' && (mutation.type === 'insert' || mutation.type === 'update')) {
-            void synchronizeCertificateToInvoiceTracking(mutation.row as Record<string, any>).catch((error) =>
-              alert(`Certificate was saved, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
-            );
+          if (tableName === 'payment_certificates') {
+            if (mutation.type === 'delete') {
+              void removeStandaloneCertificateCash(String(mutation.id)).catch((error) =>
+                alert(`Certificate was deleted, but its generated Cash Flow could not be removed: ${error.message || 'Unknown error'}`),
+              );
+            } else if (mutation.type === 'insertMany') {
+              mutation.rows.forEach((certificate) => void synchronizeCertificateToInvoiceTracking(certificate).catch((error) =>
+                alert(`A certificate was imported, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
+              ));
+            } else {
+              void synchronizeCertificateToInvoiceTracking(mutation.row as Record<string, any>).catch((error) =>
+                alert(`Certificate was saved, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
+              );
+            }
           }
           if (tableName === 'documents' && (mutation.type === 'insert' || mutation.type === 'update')) {
             const document = mutation.row as Record<string, any>;

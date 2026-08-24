@@ -1,9 +1,11 @@
 const PARENT_FIELDS: Record<string, string> = {
   projects: 'parent_main_project_id',
   contracts: 'parent_main_contract_id',
+  cost_codes: 'parent_cost_code_id',
+  wbs_nodes: 'parent_wbs_id',
 };
 
-/** Reject self-references and cycles before persisting a project or contract hierarchy change. */
+/** Reject self-references and cycles before persisting any governed hierarchy change. */
 export function assertValidHierarchyChange(
   tableName: string,
   rows: Record<string, unknown>[],

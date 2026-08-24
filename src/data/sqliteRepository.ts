@@ -29,6 +29,7 @@ type StoredRow = {
   parent_main_contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  contract_sov_line_id?: string | null;
   payload: string;
 };
 
@@ -173,6 +174,16 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.boq_header_id), JSON.stringify(record),
         ],
       );
+    } else if (tableName === "cost_changes") {
+      await database.execute(
+        `INSERT INTO cost_changes (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, contract_sov_line_id, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id), nullableId(record.contract_id),
+          nullableId(record.parent_main_project_id), nullableId(record.parent_main_contract_id),
+          nullableId(record.boq_header_id), nullableId(record.boq_item_id), nullableId(record.contract_sov_line_id), JSON.stringify(record),
+        ],
+      );
     } else {
       await database.execute(
         `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
@@ -233,6 +244,18 @@ export class SqliteRepository implements DataRepository {
         [
           nullableId(record.project_id), nullableId(record.boq_header_id),
           JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "cost_changes") {
+      await database.execute(
+        `UPDATE cost_changes
+         SET project_id = $1, contract_id = $2, parent_main_project_id = $3, parent_main_contract_id = $4,
+             boq_header_id = $5, boq_item_id = $6, contract_sov_line_id = $7, payload = $8
+         WHERE id = $9`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.parent_main_project_id),
+          nullableId(record.parent_main_contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id),
+          nullableId(record.contract_sov_line_id), JSON.stringify(record), id,
         ],
       );
     } else {

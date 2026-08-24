@@ -1037,7 +1037,7 @@ export function DataTableView({
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
-      'invoice_tracking_id',
+      'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       'baseline_start_date', 'baseline_end_date', 'planned_start_date', 'planned_end_date', 'variance_reason',
@@ -1103,6 +1103,13 @@ export function DataTableView({
         updated.original_budget = Math.round(((Number(selected?.data?.quantity) || 0) * (Number(selected?.data?.unit_rate) || 0)) * 100) / 100;
       }
     }
+    if (tableName === 'cost_changes' && changedKey === 'contract_sov_line_id') {
+      updated.project_id = selected?.data?.project_id || updated.project_id || null;
+      updated.contract_id = selected?.data?.contract_id || updated.contract_id || null;
+      updated.boq_header_id = selected?.data?.boq_header_id || null;
+      updated.boq_item_id = selected?.data?.boq_item_id || null;
+      updated.cost_code_id = selected?.data?.cost_code_id || null;
+    }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);
       const next = existingRows.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
@@ -1149,6 +1156,9 @@ export function DataTableView({
     const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
     const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
     const selectedCostCode = relationshipOptions?.cost_code_id?.find((option) => option.value === record.cost_code_id);
+    const selectedSovLine = relationshipOptions?.contract_sov_line_id?.find((option) => option.value === record.contract_sov_line_id);
+    const selectedParentCostCode = relationshipOptions?.parent_cost_code_id?.find((option) => option.value === record.parent_cost_code_id);
+    const selectedParentWbs = relationshipOptions?.parent_wbs_id?.find((option) => option.value === record.parent_wbs_id);
     const selectedInvoiceTracking = relationshipOptions?.invoice_tracking_id?.find((option) => option.value === record.invoice_tracking_id);
     const supersededDocument = relationshipOptions?.supersedes_document_id?.find((option) => option.value === record.supersedes_document_id);
 
@@ -1178,6 +1188,15 @@ export function DataTableView({
     }
     if (selectedCostCode?.data?.project_id && record.project_id && selectedCostCode.data.project_id !== record.project_id) {
       throw new Error('The selected cost code belongs to a different project.');
+    }
+    if (selectedParentCostCode?.data?.project_id && record.project_id && selectedParentCostCode.data.project_id !== record.project_id) {
+      throw new Error('The parent cost code belongs to a different project.');
+    }
+    if (selectedParentWbs?.data?.project_id && record.project_id && selectedParentWbs.data.project_id !== record.project_id) {
+      throw new Error('The parent WBS node belongs to a different project.');
+    }
+    if (selectedParentWbs?.data?.contract_id && record.contract_id && selectedParentWbs.data.contract_id !== record.contract_id) {
+      throw new Error('The parent WBS node belongs to a different contract.');
     }
     if (supersededDocument?.data?.project_id && record.project_id && supersededDocument.data.project_id !== record.project_id) {
       throw new Error('The superseded document belongs to a different project.');
@@ -1270,6 +1289,9 @@ export function DataTableView({
       if (!String(record.title || '').trim()) throw new Error('A cost change requires a title.');
       if (!record.effective_date) throw new Error('A cost change requires an effective date.');
       if (!Number.isFinite(Number(record.amount)) || Number(record.amount) === 0) throw new Error('A cost change amount cannot be zero.');
+      if (!record.contract_sov_line_id || !selectedSovLine) throw new Error('Select one governed SOV line for the cost change.');
+      if (selectedSovLine.data?.project_id && record.project_id !== selectedSovLine.data.project_id) throw new Error('The selected SOV line belongs to a different project.');
+      if (selectedSovLine.data?.contract_id && record.contract_id !== selectedSovLine.data.contract_id) throw new Error('The selected SOV line belongs to a different contract.');
       if (String(record.status || '') === 'Approved' && (!String(record.approved_by || '').trim() || !record.approved_date)) {
         throw new Error('An approved cost change requires approver and approval date.');
       }
