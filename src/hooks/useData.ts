@@ -3,8 +3,8 @@ import { dataRepository } from '@/data';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
-  ClientInvoice, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate,
+  ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
+  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -52,6 +52,10 @@ export function useData() {
   const [partyContacts, setPartyContacts] = useState<PartyContact[]>([]);
   const [rateHistory, setRateHistory] = useState<RateHistory[]>([]);
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
+  const [costCodes, setCostCodes] = useState<CostCode[]>([]);
+  const [wbsNodes, setWbsNodes] = useState<WBSNode[]>([]);
+  const [contractSovLines, setContractSovLines] = useState<ContractSOVLine[]>([]);
+  const [paymentCertificates, setPaymentCertificates] = useState<PaymentCertificate[]>([]);
   const [loading, setLoading] = useState(true);
 
   const listOptional = useCallback(async <T,>(tableName: string): Promise<T[]> => {
@@ -69,7 +73,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt,
+        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -107,6 +111,7 @@ export function useData() {
         listOptional<PartyContact>('party_contacts'),
         listOptional<RateHistory>('rate_history'),
         listOptional<ReportTemplate>('report_templates'),
+        listOptional<CostCode>('cost_codes'), listOptional<WBSNode>('wbs_nodes'), listOptional<ContractSOVLine>('contract_sov_lines'), listOptional<PaymentCertificate>('payment_certificates'),
       ]);
 
       setProjects(p);
@@ -143,6 +148,10 @@ export function useData() {
       setTracking(tr);
       setParties(pa); setPartyContacts(pc); setRateHistory(rh);
       setReportTemplates(rt);
+      setCostCodes(cc);
+      setWbsNodes(wn);
+      setContractSovLines(sov);
+      setPaymentCertificates(pcert);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -207,6 +216,10 @@ export function useData() {
       case 'party_contacts': apply(setPartyContacts); break;
       case 'rate_history': apply(setRateHistory); break;
       case 'report_templates': apply(setReportTemplates); break;
+      case 'cost_codes': apply(setCostCodes); break;
+      case 'wbs_nodes': apply(setWbsNodes); break;
+      case 'contract_sov_lines': apply(setContractSovLines); break;
+      case 'payment_certificates': apply(setPaymentCertificates); break;
     }
   }, []);
 
@@ -220,7 +233,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
-    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, loading,
+    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, paymentCertificates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }

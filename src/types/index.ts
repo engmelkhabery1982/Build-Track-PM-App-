@@ -68,6 +68,60 @@ export interface Cost {
   created_at: string;
 }
 
+/** Controlled CBS master used consistently by BOQ, commitments and actual cost. */
+export interface CostCode {
+  id: string;
+  project_id: string | null;
+  cost_code: string;
+  cost_code_locked: boolean;
+  name: string;
+  description: string;
+  classification: 'Labor' | 'Material' | 'Equipment' | 'Subcontract' | 'Indirect' | 'Other' | string;
+  parent_cost_code_id: string | null;
+  cbs_level: number;
+  status: 'Active' | 'Inactive' | string;
+  notes: string;
+  created_at: string;
+}
+
+/** Project WBS hierarchy; schedule activities reference this master node. */
+export interface WBSNode {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  wbs_code: string;
+  wbs_code_locked: boolean;
+  name: string;
+  description: string;
+  parent_wbs_id: string | null;
+  wbs_level: number;
+  status: 'Active' | 'Inactive' | string;
+  notes: string;
+  created_at: string;
+}
+
+/** Contract Schedule of Values. Original value is controlled here; approved
+ * variations, commitments and actual cost remain derived from source records. */
+export interface ContractSOVLine {
+  id: string;
+  project_id: string;
+  contract_id: string;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  cost_code_id: string | null;
+  sov_line_code: string;
+  sov_line_code_locked: boolean;
+  description: string;
+  original_budget: number;
+  forecast_at_completion: number | null;
+  retention_rate: number;
+  tax_rate: number;
+  markup_rate: number;
+  status: 'Draft' | 'Active' | 'Closed' | string;
+  notes: string;
+  created_at: string;
+}
+
 export interface CostEntry {
   id: string;
   project_id: string;
@@ -97,6 +151,9 @@ export interface Procurement {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  cost_code_id?: string | null;
+  purchase_order_number?: string;
+  purchase_order_number_locked?: boolean;
   item: string;
   supplier: string;
   quantity: number;
@@ -157,6 +214,7 @@ export interface Schedule {
   boq_code: string;
   boq_item_code: string;
   boq_item_name: string;
+  wbs_id?: string | null;
   wbs_code?: string;
   activity_code?: string;
   activity: string;
@@ -339,6 +397,29 @@ export interface ClientInvoice {
   paid_amount: number;
   notes: string;
   created_by: string;
+  created_at: string;
+}
+
+/** Approved commercial certificate: the controlled payment summary for one contract. */
+export interface PaymentCertificate {
+  id: string;
+  project_id: string;
+  contract_id: string;
+  certificate_number: string;
+  certificate_number_locked: boolean;
+  certificate_type: 'Client' | 'Subcontractor' | string;
+  period_start: string | null;
+  period_end: string | null;
+  certificate_date: string | null;
+  gross_certified_value: number;
+  retention_rate: number;
+  advance_recovery: number;
+  deductions: number;
+  tax_rate: number;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Paid' | string;
+  approved_by: string;
+  approved_date: string | null;
+  notes: string;
   created_at: string;
 }
 
@@ -631,4 +712,4 @@ export type ViewKey =
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
-  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates';
+  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'paymentCertificates';

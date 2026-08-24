@@ -506,6 +506,86 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_wirs_inspection_date ON wir_entries(project_id, json_extract(payload, '$.inspection_date'));
     "#,
     kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 14,
+    description: "add_commercial_cost_cbs_wbs_masters",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS cost_codes (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS wbs_nodes (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_codes_scope_code
+        ON cost_codes(COALESCE(project_id, ''), lower(json_extract(payload, '$.cost_code')));
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_wbs_nodes_project_code
+        ON wbs_nodes(project_id, lower(json_extract(payload, '$.wbs_code')));
+      CREATE INDEX IF NOT EXISTS idx_cost_codes_project_parent
+        ON cost_codes(project_id, json_extract(payload, '$.parent_cost_code_id'));
+      CREATE INDEX IF NOT EXISTS idx_wbs_nodes_project_parent
+        ON wbs_nodes(project_id, json_extract(payload, '$.parent_wbs_id'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 15,
+    description: "add_contract_schedule_of_values",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS contract_sov_lines (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE SET NULL,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL,
+        FOREIGN KEY (parent_main_contract_id) REFERENCES contracts(id) ON DELETE SET NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_contract_sov_line_code
+        ON contract_sov_lines(contract_id, lower(json_extract(payload, '$.sov_line_code')));
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_contract_sov_item
+        ON contract_sov_lines(contract_id, COALESCE(boq_item_id, ''));
+      CREATE INDEX IF NOT EXISTS idx_contract_sov_project_contract
+        ON contract_sov_lines(project_id, contract_id);
+      CREATE INDEX IF NOT EXISTS idx_contract_sov_cost_code
+        ON contract_sov_lines(json_extract(payload, '$.cost_code_id'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 16,
+    description: "govern_purchase_order_commitments",
+    sql: r#"
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_procurement_purchase_order
+        ON procurement(COALESCE(contract_id, ''), lower(json_extract(payload, '$.purchase_order_number')))
+        WHERE json_extract(payload, '$.purchase_order_number') IS NOT NULL
+          AND trim(json_extract(payload, '$.purchase_order_number')) <> '';
+      CREATE INDEX IF NOT EXISTS idx_procurement_commitment_scope
+        ON procurement(project_id, contract_id, boq_item_id, json_extract(payload, '$.status'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
+  }, tauri_plugin_sql::Migration {
+    version: 17,
+    description: "add_governed_payment_certificates",
+    sql: r#"
+      CREATE TABLE IF NOT EXISTS payment_certificates (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
+        boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
+        parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_certificate_number
+        ON payment_certificates(contract_id, lower(json_extract(payload, '$.certificate_type')), lower(json_extract(payload, '$.certificate_number')));
+      CREATE INDEX IF NOT EXISTS idx_payment_certificates_scope_status
+        ON payment_certificates(project_id, contract_id, json_extract(payload, '$.status'));
+    "#,
+    kind: tauri_plugin_sql::MigrationKind::Up,
   }];
 
   tauri::Builder::default()

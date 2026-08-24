@@ -21,6 +21,14 @@ test('financial and date governance catches invalid data', () => {
   assert.doesNotThrow(() => governance.assertRecordGovernance('variations', { cost_impact: -1500 }));
 });
 
+test('SOV rates and purchase-order codes are governed by contract scope', () => {
+  assert.throws(() => governance.assertRecordGovernance('contract_sov_lines', { retention_rate: 101 }), /cannot exceed 100/i);
+  assert.throws(() => governance.assertRecordGovernance('contract_sov_lines', { original_budget: -1 }), /cannot be negative/i);
+  const rows = [{ id: 'po-1', contract_id: 'contract-1', purchase_order_number: 'PO-001' }];
+  assert.throws(() => codes.assertCodeIsUnique('procurement', { id: 'po-2', contract_id: 'contract-1', purchase_order_number: 'PO-001' }, rows), /already exists/i);
+  assert.doesNotThrow(() => codes.assertCodeIsUnique('procurement', { id: 'po-2', contract_id: 'contract-2', purchase_order_number: 'PO-001' }, rows));
+});
+
 test('codes remain unique inside the governed scope', () => {
   const rows = [{ id: 'a', project_id: 'p1', contract_number: 'CNT-001' }];
   assert.throws(() => codes.assertCodeIsUnique('contracts', { id: 'b', project_id: 'p1', contract_number: 'CNT-001' }, rows), /already exists/i);

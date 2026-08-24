@@ -1148,6 +1148,13 @@ export function DataTableView({
       updated.original_rate = Number(selected?.data?.unit_rate) || 0;
       updated.revised_rate = updated.original_rate;
     }
+    if (tableName === 'contract_sov_lines' && changedKey === 'boq_item_id') {
+      updated.boq_header_id = selected?.data?.boq_header_id || null;
+      updated.description = selected?.data?.item_description || selected?.data?.item_name || updated.description || '';
+      if (updated.original_budget === undefined || updated.original_budget === null || updated.original_budget === '') {
+        updated.original_budget = Math.round(((Number(selected?.data?.quantity) || 0) * (Number(selected?.data?.unit_rate) || 0)) * 100) / 100;
+      }
+    }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);
       const next = existingRows.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
@@ -1193,6 +1200,7 @@ export function DataTableView({
     const selectedContractorParty = relationshipOptions?.contractor_party_id?.find((option) => option.value === record.contractor_party_id);
     const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
     const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
+    const selectedCostCode = relationshipOptions?.cost_code_id?.find((option) => option.value === record.cost_code_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
       throw new Error('The selected contract belongs to a different project.');
@@ -1214,6 +1222,9 @@ export function DataTableView({
     }
     if (selectedSchedule?.data?.project_id && record.project_id && selectedSchedule.data.project_id !== record.project_id) {
       throw new Error('The selected activity belongs to a different project.');
+    }
+    if (selectedCostCode?.data?.project_id && record.project_id && selectedCostCode.data.project_id !== record.project_id) {
+      throw new Error('The selected cost code belongs to a different project.');
     }
     if (record.party_id && !selectedParty) throw new Error('Select a valid active party from Master Data.');
     if (record.client_party_id && !selectedClientParty) throw new Error('Select a valid active client from Master Data.');
@@ -1243,6 +1254,28 @@ export function DataTableView({
     }
     if (tableName === 'client_invoices' && selectedContractRow?.parent_main_contract_id) {
       throw new Error('Client invoices must be assigned to the main contract.');
+    }
+    if (tableName === 'contract_sov_lines') {
+      if (!record.contract_id || !record.project_id) throw new Error('Select a valid contract before saving an SOV line.');
+      if (record.boq_item_id && !selectedItem) throw new Error('Select a valid BOQ item for the SOV line.');
+    }
+    if (tableName === 'procurement') {
+      if (!record.contract_id || !record.project_id) throw new Error('Select a valid contract before saving a purchase commitment.');
+      if (!String(record.purchase_order_number || '').trim()) throw new Error('Purchase order number is required.');
+      if (!record.boq_item_id) throw new Error('Select the BOQ item that receives this commitment.');
+      if (!record.supplier_party_id) throw new Error('Select an active supplier from Master Data.');
+      if ((Number(record.quantity) || 0) <= 0) throw new Error('Purchase commitment quantity must be greater than zero.');
+      if ((Number(record.unit_cost) || 0) < 0) throw new Error('Purchase commitment unit cost cannot be negative.');
+    }
+    if (tableName === 'payment_certificates') {
+      if (!record.contract_id || !record.project_id) throw new Error('Select a valid contract before saving a payment certificate.');
+      const certificateType = String(record.certificate_type || '');
+      if (!['Client', 'Subcontractor'].includes(certificateType)) throw new Error('Select Client or Subcontractor certificate type.');
+      if (certificateType === 'Client' && selectedContractRow?.parent_main_contract_id) throw new Error('A client certificate must be assigned to a main contract.');
+      if (certificateType === 'Subcontractor' && !selectedContractRow?.parent_main_contract_id) throw new Error('A subcontractor certificate must be assigned to a subcontract.');
+      if (String(record.status || '') === 'Approved' && (!String(record.approved_by || '').trim() || !record.approved_date)) {
+        throw new Error('Approved certificates require approver and approval date.');
+      }
     }
     if (tableName === 'variation_lines') {
       if (!selectedVariation) throw new Error('Select a draft or submitted variation order before saving a variation line.');

@@ -9,6 +9,8 @@ const NON_NEGATIVE_FIELDS = new Set([
   'lag_days', 'duration_days', 'remaining_duration_days', 'budget',
   'planned_value', 'actual_cost', 'earned_work_value', 'contract_value',
   'modified_contract_value', 'amount', 'item_amount', 'total_cost', 'inflow', 'outflow',
+  'original_budget', 'forecast_at_completion', 'retention_rate', 'tax_rate', 'markup_rate',
+  'gross_certified_value', 'advance_recovery', 'deductions',
 ]);
 
 const DATE_PAIRS: Array<[string, string, string]> = [
@@ -46,5 +48,12 @@ export function assertRecordGovernance(tableName: string, record: Record<string,
   if (['client_invoices', 'subcontractor_invoices', 'cost_entries', 'procurement', 'labor_duty', 'equipment'].includes(tableName)
     && isPresent(record.amount) && Number(record.amount) < 0) {
     throw new Error('Financial amount cannot be negative for this record type.');
+  }
+  if (tableName === 'contract_sov_lines' || tableName === 'payment_certificates') {
+    for (const field of ['retention_rate', 'tax_rate', 'markup_rate']) {
+      if (isPresent(record[field]) && Number(record[field]) > 100) {
+        throw new Error(`${field.replace(/_/g, ' ')} cannot exceed 100%.`);
+      }
+    }
   }
 }

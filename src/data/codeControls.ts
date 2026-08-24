@@ -1,4 +1,4 @@
-export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'parties';
+export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'parties' | 'cost_codes' | 'wbs_nodes' | 'contract_sov_lines' | 'procurement' | 'payment_certificates';
 
 export interface CodeControl {
   codeField: string;
@@ -48,6 +48,11 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
   client_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-CLIENT', scopeFields: ['contract_id'] },
   subcontractor_invoices: { codeField: 'invoice_number', lockField: 'invoice_number_locked', defaultPrefix: 'INV-SUB', scopeFields: ['contract_id'] },
   parties: { codeField: 'party_code', lockField: 'party_code_locked', defaultPrefix: 'PTY', scopeFields: [] },
+  cost_codes: { codeField: 'cost_code', lockField: 'cost_code_locked', defaultPrefix: 'CBS', scopeFields: ['project_id'] },
+  wbs_nodes: { codeField: 'wbs_code', lockField: 'wbs_code_locked', defaultPrefix: 'WBS', scopeFields: ['project_id'] },
+  contract_sov_lines: { codeField: 'sov_line_code', lockField: 'sov_line_code_locked', defaultPrefix: 'SOV', scopeFields: ['contract_id'] },
+  procurement: { codeField: 'purchase_order_number', lockField: 'purchase_order_number_locked', defaultPrefix: 'PO', scopeFields: ['contract_id'] },
+  payment_certificates: { codeField: 'certificate_number', lockField: 'certificate_number_locked', defaultPrefix: 'PC', scopeFields: ['contract_id', 'certificate_type'] },
 };
 
 function isCodeControlledTable(tableName: string): tableName is CodeControlledTable {

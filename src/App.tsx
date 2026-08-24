@@ -42,6 +42,8 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'contracts', label: 'Contracts', icon: FileSignature, group: 'Commercial & Cash' },
   { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial & Cash' },
   { key: 'variationLines', label: 'Variation Lines', icon: ListOrdered, group: 'Commercial & Cash' },
+  { key: 'contractSov', label: 'Contract SOV', icon: ClipboardList, group: 'Commercial & Cash' },
+  { key: 'paymentCertificates', label: 'Payment Certificates', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial & Cash' },
   { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial & Cash' },
   { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
@@ -52,6 +54,8 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'rateHistory', label: 'Rate History', icon: DollarSign, group: 'Commercial & Cash' },
   { key: 'reportTemplates', label: 'Report Templates', icon: FileText, group: 'Commercial & Cash' },
   { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost & Resources' },
+  { key: 'costCodes', label: 'Cost Code / CBS Master', icon: Layers, group: 'Cost & Resources' },
+  { key: 'wbs', label: 'WBS Master', icon: GitBranch, group: 'Planning & Controls' },
   { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost & Resources' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
@@ -73,7 +77,7 @@ const TASK_STATUSES = ['Not Started', 'In Progress', 'Completed', 'Delayed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 const COST_STATUSES = ['Planned', 'Committed', 'Actual', 'Over Budget'];
 const COST_TYPES = ['Labor', 'Equipment', 'Materials', 'Subcontractor Cost', 'Multiple Cost Types', 'Miscellaneous', 'Other'];
-const PROC_STATUSES = ['Requested', 'Ordered', 'Partially Delivered', 'Delivered'];
+const PROC_STATUSES = ['Draft', 'Submitted', 'Approved', 'Ordered', 'Partially Delivered', 'Delivered', 'Closed', 'Cancelled'];
 const SAFETY_STATUSES = ['Open', 'Investigating', 'Closed'];
 const SAFETY_SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 const SAFETY_TYPES = ['Incident', 'Near Miss', 'Hazard', 'Inspection', 'Violation'];
@@ -206,6 +210,7 @@ const TASK_COLUMNS: ColumnDef[] = [
 ];
 
 const COST_COLUMNS: ColumnDef[] = [
+  { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Contractor', type: 'text', editable: true },
@@ -220,6 +225,7 @@ const COST_COLUMNS: ColumnDef[] = [
 ];
 
 const COST_ENTRY_COLUMNS: ColumnDef[] = [
+  { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'company_name', label: 'Contractor', type: 'text', editable: true },
@@ -234,6 +240,8 @@ const COST_ENTRY_COLUMNS: ColumnDef[] = [
 const PROCUREMENT_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
+  { key: 'purchase_order_number', label: 'PO Number', type: 'text', editable: true },
   { key: 'item', label: 'Item', type: 'text', editable: true },
   { key: 'supplier_party_id', label: 'Supplier Master Record', type: 'select', editable: true },
   { key: 'supplier', label: 'Supplier', type: 'text', editable: true },
@@ -273,6 +281,7 @@ const PROGRESS_COLUMNS: ColumnDef[] = [
 ];
 
 const SCHEDULE_COLUMNS: ColumnDef[] = [
+  { key: 'wbs_id', label: 'WBS Node', type: 'select', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
@@ -311,6 +320,65 @@ const SCHEDULE_DISTRIBUTION_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: true },
   { key: 'planned_value', label: 'Planned Value', type: 'money', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const COST_CODE_COLUMNS: ColumnDef[] = [
+  { key: 'cost_code', label: 'Cost Code', type: 'text', editable: true },
+  { key: 'name', label: 'CBS Name', type: 'text', editable: true },
+  { key: 'classification', label: 'Classification', type: 'status', editable: true, options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] },
+  { key: 'parent_cost_code_id', label: 'Parent Cost Code', type: 'select', editable: true },
+  { key: 'cbs_level', label: 'CBS Level', type: 'number', editable: true },
+  { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const WBS_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'wbs_code', label: 'WBS Code', type: 'text', editable: true },
+  { key: 'name', label: 'WBS Name', type: 'text', editable: true },
+  { key: 'parent_wbs_id', label: 'Parent WBS', type: 'select', editable: true },
+  { key: 'wbs_level', label: 'WBS Level', type: 'number', editable: true },
+  { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const CONTRACT_SOV_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
+  { key: 'sov_line_code', label: 'SOV Line Code', type: 'text', editable: true },
+  { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'original_budget', label: 'Original Budget', type: 'money', editable: true },
+  { key: 'approved_variation_value', label: 'Approved Variations', type: 'money', editable: false },
+  { key: 'revised_budget', label: 'Revised Budget', type: 'money', editable: false },
+  { key: 'committed_cost', label: 'Committed Cost', type: 'money', editable: false },
+  { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
+  { key: 'forecast_at_completion', label: 'Forecast at Completion', type: 'money', editable: true },
+  { key: 'cost_to_complete', label: 'Cost to Complete', type: 'money', editable: false },
+  { key: 'retention_rate', label: 'Retention %', type: 'number', editable: true },
+  { key: 'tax_rate', label: 'Tax %', type: 'number', editable: true },
+  { key: 'markup_rate', label: 'Markup %', type: 'number', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Active', 'Closed'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const PAYMENT_CERTIFICATE_COLUMNS: ColumnDef[] = [
+  { key: 'certificate_number', label: 'Certificate #', type: 'text', editable: true },
+  { key: 'certificate_type', label: 'Certificate Type', type: 'status', editable: true, options: ['Client', 'Subcontractor'] },
+  { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
+  { key: 'period_start', label: 'Period From', type: 'date', editable: true },
+  { key: 'period_end', label: 'Period To', type: 'date', editable: true },
+  { key: 'certificate_date', label: 'Certificate Date', type: 'date', editable: true },
+  { key: 'gross_certified_value', label: 'Gross Certified', type: 'money', editable: true },
+  { key: 'retention_rate', label: 'Retention %', type: 'number', editable: true },
+  { key: 'retention_amount', label: 'Retention', type: 'money', editable: false },
+  { key: 'advance_recovery', label: 'Advance Recovery', type: 'money', editable: true },
+  { key: 'deductions', label: 'Deductions', type: 'money', editable: true },
+  { key: 'tax_rate', label: 'Tax %', type: 'number', editable: true },
+  { key: 'tax_amount', label: 'Tax', type: 'money', editable: false },
+  { key: 'net_certified_value', label: 'Net Certified', type: 'money', editable: false },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] },
+  { key: 'approved_by', label: 'Approved By', type: 'text', editable: true },
+  { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -583,8 +651,12 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   quality: { columns: QUALITY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Open', 'In Progress', 'Verified', 'Closed'] }, { key: 'severity', label: 'Severity', options: ['Low', 'Medium', 'High', 'Critical'] }], showProjectFilter: true, dateRangeColumn: 'raised_date' },
   tasks: { columns: TASK_COLUMNS, filters: [{ key: 'status', label: 'Status', options: TASK_STATUSES }, { key: 'priority', label: 'Priority', options: PRIORITIES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   costs: { columns: COST_COLUMNS, filters: [{ key: 'category', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true },
+  costCodes: { columns: COST_CODE_COLUMNS, filters: [{ key: 'classification', label: 'Classification', options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
+  wbs: { columns: WBS_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
+  contractSov: { columns: CONTRACT_SOV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Active', 'Closed'] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }], showProjectFilter: true },
+  paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
-  procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
+  procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
@@ -610,7 +682,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', paymentCertificates: 'payment_certificates',
   procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
@@ -621,7 +693,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', paymentCertificates: 'Payment Certificates',
   procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
@@ -1942,8 +2014,16 @@ export default function App() {
       ? data.boqHeaders
       : activeView === 'baselines'
         ? data.baselines
-        : activeView === 'reportingPeriods'
+      : activeView === 'reportingPeriods'
           ? data.reportingPeriods
+          : activeView === 'costCodes'
+            ? data.costCodes
+          : activeView === 'wbs'
+              ? data.wbsNodes
+              : activeView === 'contractSov'
+                ? data.contractSovLines
+                : activeView === 'paymentCertificates'
+                  ? data.paymentCertificates
           : activeView === 'snapshots'
             ? data.snapshots
             : activeView === 'users'
@@ -2027,6 +2107,54 @@ export default function App() {
     });
     const viewData = activeView === 'contracts'
       ? contractsWithModifiedValue
+      : activeView === 'contractSov'
+        ? rawViewData.map((line: any) => {
+          const contract = contractById.get(line.contract_id) as any;
+          const approvedVariationValue = data.variationLines
+            .filter((variationLine: any) => {
+              const variation = data.variations.find((candidate: any) => candidate.id === variationLine.variation_id);
+              return variation?.status === 'Approved'
+                && variationLine.contract_id === line.contract_id
+                && variationLine.boq_item_id === line.boq_item_id;
+            })
+            .reduce((sum: number, variationLine: any) => sum + (Number(variationLine.value_impact) || 0), 0);
+          const committedCost = data.procurement
+            .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
+              && ['Approved', 'Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(entry.status || '')))
+            .reduce((sum: number, entry: any) => sum + (Number(entry.total_cost) || ((Number(entry.quantity) || 0) * (Number(entry.unit_cost) || 0))), 0);
+          const actualCost = data.costEntries
+            .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id)
+            .reduce((sum: number, entry: any) => sum + (Number(entry.amount) || 0), 0);
+          const originalBudget = Number(line.original_budget) || 0;
+          const revisedBudget = Math.round((originalBudget + approvedVariationValue) * 100) / 100;
+          const forecast = Number(line.forecast_at_completion) || Math.max(revisedBudget, committedCost, actualCost);
+          return {
+            ...line,
+            contract_role: contract?.contract_role || 'Main Contract',
+            contract_number: contract?.contract_number || '',
+            approved_variation_value: Math.round(approvedVariationValue * 100) / 100,
+            revised_budget: revisedBudget,
+            committed_cost: Math.round(committedCost * 100) / 100,
+            actual_cost: Math.round(actualCost * 100) / 100,
+            forecast_at_completion: Math.round(forecast * 100) / 100,
+            cost_to_complete: Math.max(0, Math.round((forecast - actualCost) * 100) / 100),
+          };
+        })
+      : activeView === 'paymentCertificates'
+        ? rawViewData.map((certificate: any) => {
+          const gross = Number(certificate.gross_certified_value) || 0;
+          const retention = Math.round(gross * (Number(certificate.retention_rate) || 0) / 100 * 100) / 100;
+          const beforeTax = gross - retention - (Number(certificate.advance_recovery) || 0) - (Number(certificate.deductions) || 0);
+          const tax = Math.round(Math.max(0, beforeTax) * (Number(certificate.tax_rate) || 0) / 100 * 100) / 100;
+          const contract = contractById.get(certificate.contract_id) as any;
+          return {
+            ...certificate,
+            contract_role: contract?.contract_role || 'Main Contract',
+            retention_amount: retention,
+            tax_amount: tax,
+            net_certified_value: Math.round((beforeTax + tax) * 100) / 100,
+          };
+        })
       : activeView === 'boq'
         ? headersWithContractContext.map((header: any) => ({
           ...header,
@@ -2189,6 +2317,14 @@ export default function App() {
         contractor: project.contractor,
       },
     }));
+    relationshipOptions.cost_code_id = data.costCodes
+      .filter((code: any) => code.status !== 'Inactive')
+      .map((code: any) => ({ value: code.id, label: `${code.cost_code || code.id} — ${code.name || 'Unnamed cost code'}`, data: { project_id: code.project_id, cost_code: code.cost_code, cost_code_name: code.name, classification: code.classification } }));
+    relationshipOptions.parent_cost_code_id = relationshipOptions.cost_code_id;
+    relationshipOptions.wbs_id = data.wbsNodes
+      .filter((node: any) => node.status !== 'Inactive')
+      .map((node: any) => ({ value: node.id, label: `${node.wbs_code || node.id} — ${node.name || 'Unnamed WBS'}`, data: { project_id: node.project_id, contract_id: node.contract_id, wbs_code: node.wbs_code } }));
+    relationshipOptions.parent_wbs_id = relationshipOptions.wbs_id;
     relationshipOptions.party_id = data.parties
       .filter((party: any) => party.status !== 'Inactive')
       .map((party: any) => ({

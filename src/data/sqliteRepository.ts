@@ -15,6 +15,7 @@ const TABLES = new Set([
   "client_invoice_tracking", "subcontractor_invoice_tracking",
   "parties", "party_contacts", "rate_history",
   "report_templates",
+  "cost_codes", "wbs_nodes", "contract_sov_lines", "payment_certificates",
 ]);
 
 type StoredRow = {
