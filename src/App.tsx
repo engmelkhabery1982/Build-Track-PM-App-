@@ -126,8 +126,12 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'planned_budget', label: 'Planned Budget', type: 'money', editable: true },
   { key: 'planned_start_date', label: 'Planned Start', type: 'date', editable: true },
   { key: 'planned_end_date', label: 'Planned Finish', type: 'date', editable: true },
+  { key: 'current_schedule_start', label: 'Current Forecast Start', type: 'date', editable: false },
   { key: 'current_schedule_finish', label: 'Current Forecast Finish', type: 'date', editable: false },
+  { key: 'start_variance_days', label: 'Start Variance (days)', type: 'number', editable: false },
   { key: 'finish_variance_days', label: 'Finish Variance (days)', type: 'number', editable: false },
+  { key: 'current_schedule_budget', label: 'Current Planned Budget', type: 'money', editable: false },
+  { key: 'budget_variance', label: 'Budget Variance', type: 'money', editable: false },
   { key: 'revision_reason', label: 'Revision Reason', type: 'text', editable: true },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
@@ -2191,16 +2195,26 @@ export default function App() {
     });
     const viewData = activeView === 'baselines'
       ? rawViewData.map((baseline: any) => {
+        const activities = data.schedules.filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim());
+        const activityStarts = activities
+          .map((activity: any) => String(activity.start_date || ''))
+          .filter(Boolean)
+          .sort();
         const activityEnds = data.schedules
           .filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim())
           .map((activity: any) => String(activity.end_date || ''))
           .filter(Boolean)
           .sort();
+        const currentStart = activityStarts[0] || null;
         const currentFinish = activityEnds[activityEnds.length - 1] || null;
+        const startVariance = baseline.planned_start_date && currentStart
+          ? Math.ceil((new Date(`${currentStart}T00:00:00`).getTime() - new Date(`${baseline.planned_start_date}T00:00:00`).getTime()) / 86400000)
+          : null;
         const finishVariance = baseline.planned_end_date && currentFinish
           ? Math.ceil((new Date(`${currentFinish}T00:00:00`).getTime() - new Date(`${baseline.planned_end_date}T00:00:00`).getTime()) / 86400000)
           : null;
-        return { ...baseline, current_schedule_finish: currentFinish, finish_variance_days: finishVariance };
+        const currentBudget = activities.reduce((sum: number, activity: any) => sum + (Number(activity.budget) || 0), 0);
+        return { ...baseline, current_schedule_start: currentStart, current_schedule_finish: currentFinish, start_variance_days: startVariance, finish_variance_days: finishVariance, current_schedule_budget: currentBudget, budget_variance: currentBudget - (Number(baseline.planned_budget) || 0) };
       })
       : activeView === 'contracts'
       ? contractsWithModifiedValue
