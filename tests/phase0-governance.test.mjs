@@ -36,6 +36,23 @@ test('codes remain unique inside the governed scope', () => {
   assert.doesNotThrow(() => codes.assertCodeIsUnique('contracts', { id: 'b', project_id: 'p2', contract_number: 'CNT-001' }, rows));
 });
 
+test('import dictionary maps governed schedule and commercial headers', () => {
+  assert.equal(dictionary.IMPORT_FIELD_ALIASES['project code'], 'project_code');
+  assert.equal(dictionary.IMPORT_FIELD_ALIASES['activity id'], 'activity_code');
+  assert.equal(dictionary.IMPORT_FIELD_ALIASES['planned quantity'], 'planned_quantity');
+  assert.equal(dictionary.IMPORT_FIELD_ALIASES['invoice #'], 'invoice_number');
+  assert.ok(dictionary.CANONICAL_FIELDS.schedule.includes('boq_item_id'));
+  assert.ok(dictionary.CANONICAL_FIELDS.financial.includes('actual_cost'));
+});
+
+test('new governed commercial and field records receive scoped codes', () => {
+  const costChange = codes.prepareCodeControlledInsert('cost_changes', { contract_id: 'contract-1', title: 'Forecast correction' }, [{ id: 'old', contract_id: 'contract-1', cost_change_number: 'CC-004' }]);
+  assert.equal(costChange.cost_change_number, 'CC-005');
+  const daily = codes.prepareCodeControlledInsert('site_daily_reports', { project_id: 'project-1', contract_id: 'contract-1', report_date: '2026-08-24' }, [{ id: 'old', project_id: 'project-1', contract_id: 'contract-1', report_number: 'SDR-009' }]);
+  assert.equal(daily.report_number, 'SDR-010');
+  assert.equal(daily.report_number_locked, false);
+});
+
 test('planned value uses approved distribution before linear fallback', () => {
   const activity = { id: 'a1', start_date: '2026-01-01', end_date: '2026-01-31', planned_quantity: 100, unit_rate: 10 };
   assert.equal(schedule.scheduleBudget(activity), 1000);
