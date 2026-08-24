@@ -3,180 +3,278 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 #[tauri::command]
-fn save_excel_download(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
-  let safe_name = std::path::Path::new(&file_name)
-    .file_name()
-    .and_then(|name| name.to_str())
-    .filter(|name| !name.is_empty())
-    .ok_or_else(|| "Invalid file name.".to_string())?;
-  let directory = app.path().download_dir().map_err(|error| error.to_string())?;
-  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-  let target = directory.join(safe_name);
-  fs::write(&target, bytes).map_err(|error| error.to_string())?;
-  Ok(target.display().to_string())
+fn save_excel_download(
+    app: tauri::AppHandle,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Invalid file name.".to_string())?;
+    let directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    let target = directory.join(safe_name);
+    fs::write(&target, bytes).map_err(|error| error.to_string())?;
+    Ok(target.display().to_string())
 }
 
 #[tauri::command]
-fn save_document_attachment(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
-  if bytes.len() > 25 * 1024 * 1024 { return Err("Attachment exceeds the 25 MB local limit.".to_string()); }
-  let safe_name = std::path::Path::new(&file_name).file_name().and_then(|name| name.to_str()).filter(|name| !name.is_empty()).ok_or_else(|| "Invalid file name.".to_string())?;
-  let directory = app.path().app_data_dir().map_err(|error| error.to_string())?.join("attachments");
-  fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-  let target = directory.join(format!("{}_{}", chrono_like_timestamp(), safe_name));
-  fs::write(&target, bytes).map_err(|error| error.to_string())?;
-  Ok(target.display().to_string())
+fn save_document_attachment(
+    app: tauri::AppHandle,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    if bytes.len() > 25 * 1024 * 1024 {
+        return Err("Attachment exceeds the 25 MB local limit.".to_string());
+    }
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Invalid file name.".to_string())?;
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("attachments");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    let target = directory.join(format!("{}_{}", chrono_like_timestamp(), safe_name));
+    fs::write(&target, bytes).map_err(|error| error.to_string())?;
+    Ok(target.display().to_string())
 }
 
 #[tauri::command]
 fn backup_local_database(app: tauri::AppHandle) -> Result<String, String> {
-  // The SQLite plugin stores the local workspace under the app data directory.
-  // Preserve the WAL companions too, so an active SQLite database can be
-  // restored with its most recent committed transactions intact.
-  let source = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
-  let directory = app.path().download_dir().map_err(|error| error.to_string())?.join("BuildTrack Backups");
-  let attachments = app.path().app_data_dir().map_err(|error| error.to_string())?.join("attachments");
-  let backup_directory = backup_workspace(&source, &attachments, &directory)?;
-  verify_backup_workspace(&backup_directory)?;
-  Ok(backup_directory.display().to_string())
+    // The SQLite plugin stores the local workspace under the app data directory.
+    // Preserve the WAL companions too, so an active SQLite database can be
+    // restored with its most recent committed transactions intact.
+    let source = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    let directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?
+        .join("BuildTrack Backups");
+    let attachments = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("attachments");
+    let backup_directory = backup_workspace(&source, &attachments, &directory)?;
+    verify_backup_workspace(&backup_directory)?;
+    Ok(backup_directory.display().to_string())
 }
 
 #[tauri::command]
 fn verify_local_backup(backup_path: String) -> Result<String, String> {
-  let backup_directory = PathBuf::from(backup_path);
-  verify_backup_workspace(&backup_directory)?;
-  Ok(format!("Backup verified: {}", backup_directory.display()))
+    let backup_directory = PathBuf::from(backup_path);
+    verify_backup_workspace(&backup_directory)?;
+    Ok(format!("Backup verified: {}", backup_directory.display()))
 }
 
 #[tauri::command]
 fn stage_local_restore(app: tauri::AppHandle, backup_path: String) -> Result<String, String> {
-  let backup_directory = PathBuf::from(backup_path);
-  verify_backup_workspace(&backup_directory)?;
-  // SQLite can retain an active handle while the UI is open.  Stage a verified
-  // copy and apply it during the next startup before the front end opens it.
-  let staging = app.path().app_config_dir().map_err(|error| error.to_string())?.join("restore-pending");
-  if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
-  copy_directory(&backup_directory, &staging)?;
-  verify_backup_workspace(&staging)?;
-  Ok("Restore is ready. Close and reopen BuildTrack to apply the verified backup.".to_string())
+    let backup_directory = PathBuf::from(backup_path);
+    verify_backup_workspace(&backup_directory)?;
+    // SQLite can retain an active handle while the UI is open.  Stage a verified
+    // copy and apply it during the next startup before the front end opens it.
+    let staging = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("restore-pending");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
+    }
+    copy_directory(&backup_directory, &staging)?;
+    verify_backup_workspace(&staging)?;
+    Ok("Restore is ready. Close and reopen BuildTrack to apply the verified backup.".to_string())
 }
 
-fn backup_workspace(source: &Path, attachments: &Path, backup_root: &Path) -> Result<PathBuf, String> {
-  if !source.exists() { return Err("The local BuildTrack database has not been created yet.".to_string()); }
-  fs::create_dir_all(backup_root).map_err(|error| error.to_string())?;
-  let stamp = chrono_like_timestamp();
-  let backup_directory = backup_root.join(format!("buildtrack-backup-{}", stamp));
-  fs::create_dir_all(&backup_directory).map_err(|error| error.to_string())?;
-  let target = backup_directory.join("buildtrack.db");
-  fs::copy(source, &target).map_err(|error| error.to_string())?;
-  for suffix in ["-wal", "-shm"] {
-    let companion = PathBuf::from(format!("{}{}", source.display(), suffix));
-    if companion.exists() {
-      let companion_target = PathBuf::from(format!("{}{}", target.display(), suffix));
-      fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
+fn backup_workspace(
+    source: &Path,
+    attachments: &Path,
+    backup_root: &Path,
+) -> Result<PathBuf, String> {
+    if !source.exists() {
+        return Err("The local BuildTrack database has not been created yet.".to_string());
     }
-  }
-  if attachments.exists() {
-    copy_directory(attachments, &backup_directory.join("attachments"))?;
-  }
-  let database_bytes = fs::metadata(&target).map_err(|error| error.to_string())?.len();
-  fs::write(backup_directory.join("BACKUP_INFO.txt"), format!(
+    fs::create_dir_all(backup_root).map_err(|error| error.to_string())?;
+    let stamp = chrono_like_timestamp();
+    let backup_directory = backup_root.join(format!("buildtrack-backup-{}", stamp));
+    fs::create_dir_all(&backup_directory).map_err(|error| error.to_string())?;
+    let target = backup_directory.join("buildtrack.db");
+    fs::copy(source, &target).map_err(|error| error.to_string())?;
+    for suffix in ["-wal", "-shm"] {
+        let companion = PathBuf::from(format!("{}{}", source.display(), suffix));
+        if companion.exists() {
+            let companion_target = PathBuf::from(format!("{}{}", target.display(), suffix));
+            fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
+        }
+    }
+    if attachments.exists() {
+        copy_directory(attachments, &backup_directory.join("attachments"))?;
+    }
+    let database_bytes = fs::metadata(&target)
+        .map_err(|error| error.to_string())?
+        .len();
+    fs::write(backup_directory.join("BACKUP_INFO.txt"), format!(
     "BuildTrack local workspace backup\nCreated (UTC milliseconds): {}\nDatabase: buildtrack.db\nDatabase bytes: {}\nAttachments: {}\n\nVerified automatically when created. Restore only while BuildTrack is closed. Keep this folder intact.",
     stamp, database_bytes, if attachments.exists() { "included" } else { "none" },
   )).map_err(|error| error.to_string())?;
-  Ok(backup_directory)
+    Ok(backup_directory)
 }
 
 fn verify_backup_workspace(backup_directory: &Path) -> Result<(), String> {
-  let database = backup_directory.join("buildtrack.db");
-  let metadata = fs::metadata(&database).map_err(|_| "Backup does not contain buildtrack.db.".to_string())?;
-  if metadata.len() < 16 { return Err("Backup database is too small to be a valid SQLite database.".to_string()); }
-  let signature = fs::read(&database).map_err(|error| error.to_string())?;
-  if signature.get(..16) != Some(b"SQLite format 3\0") {
-    return Err("Backup database does not have a valid SQLite signature.".to_string());
-  }
-  if !backup_directory.join("BACKUP_INFO.txt").is_file() {
-    return Err("Backup manifest BACKUP_INFO.txt is missing.".to_string());
-  }
-  Ok(())
+    let database = backup_directory.join("buildtrack.db");
+    let metadata = fs::metadata(&database)
+        .map_err(|_| "Backup does not contain buildtrack.db.".to_string())?;
+    if metadata.len() < 16 {
+        return Err("Backup database is too small to be a valid SQLite database.".to_string());
+    }
+    let signature = fs::read(&database).map_err(|error| error.to_string())?;
+    if signature.get(..16) != Some(b"SQLite format 3\0") {
+        return Err("Backup database does not have a valid SQLite signature.".to_string());
+    }
+    if !backup_directory.join("BACKUP_INFO.txt").is_file() {
+        return Err("Backup manifest BACKUP_INFO.txt is missing.".to_string());
+    }
+    Ok(())
 }
 
 #[allow(dead_code)] // Used by the isolated round-trip test; production restore remains manual while the app is closed.
-fn restore_workspace_from_backup(backup_directory: &Path, target_database: &Path, target_attachments: &Path) -> Result<(), String> {
-  verify_backup_workspace(backup_directory)?;
-  if let Some(parent) = target_database.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
-  fs::copy(backup_directory.join("buildtrack.db"), target_database).map_err(|error| error.to_string())?;
-  for suffix in ["-wal", "-shm"] {
-    let source = PathBuf::from(format!("{}{}", backup_directory.join("buildtrack.db").display(), suffix));
-    if source.exists() {
-      let target = PathBuf::from(format!("{}{}", target_database.display(), suffix));
-      fs::copy(source, target).map_err(|error| error.to_string())?;
+fn restore_workspace_from_backup(
+    backup_directory: &Path,
+    target_database: &Path,
+    target_attachments: &Path,
+) -> Result<(), String> {
+    verify_backup_workspace(backup_directory)?;
+    if let Some(parent) = target_database.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-  }
-  let backup_attachments = backup_directory.join("attachments");
-  if backup_attachments.exists() { copy_directory(&backup_attachments, target_attachments)?; }
-  Ok(())
+    fs::copy(backup_directory.join("buildtrack.db"), target_database)
+        .map_err(|error| error.to_string())?;
+    for suffix in ["-wal", "-shm"] {
+        let source = PathBuf::from(format!(
+            "{}{}",
+            backup_directory.join("buildtrack.db").display(),
+            suffix
+        ));
+        if source.exists() {
+            let target = PathBuf::from(format!("{}{}", target_database.display(), suffix));
+            fs::copy(source, target).map_err(|error| error.to_string())?;
+        }
+    }
+    let backup_attachments = backup_directory.join("attachments");
+    if backup_attachments.exists() {
+        copy_directory(&backup_attachments, target_attachments)?;
+    }
+    Ok(())
 }
 
 fn apply_staged_restore(app: &tauri::AppHandle) -> Result<(), String> {
-  let config_directory = app.path().app_config_dir().map_err(|error| error.to_string())?;
-  let staging = config_directory.join("restore-pending");
-  if !staging.exists() { return Ok(()); }
-  let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
-  restore_workspace_from_backup(&staging, &config_directory.join("buildtrack.db"), &app_data.join("attachments"))?;
-  fs::remove_dir_all(staging).map_err(|error| error.to_string())?;
-  Ok(())
+    let config_directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    let staging = config_directory.join("restore-pending");
+    if !staging.exists() {
+        return Ok(());
+    }
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    restore_workspace_from_backup(
+        &staging,
+        &config_directory.join("buildtrack.db"),
+        &app_data.join("attachments"),
+    )?;
+    fs::remove_dir_all(staging).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
-  fs::create_dir_all(target).map_err(|error| error.to_string())?;
-  for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
-    let entry = entry.map_err(|error| error.to_string())?;
-    let destination = target.join(entry.file_name());
-    if entry.file_type().map_err(|error| error.to_string())?.is_dir() {
-      copy_directory(&entry.path(), &destination)?;
-    } else {
-      fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
+    fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let destination = target.join(entry.file_name());
+        if entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            copy_directory(&entry.path(), &destination)?;
+        } else {
+            fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
+        }
     }
-  }
-  Ok(())
+    Ok(())
 }
 
-fn chrono_like_timestamp() -> u128 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis()).unwrap_or(0) }
+fn chrono_like_timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or(0)
+}
 
 #[cfg(test)]
 mod backup_tests {
-  use super::*;
+    use super::*;
 
-  #[test]
-  fn backup_verify_and_restore_round_trip_preserves_workspace() {
-    let root = std::env::temp_dir().join(format!("buildtrack-backup-test-{}", chrono_like_timestamp()));
-    let source_dir = root.join("source");
-    let attachments = source_dir.join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let database = source_dir.join("buildtrack.db");
-    fs::write(&database, [b"SQLite format 3\0".as_slice(), b"test workspace"].concat()).unwrap();
-    fs::write(attachments.join("evidence.txt"), b"inspection evidence").unwrap();
+    #[test]
+    fn backup_verify_and_restore_round_trip_preserves_workspace() {
+        let root = std::env::temp_dir().join(format!(
+            "buildtrack-backup-test-{}",
+            chrono_like_timestamp()
+        ));
+        let source_dir = root.join("source");
+        let attachments = source_dir.join("attachments");
+        fs::create_dir_all(&attachments).unwrap();
+        let database = source_dir.join("buildtrack.db");
+        fs::write(
+            &database,
+            [b"SQLite format 3\0".as_slice(), b"test workspace"].concat(),
+        )
+        .unwrap();
+        fs::write(attachments.join("evidence.txt"), b"inspection evidence").unwrap();
 
-    let backup = backup_workspace(&database, &attachments, &root.join("backups")).unwrap();
-    verify_backup_workspace(&backup).unwrap();
+        let backup = backup_workspace(&database, &attachments, &root.join("backups")).unwrap();
+        verify_backup_workspace(&backup).unwrap();
 
-    let restore_root = root.join("restored");
-    let restored_database = restore_root.join("buildtrack.db");
-    let restored_attachments = restore_root.join("attachments");
-    restore_workspace_from_backup(&backup, &restored_database, &restored_attachments).unwrap();
-    assert_eq!(fs::read(&database).unwrap(), fs::read(&restored_database).unwrap());
-    assert_eq!(fs::read(attachments.join("evidence.txt")).unwrap(), fs::read(restored_attachments.join("evidence.txt")).unwrap());
+        let restore_root = root.join("restored");
+        let restored_database = restore_root.join("buildtrack.db");
+        let restored_attachments = restore_root.join("attachments");
+        restore_workspace_from_backup(&backup, &restored_database, &restored_attachments).unwrap();
+        assert_eq!(
+            fs::read(&database).unwrap(),
+            fs::read(&restored_database).unwrap()
+        );
+        assert_eq!(
+            fs::read(attachments.join("evidence.txt")).unwrap(),
+            fs::read(restored_attachments.join("evidence.txt")).unwrap()
+        );
 
-    fs::remove_dir_all(root).unwrap();
-  }
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let migrations = vec![tauri_plugin_sql::Migration {
-    version: 1,
-    description: "create_buildtrack_local_schema",
-    sql: r#"
+    let migrations = vec![
+        tauri_plugin_sql::Migration {
+            version: 1,
+            description: "create_buildtrack_local_schema",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL
       );
@@ -220,11 +318,12 @@ pub fn run() {
       CREATE TABLE IF NOT EXISTS client_invoice_tracking (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL, FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT, FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT, FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT, FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT);
       CREATE TABLE IF NOT EXISTS subcontractor_invoice_tracking (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL, FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT, FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT, FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id) ON DELETE RESTRICT, FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 2,
-    description: "sync_local_invoice_tracking",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 2,
+            description: "sync_local_invoice_tracking",
+            sql: r#"
       CREATE TRIGGER IF NOT EXISTS sync_client_invoice_tracking_insert
       AFTER INSERT ON client_invoices
       BEGIN
@@ -307,11 +406,12 @@ pub fn run() {
       AFTER DELETE ON subcontractor_invoices
       BEGIN DELETE FROM subcontractor_invoice_tracking WHERE id = OLD.id; END;
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 3,
-    description: "complete_local_relation_columns",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 3,
+            description: "complete_local_relation_columns",
+            sql: r#"
       ALTER TABLE projects ADD COLUMN project_id TEXT;
       ALTER TABLE projects ADD COLUMN contract_id TEXT;
       ALTER TABLE projects ADD COLUMN parent_main_project_id TEXT;
@@ -323,11 +423,12 @@ pub fn run() {
       ALTER TABLE contracts ADD COLUMN boq_header_id TEXT;
       ALTER TABLE contracts ADD COLUMN boq_item_id TEXT;
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 4,
-    description: "add_schedule_time_phasing",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 4,
+            description: "add_schedule_time_phasing",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS schedule_distributions (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -338,11 +439,12 @@ pub fn run() {
         FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
       );
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 5,
-    description: "add_pmo_governance_registers",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 5,
+            description: "add_pmo_governance_registers",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS project_baselines (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -372,11 +474,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_reporting_periods_project ON reporting_periods(project_id);
       CREATE INDEX IF NOT EXISTS idx_governance_register_project ON governance_register(project_id);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 6,
-    description: "add_approval_and_audit_governance",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 6,
+            description: "add_approval_and_audit_governance",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS approval_requests (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -395,11 +498,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 7,
-    description: "add_field_quality_collaboration_registers",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 7,
+            description: "add_field_quality_collaboration_registers",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS rfi_register (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -428,11 +532,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_submittals_project ON submittals(project_id);
       CREATE INDEX IF NOT EXISTS idx_quality_project ON quality_register(project_id);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 8,
-    description: "add_pmo_reporting_snapshots",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 8,
+            description: "add_pmo_reporting_snapshots",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS pmo_snapshots (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -442,11 +547,12 @@ pub fn run() {
       );
       CREATE INDEX IF NOT EXISTS idx_pmo_snapshots_project_date ON pmo_snapshots(project_id, created_at DESC);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 9,
-    description: "add_local_user_accounts",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 9,
+            description: "add_local_user_accounts",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS app_users (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -454,11 +560,12 @@ pub fn run() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS uq_app_users_username ON app_users(json_extract(payload, '$.username'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 10,
-    description: "add_party_master_data",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 10,
+            description: "add_party_master_data",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS parties (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -479,11 +586,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_party_contacts_party_id ON party_contacts(json_extract(payload, '$.party_id'));
       CREATE INDEX IF NOT EXISTS idx_rate_history_party_item ON rate_history(json_extract(payload, '$.party_id'), json_extract(payload, '$.item_code'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 11,
-    description: "add_report_templates",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 11,
+            description: "add_report_templates",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS report_templates (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -491,11 +599,12 @@ pub fn run() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS uq_report_templates_name ON report_templates(lower(json_extract(payload, '$.template_name')));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 12,
-    description: "add_variation_lines",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 12,
+            description: "add_variation_lines",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS variation_lines (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -506,11 +615,12 @@ pub fn run() {
       );
       CREATE INDEX IF NOT EXISTS idx_variation_lines_variation ON variation_lines(json_extract(payload, '$.variation_id'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 13,
-    description: "index_governed_project_controls_relationships",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 13,
+            description: "index_governed_project_controls_relationships",
+            sql: r#"
       CREATE INDEX IF NOT EXISTS idx_contracts_project ON contracts(project_id);
       CREATE INDEX IF NOT EXISTS idx_contracts_parent_main ON contracts(parent_main_contract_id);
       CREATE INDEX IF NOT EXISTS idx_boq_headers_project_contract ON boq_headers(project_id, contract_id);
@@ -528,11 +638,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_cost_entries_date ON cost_entries(project_id, json_extract(payload, '$.date'));
       CREATE INDEX IF NOT EXISTS idx_wirs_inspection_date ON wir_entries(project_id, json_extract(payload, '$.inspection_date'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 14,
-    description: "add_commercial_cost_cbs_wbs_masters",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 14,
+            description: "add_commercial_cost_cbs_wbs_masters",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS cost_codes (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -555,11 +666,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_wbs_nodes_project_parent
         ON wbs_nodes(project_id, json_extract(payload, '$.parent_wbs_id'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 15,
-    description: "add_contract_schedule_of_values",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 15,
+            description: "add_contract_schedule_of_values",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS contract_sov_lines (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -579,11 +691,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_contract_sov_cost_code
         ON contract_sov_lines(json_extract(payload, '$.cost_code_id'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 16,
-    description: "govern_purchase_order_commitments",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 16,
+            description: "govern_purchase_order_commitments",
+            sql: r#"
       CREATE UNIQUE INDEX IF NOT EXISTS uq_procurement_purchase_order
         ON procurement(COALESCE(contract_id, ''), lower(json_extract(payload, '$.purchase_order_number')))
         WHERE json_extract(payload, '$.purchase_order_number') IS NOT NULL
@@ -591,11 +704,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_procurement_commitment_scope
         ON procurement(project_id, contract_id, boq_item_id, json_extract(payload, '$.status'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 17,
-    description: "add_governed_payment_certificates",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 17,
+            description: "add_governed_payment_certificates",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS payment_certificates (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -608,11 +722,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_payment_certificates_scope_status
         ON payment_certificates(project_id, contract_id, json_extract(payload, '$.status'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 18,
-    description: "add_site_daily_reports",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 18,
+            description: "add_site_daily_reports",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS site_daily_reports (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -626,11 +741,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_site_daily_reports_scope_date
         ON site_daily_reports(project_id, contract_id, json_extract(payload, '$.report_date'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 19,
-    description: "expose_financial_reporting_columns",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 19,
+            description: "expose_financial_reporting_columns",
+            sql: r#"
       -- Generated columns keep legacy JSON rows readable while exposing the
       -- financial reporting facts to SQLite's query planner and future APIs.
       ALTER TABLE cost_entries ADD COLUMN financial_date TEXT GENERATED ALWAYS AS (json_extract(payload, '$.date')) VIRTUAL;
@@ -671,11 +787,12 @@ pub fn run() {
       ALTER TABLE contract_sov_lines ADD COLUMN status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
       CREATE INDEX IF NOT EXISTS idx_contract_sov_financial_reporting ON contract_sov_lines(project_id, contract_id, status_sql);
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 20,
-    description: "add_governed_cost_changes",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 20,
+            description: "add_governed_cost_changes",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS cost_changes (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL, contract_id TEXT NOT NULL,
         boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT,
@@ -689,11 +806,12 @@ pub fn run() {
       CREATE INDEX IF NOT EXISTS idx_cost_changes_scope_status
         ON cost_changes(project_id, contract_id, json_extract(payload, '$.status'), json_extract(payload, '$.effective_date'));
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 21,
-    description: "add_normalized_financial_ledger",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 21,
+            description: "add_normalized_financial_ledger",
+            sql: r#"
       CREATE TABLE IF NOT EXISTS financial_ledger (
         id TEXT PRIMARY KEY,
         source_table TEXT NOT NULL,
@@ -752,11 +870,12 @@ pub fn run() {
       END;
       CREATE TRIGGER IF NOT EXISTS financial_ledger_payment_certificates_ad AFTER DELETE ON payment_certificates BEGIN DELETE FROM financial_ledger WHERE source_table = 'payment_certificates' AND source_id = OLD.id; END;
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }, tauri_plugin_sql::Migration {
-    version: 22,
-    description: "govern_sov_cost_changes_and_commitment_ledger",
-    sql: r#"
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 22,
+            description: "govern_sov_cost_changes_and_commitment_ledger",
+            sql: r#"
       -- A cost change is allocated to exactly one SOV line. The repository
       -- writes this real column as well as the audit payload.
       ALTER TABLE cost_changes ADD COLUMN contract_sov_line_id TEXT;
@@ -785,27 +904,34 @@ pub fn run() {
       END;
       CREATE TRIGGER IF NOT EXISTS financial_ledger_procurement_ad AFTER DELETE ON procurement BEGIN DELETE FROM financial_ledger WHERE source_table = 'procurement' AND source_id = OLD.id; END;
     "#,
-    kind: tauri_plugin_sql::MigrationKind::Up,
-  }];
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+    ];
 
-  tauri::Builder::default()
-    .plugin(
-      tauri_plugin_sql::Builder::default()
-        .add_migrations("sqlite:buildtrack.db", migrations)
-        .build(),
-    )
-    .invoke_handler(tauri::generate_handler![save_excel_download, save_document_attachment, backup_local_database, verify_local_backup, stage_local_restore])
-    .setup(|app| {
-      apply_staged_restore(app.handle())?;
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
-      Ok(())
-    })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    tauri::Builder::default()
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:buildtrack.db", migrations)
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![
+            save_excel_download,
+            save_document_attachment,
+            backup_local_database,
+            verify_local_backup,
+            stage_local_restore
+        ])
+        .setup(|app| {
+            apply_staged_restore(app.handle())?;
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
