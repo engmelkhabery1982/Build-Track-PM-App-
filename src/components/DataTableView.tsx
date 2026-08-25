@@ -5,6 +5,8 @@ import {
   assertCodeCanBeLocked,
   assertCodeIsUnique,
   assertCodeUpdateAllowed,
+  applyDerivedHierarchyLevel,
+  deriveHierarchyLevel,
   assertValidHierarchyChange,
   assertRecordGovernance,
   createCodeDraft,
@@ -16,6 +18,7 @@ import {
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
 import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
+import { commitGovernedImport, reverseGovernedImport, type GovernedImportDerivedPatch } from '@/data/governedImport';
 import { addWorkingDays, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
@@ -371,6 +374,8 @@ export function DataTableView({
   const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[]; validationErrors: { row: number; message: string }[] } | null>(null);
   const [lastImportRows, setLastImportRows] = useState<Record<string, any>[]>([]);
   const [lastImportParentRestores, setLastImportParentRestores] = useState<Record<string, any>[]>([]);
+  const [lastImportBatchId, setLastImportBatchId] = useState<string | null>(null);
+  const [lastImportDerivedRestores, setLastImportDerivedRestores] = useState<{ table: 'boq_items' | 'contracts'; row: Record<string, any> }[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -908,6 +913,17 @@ export function DataTableView({
       const ur = Number(out.unit_rate) || 0;
       out.amount = Math.round(qty * ur * 100) / 100;
     }
+    if (tableName === 'procurement_receipts') {
+      const acceptedQuantity = Number(out.accepted_quantity) || 0;
+      const unitCost = Number(out.unit_cost) || 0;
+      out.accepted_amount = Math.round(acceptedQuantity * unitCost * 100) / 100;
+    }
+    if (tableName === 'supplier_invoice_lines') {
+      const quantity = Number(out.quantity) || 0;
+      const unitCost = Number(out.unit_cost) || 0;
+      out.goods_amount = Math.round(quantity * unitCost * 100) / 100;
+      out.line_total = Math.round((Number(out.goods_amount) + (Number(out.tax_amount) || 0)) * 100) / 100;
+    }
     if (tableName === 'procurement') {
       const qty = Number(out.quantity) || 0;
       const unitCost = Number(out.unit_cost) || 0;
@@ -1035,7 +1051,7 @@ export function DataTableView({
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
-      'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id',
+      'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id', 'procurement_id',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       'baseline_start_date', 'baseline_end_date', 'planned_start_date', 'planned_end_date', 'variance_reason',
@@ -1049,6 +1065,12 @@ export function DataTableView({
       ...relatedData,
       [changedKey]: changedKey === 'company_name' ? (selected?.data?.company_name || '') : selectedValue,
     };
+    if (tableName === 'cost_codes' && changedKey === 'parent_cost_code_id') {
+      updated.cbs_level = deriveHierarchyLevel('cost_codes', data, selectedValue);
+    }
+    if (tableName === 'wbs_nodes' && changedKey === 'parent_wbs_id') {
+      updated.wbs_level = deriveHierarchyLevel('wbs_nodes', data, selectedValue);
+    }
     if (tableName === 'boq_headers' && changedKey === 'contract_id' && selected?.data?.contract_number) {
       const contractCode = String(selected.data.contract_number);
       const prefix = selected.data.contract_role === 'Subcontract'
@@ -1158,6 +1180,9 @@ export function DataTableView({
     const selectedParentCostCode = relationshipOptions?.parent_cost_code_id?.find((option) => option.value === record.parent_cost_code_id);
     const selectedParentWbs = relationshipOptions?.parent_wbs_id?.find((option) => option.value === record.parent_wbs_id);
     const selectedInvoiceTracking = relationshipOptions?.invoice_tracking_id?.find((option) => option.value === record.invoice_tracking_id);
+    const selectedProcurement = relationshipOptions?.procurement_id?.find((option) => option.value === record.procurement_id);
+    const selectedSupplierInvoice = relationshipOptions?.supplier_invoice_id?.find((option) => option.value === record.supplier_invoice_id);
+    const selectedProcurementReceipt = relationshipOptions?.procurement_receipt_id?.find((option) => option.value === record.procurement_receipt_id);
     const supersededDocument = relationshipOptions?.supersedes_document_id?.find((option) => option.value === record.supersedes_document_id);
 
     if (selectedContract?.data?.project_id && record.project_id && selectedContract.data.project_id !== record.project_id) {
@@ -1195,6 +1220,64 @@ export function DataTableView({
     }
     if (selectedParentWbs?.data?.contract_id && record.contract_id && selectedParentWbs.data.contract_id !== record.contract_id) {
       throw new Error('The parent WBS node belongs to a different contract.');
+    }
+    if (selectedProcurement?.data?.project_id && record.project_id && selectedProcurement.data.project_id !== record.project_id) {
+      throw new Error('The selected purchase order belongs to a different project.');
+    }
+    if (selectedProcurement?.data?.contract_id && record.contract_id && selectedProcurement.data.contract_id !== record.contract_id) {
+      throw new Error('The selected purchase order belongs to a different contract.');
+    }
+    if (tableName === 'procurement_receipts') {
+      if (!selectedProcurement) throw new Error('Select a valid purchase order before recording a receipt.');
+      const received = Number(record.received_quantity) || 0;
+      const accepted = Number(record.accepted_quantity) || 0;
+      if (received <= 0) throw new Error('Received quantity must be greater than zero.');
+      if (accepted < 0 || accepted > received) throw new Error('Accepted quantity must be between zero and the received quantity.');
+      if (String(record.status || '') === 'Accepted' && accepted <= 0) throw new Error('An accepted receipt requires an accepted quantity greater than zero.');
+      const previouslyAccepted = data
+        .filter((row) => row.id !== record.id && row.procurement_id === record.procurement_id && String(row.status || '') === 'Accepted')
+        .reduce((sum, row) => sum + (Number(row.accepted_quantity) || 0), 0);
+      const currentAccepted = String(record.status || '') === 'Accepted' ? accepted : 0;
+      const poQuantity = Number(selectedProcurement.data?.quantity) || 0;
+      if (poQuantity > 0 && previouslyAccepted + currentAccepted > poQuantity + 0.000001) {
+        throw new Error(`Accepted receipt quantity exceeds the purchase-order quantity (${poQuantity}).`);
+      }
+    }
+    if (tableName === 'supplier_invoice_lines') {
+      if (!selectedSupplierInvoice) throw new Error('Select a valid supplier invoice before allocating a goods receipt.');
+      if (!selectedProcurementReceipt) throw new Error('Select an accepted goods receipt for the supplier-invoice match.');
+      if (selectedSupplierInvoice.data?.project_id !== selectedProcurementReceipt.data?.project_id
+        || String(selectedSupplierInvoice.data?.contract_id || '') !== String(selectedProcurementReceipt.data?.contract_id || '')) {
+        throw new Error('The supplier invoice and accepted goods receipt must belong to the same project and contract.');
+      }
+      if (selectedSupplierInvoice.data?.supplier_party_id && selectedProcurementReceipt.data?.supplier_party_id
+        && selectedSupplierInvoice.data.supplier_party_id !== selectedProcurementReceipt.data.supplier_party_id) {
+        throw new Error('The supplier invoice and accepted goods receipt must belong to the same supplier.');
+      }
+      const quantity = Number(record.quantity) || 0;
+      const receiptQuantity = Number(selectedProcurementReceipt.data?.quantity) || 0;
+      if (quantity <= 0) throw new Error('An invoice match line requires a positive invoiced quantity.');
+      const allocated = data.filter((row) => row.id !== record.id && row.procurement_receipt_id === record.procurement_receipt_id)
+        .reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+      if (allocated + quantity > receiptQuantity + 0.000001) {
+        throw new Error(`Invoice quantity exceeds the accepted, unbilled goods-receipt quantity (${receiptQuantity}).`);
+      }
+    }
+    if (tableName === 'supplier_invoice_payments') {
+      if (!selectedSupplierInvoice) throw new Error('Select a valid approved supplier invoice before recording a payment.');
+      if (!['Approved', 'Partially Paid', 'Paid'].includes(String(selectedSupplierInvoice.data?.status || ''))) throw new Error('Payments can be recorded only for an approved supplier invoice.');
+      if (record.payment_date && selectedSupplierInvoice.data?.invoice_date && String(record.payment_date) < String(selectedSupplierInvoice.data.invoice_date)) throw new Error('Payment date cannot be before the supplier invoice date.');
+      if ((Number(record.amount) || 0) <= 0) throw new Error('A supplier payment amount must be greater than zero.');
+    }
+    if (tableName === 'supplier_invoices') {
+      if (!selectedSupplierParty) throw new Error('Select an active supplier from Master Data before recording a supplier invoice.');
+      if (record.invoice_date && record.due_date && String(record.due_date) < String(record.invoice_date)) throw new Error('Supplier invoice due date cannot be before its invoice date.');
+      if (['Approved', 'Partially Paid', 'Paid'].includes(String(record.status || ''))) {
+        const matchingLines = data.filter((row) => row.supplier_invoice_id === record.id);
+        if (matchingLines.length === 0) throw new Error('An approved supplier invoice requires at least one accepted-goods-receipt match line.');
+        const missingReason = matchingLines.some((line) => Number(line.unit_cost) !== Number(line.accepted_unit_cost) && !String(line.variance_reason || record.variance_reason || '').trim());
+        if (missingReason) throw new Error('A unit-cost variance needs an explicit approved variance reason before the supplier invoice can be approved.');
+      }
     }
     if (supersededDocument?.data?.project_id && record.project_id && supersededDocument.data.project_id !== record.project_id) {
       throw new Error('The superseded document belongs to a different project.');
@@ -1493,7 +1576,7 @@ export function DataTableView({
     preserveViewport();
     try {
       const row = prepareCodeControlledInsert(tableName, newRow, data);
-      const prepared = coerceTypes(row);
+      const prepared = coerceTypes(applyDerivedHierarchyLevel(tableName, data, row));
       assertRelationshipScope(prepared);
       validateRecord?.(prepared);
       const inserted = onInsert
@@ -1522,7 +1605,12 @@ export function DataTableView({
     preserveViewport();
     try {
       const before = data.find((row) => row.id === editingId);
-      const patch = coerceTypes(editRow);
+      const requestedPatch = coerceTypes(editRow);
+      const patch = {
+        ...requestedPatch,
+        ...Object.fromEntries(Object.entries(applyDerivedHierarchyLevel(tableName, data, { ...data.find((row) => row.id === editingId), ...requestedPatch }))
+          .filter(([key]) => key === 'cbs_level' || key === 'wbs_level')),
+      };
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === editingId), patch);
       assertValidHierarchyChange(tableName, data, editingId, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === editingId), ...patch });
@@ -1853,6 +1941,7 @@ export function DataTableView({
       const validationErrors: { row: number; message: string }[] = [];
       mapped.forEach((row, index) => {
         try {
+          Object.assign(row, applyDerivedHierarchyLevel(tableName, data, row));
           assertRelationshipScope(row);
           validateRecord?.(row);
         } catch (error: any) {
@@ -1869,6 +1958,93 @@ export function DataTableView({
   async function commitImportPreview() {
     if (!importPreview) return;
     setImporting(true);
+    const isGovernedAtomicImport = ['boq_items', 'schedules', 'wir_entries'].includes(tableName);
+    if (isGovernedAtomicImport && importPreview.validationErrors.length) {
+      setImportResult({ success: 0, failed: importPreview.rows.length, errors: importPreview.validationErrors.map((issue) => `Row ${issue.row}: ${issue.message}`) });
+      setOperationNotice({ kind: 'error', text: 'No rows were saved. Governed imports require every row to pass validation.' });
+      setImporting(false);
+      return;
+    }
+    if (isGovernedAtomicImport && '__TAURI_INTERNALS__' in window) {
+      try {
+        const createdAt = new Date().toISOString();
+        const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
+        const preparedRows = importPreview.rows.map((source) => {
+          const { _imported_governed_dates, _primavera_predecessor_code, ...row } = source;
+          return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
+        });
+        if (tableName === 'schedules') {
+          const activitiesByCode = new Map([...data, ...preparedRows].map((activity) => [String(activity.activity_code || ''), activity]));
+          importPreview.rows.forEach((source, index) => {
+            const predecessorCode = String(source._primavera_predecessor_code || '');
+            if (!predecessorCode) return;
+            const predecessor = activitiesByCode.get(predecessorCode);
+            if (!predecessor || predecessor.id === preparedRows[index].id) throw new Error(`Row ${index + 2}: predecessor ${predecessorCode} could not be resolved; no rows were saved.`);
+            preparedRows[index].predecessor_item = predecessor.id;
+          });
+        }
+        const contractId = String(preparedRows[0]?.contract_id || headerContract.get(preparedRows[0]?.boq_header_id) || '');
+        const projectId = String(preparedRows[0]?.project_id || '');
+        if (!contractId || !projectId || preparedRows.some((row) => String(row.project_id || '') !== projectId || String(row.contract_id || headerContract.get(row.boq_header_id) || '') !== contractId)) {
+          throw new Error('All rows must resolve to one valid project and contract before the governed import can be committed.');
+        }
+        const derivedPatches: GovernedImportDerivedPatch[] = [];
+        const derivedRestores: { table: 'boq_items' | 'contracts'; row: Record<string, any> }[] = [];
+        if (tableName === 'schedules') {
+          const importedByItem = new Map<string, Record<string, any>[]>();
+          preparedRows.filter((row) => row.boq_item_id && !row.is_non_boq_activity).forEach((row) => {
+            const itemId = String(row.boq_item_id);
+            importedByItem.set(itemId, [...(importedByItem.get(itemId) || []), row]);
+          });
+          for (const [itemId, activities] of importedByItem) {
+            const item = boqItems?.find((candidate) => candidate.id === itemId) as Record<string, any> | undefined;
+            if (!item) continue;
+            const starts = activities.map((row) => String(row.start_date || '')).filter(Boolean).sort();
+            const ends = activities.map((row) => String(row.end_date || '')).filter(Boolean).sort();
+            const patch: Record<string, any> = {};
+            if (!item.planned_start_date && starts[0]) patch.planned_start_date = starts[0];
+            if (!item.planned_end_date && ends.length) patch.planned_end_date = ends[ends.length - 1];
+            if (!item.baseline_start_date && starts[0]) patch.baseline_start_date = starts[0];
+            if (!item.baseline_end_date && ends.length) patch.baseline_end_date = ends[ends.length - 1];
+            if (Object.keys(patch).length) {
+              derivedPatches.push({ table: 'boq_items', id: itemId, patch });
+              derivedRestores.push({ table: 'boq_items', row: item });
+            }
+          }
+        }
+        if (tableName === 'boq_items') {
+          const contract = contracts?.find((candidate) => candidate.id === contractId) as Record<string, any> | undefined;
+          if (contract && !contract.parent_main_contract_id && (Number(contract.contract_value) || 0) === 0) {
+            const total = (boqItems || [])
+              .filter((item) => String(headerContract.get(item.boq_header_id || '') || '') === contractId)
+              .concat(preparedRows.filter((item) => String(item.contract_id || headerContract.get(item.boq_header_id) || '') === contractId) as BOQItem[])
+              .reduce((sum, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.unit_rate) || 0), 0);
+            if (total > 0) {
+              derivedPatches.push({ table: 'contracts', id: contractId, patch: { contract_value: Math.round(total * 100) / 100, notes: `${contract.notes ? `${contract.notes}\n` : ''}Original contract value initialized from imported BOQ.` } });
+              derivedRestores.push({ table: 'contracts', row: contract });
+            }
+          }
+        }
+        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, derivedPatches });
+        onMutated({ type: 'insertMany', rows: preparedRows });
+        derivedPatches.forEach((derived) => {
+          const original = derivedRestores.find((restore) => restore.table === derived.table && restore.row.id === derived.id)?.row;
+          if (original) onRelatedMutation?.(derived.table, { type: 'update', row: { ...original, ...derived.patch } });
+        });
+        setLastImportRows(preparedRows);
+        setLastImportParentRestores([]);
+        setLastImportBatchId(result.batchId);
+        setLastImportDerivedRestores(derivedRestores);
+        setImportResult({ success: result.committedCount, failed: 0, errors: [] });
+        setOperationNotice({ kind: 'success', text: `Committed ${result.committedCount}/${result.committedCount} rows atomically. Batch ${result.batchId}.` });
+        setImportPreview(null);
+      } catch (error: any) {
+        setImportResult({ success: 0, failed: importPreview.rows.length, errors: [error.message || 'Atomic import was rejected; no rows were saved.'] });
+        setOperationNotice({ kind: 'error', text: 'No rows were saved. The governed import batch was rejected.' });
+      }
+      setImporting(false);
+      return;
+    }
     let success = 0;
     const insertedRows: Record<string, any>[] = [];
     const parentRestores: Record<string, any>[] = [];
@@ -1954,6 +2130,8 @@ export function DataTableView({
     if (insertedRows.length > 0) onMutated({ type: 'insertMany', rows: insertedRows });
     setLastImportRows(insertedRows);
     setLastImportParentRestores(parentRestores);
+    setLastImportBatchId(null);
+    setLastImportDerivedRestores([]);
     if (success > 0) setOperationNotice({ kind: errors.length ? 'warning' : 'success', text: errors.length ? `${success} row(s) imported. ${errors.length} row(s) need correction.` : `${success} row(s) imported successfully. You can undo this import during this session.` });
     setImportPreview(null);
     setImporting(false);
@@ -1963,6 +2141,22 @@ export function DataTableView({
     if (!lastImportRows.length || readOnly) return;
     if (!window.confirm(`Remove the ${lastImportRows.length} row(s) imported in the last operation?`)) return;
     setImporting(true);
+    if (lastImportBatchId && '__TAURI_INTERNALS__' in window) {
+      try {
+        const result = await reverseGovernedImport({ batchId: lastImportBatchId, reason: 'User reversed the latest governed import from the table.' });
+        lastImportRows.forEach((row) => onMutated({ type: 'delete', id: row.id }));
+        lastImportDerivedRestores.forEach((restore) => onRelatedMutation?.(restore.table, { type: 'update', row: restore.row }));
+        setLastImportRows([]);
+        setLastImportParentRestores([]);
+        setLastImportBatchId(null);
+        setLastImportDerivedRestores([]);
+        setOperationNotice({ kind: 'success', text: `The governed import batch was reversed (${result.reversedCount} imported records).` });
+      } catch (error: any) {
+        setOperationNotice({ kind: 'error', text: error.message || 'The governed import batch could not be reversed.' });
+      }
+      setImporting(false);
+      return;
+    }
     const failed: string[] = [];
     for (const row of lastImportRows) {
       try {
@@ -1979,6 +2173,8 @@ export function DataTableView({
     }
     setLastImportRows([]);
     setLastImportParentRestores([]);
+    setLastImportBatchId(null);
+    setLastImportDerivedRestores([]);
     setImporting(false);
     setOperationNotice(failed.length ? { kind: 'warning', text: `Import undo completed with ${failed.length} issue(s).` } : { kind: 'success', text: 'The latest import was removed.' });
   }
@@ -2101,6 +2297,9 @@ export function DataTableView({
       assertValidHierarchyChange(tableName, data, id, patch);
       assertRelationshipScope({ ...data.find((row) => row.id === id), ...patch });
       validateRecord?.({ ...data.find((row) => row.id === id), ...patch });
+      const hierarchyPatch = applyDerivedHierarchyLevel(tableName, data, { ...data.find((row) => row.id === id), ...patch });
+      if (tableName === 'cost_codes') patch.cbs_level = hierarchyPatch.cbs_level;
+      if (tableName === 'wbs_nodes') patch.wbs_level = hierarchyPatch.wbs_level;
       const updated = await dataRepository.update<Record<string, any>>(tableName, id, patch);
       onMutated({ type: 'update', row: updated });
       if (before) setLastUndo({ id, before: { ...before }, label: `${col?.label || key} edit` });
@@ -3098,7 +3297,7 @@ export function DataTableView({
             <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900"><span className="font-semibold">Final step:</span> click <span className="font-semibold">Save rows to table</span> below to write these records. Closing this window does not save anything.</div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
             <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>
-            {importPreview.validationErrors.length > 0 && <div className="mt-4 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900"><p className="font-semibold">{importPreview.validationErrors.length} row(s) require correction and will be skipped.</p><ul className="mt-2 max-h-28 space-y-1 overflow-auto text-xs">{importPreview.validationErrors.slice(0, 12).map((issue) => <li key={`${issue.row}-${issue.message}`}>• Row {issue.row}: {issue.message}</li>)}</ul>{importPreview.validationErrors.length > 12 && <p className="mt-1 text-xs">Additional issues are hidden from this preview.</p>}</div>}
+            {importPreview.validationErrors.length > 0 && <div className="mt-4 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900"><p className="font-semibold">{importPreview.validationErrors.length} row(s) require correction{['boq_items', 'schedules', 'wir_entries'].includes(tableName) ? '; this governed batch will not save any rows.' : ' and will be skipped.'}</p><ul className="mt-2 max-h-28 space-y-1 overflow-auto text-xs">{importPreview.validationErrors.slice(0, 12).map((issue) => <li key={`${issue.row}-${issue.message}`}>• Row {issue.row}: {issue.message}</li>)}</ul>{importPreview.validationErrors.length > 12 && <p className="mt-1 text-xs">Additional issues are hidden from this preview.</p>}</div>}
             <div className="mt-4 overflow-auto rounded-lg border border-neutral-200"><table className="min-w-full border-collapse text-sm"><thead className="bg-neutral-100"><tr>{columns.filter((column) => importPreview.rows.some((row) => row[column.key] !== undefined)).slice(0, 8).map((column) => <th key={column.key} className="whitespace-nowrap border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">{column.label}</th>)}</tr></thead><tbody>{importPreview.rows.slice(0, 10).map((row, index) => <tr key={index} className="odd:bg-neutral-50">{columns.filter((column) => importPreview.rows.some((candidate) => candidate[column.key] !== undefined)).slice(0, 8).map((column) => <td key={column.key} className="max-w-48 truncate whitespace-nowrap border border-neutral-200 px-3 py-2 text-neutral-700">{renderCell(row[column.key], column, relationshipOptions?.[column.key], row)}</td>)}</tr>)}</tbody></table></div>
             {importPreview.rows.length > 10 && <p className="mt-2 text-xs text-neutral-500">Preview shows the first 10 rows and 8 mapped columns.</p>}
             <div className="mt-6 flex justify-end gap-2"><button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">Cancel</button><button onClick={() => void commitImportPreview()} disabled={importing || importPreview.rows.length === importPreview.validationErrors.length} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{importing ? 'Saving…' : `Save ${importPreview.rows.length - importPreview.validationErrors.length} row(s) to table`}</button></div>

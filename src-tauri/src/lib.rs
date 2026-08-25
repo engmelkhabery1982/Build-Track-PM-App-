@@ -2,6 +2,30 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
+mod import_batch;
+
+#[tauri::command]
+async fn commit_governed_import(
+    app: tauri::AppHandle,
+    request: import_batch::ImportCommitRequest,
+) -> Result<import_batch::ImportCommitResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    import_batch::commit_governed_import(&database_path, request).await
+}
+
+#[tauri::command]
+async fn reverse_governed_import(
+    app: tauri::AppHandle,
+    request: import_batch::ImportReverseRequest,
+) -> Result<import_batch::ImportReverseResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    import_batch::reverse_governed_import(&database_path, request).await
+}
+
 #[tauri::command]
 fn save_excel_download(
     app: tauri::AppHandle,
@@ -922,6 +946,102 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 24,
+            description: "add_governed_import_batches",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS import_batches (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        committed_at TEXT,
+        source TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        target_table TEXT NOT NULL,
+        project_id TEXT,
+        contract_id TEXT,
+        status TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        committed_count INTEGER NOT NULL DEFAULT 0,
+        rejected_count INTEGER NOT NULL DEFAULT 0,
+        summary_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS import_batch_rows (
+        id TEXT PRIMARY KEY,
+        batch_id TEXT NOT NULL,
+        source_row_number INTEGER NOT NULL,
+        target_table TEXT NOT NULL,
+        target_record_id TEXT,
+        status TEXT NOT NULL,
+        error_json TEXT,
+        source_json TEXT NOT NULL,
+        mapped_json TEXT NOT NULL,
+        FOREIGN KEY(batch_id) REFERENCES import_batches(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_import_batches_scope
+        ON import_batches(project_id, contract_id, target_table, status);
+      CREATE INDEX IF NOT EXISTS idx_import_batch_rows_batch
+        ON import_batch_rows(batch_id, source_row_number);
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 25,
+            description: "add_procurement_receipts_for_actual_cost",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS procurement_receipts (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+        project_id TEXT NOT NULL, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_procurement_receipt_number
+        ON procurement_receipts(lower(json_extract(payload, '$.receipt_number')));
+      CREATE INDEX IF NOT EXISTS idx_procurement_receipts_scope_po
+        ON procurement_receipts(project_id, contract_id, boq_item_id, json_extract(payload, '$.procurement_id'), json_extract(payload, '$.status'));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 26,
+            description: "add_supplier_ap_three_way_match",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS supplier_invoices (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+        project_id TEXT NOT NULL, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_invoice_supplier_number
+        ON supplier_invoices(json_extract(payload, '$.supplier_party_id'), lower(json_extract(payload, '$.invoice_number')));
+      CREATE INDEX IF NOT EXISTS idx_supplier_invoices_scope_status
+        ON supplier_invoices(project_id, contract_id, json_extract(payload, '$.supplier_party_id'), json_extract(payload, '$.status'));
+      CREATE TABLE IF NOT EXISTS supplier_invoice_lines (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+        project_id TEXT NOT NULL, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_supplier_invoice_lines_match
+        ON supplier_invoice_lines(json_extract(payload, '$.supplier_invoice_id'), json_extract(payload, '$.procurement_receipt_id'));
+      CREATE TABLE IF NOT EXISTS supplier_invoice_payments (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+        project_id TEXT NOT NULL, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_payment_reference
+        ON supplier_invoice_payments(lower(json_extract(payload, '$.payment_number')));
+      CREATE INDEX IF NOT EXISTS idx_supplier_invoice_payments_invoice
+        ON supplier_invoice_payments(json_extract(payload, '$.supplier_invoice_id'), json_extract(payload, '$.status'));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -936,6 +1056,7 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
+            ,commit_governed_import, reverse_governed_import
         ])
         .setup(|app| {
             apply_staged_restore(app.handle())?;

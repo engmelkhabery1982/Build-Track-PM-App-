@@ -16,7 +16,7 @@ import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPa
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm } from '@/utils/cpm';
-import { calculateCertificateValues, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine } from '@/utils/commercialControl';
+import { calculateCertificateValues, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -47,6 +47,9 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'contractSov', label: 'Contract SOV', icon: ClipboardList, group: 'Commercial & Cash' },
   { key: 'costChanges', label: 'Cost Changes', icon: GitBranch, group: 'Commercial & Cash' },
   { key: 'paymentCertificates', label: 'Payment Certificates', icon: ClipboardCheck, group: 'Commercial & Cash' },
+  { key: 'supplierInvoices', label: 'Supplier Invoices / AP', icon: Receipt, group: 'Commercial & Cash' },
+  { key: 'supplierInvoiceLines', label: 'Supplier Invoice Match Lines', icon: ClipboardList, group: 'Commercial & Cash' },
+  { key: 'supplierInvoicePayments', label: 'Supplier Payments', icon: Banknote, group: 'Commercial & Cash' },
   { key: 'clientinvoices', label: 'Client Invoices', icon: FileText, group: 'Commercial & Cash' },
   { key: 'subinvoices', label: 'Subcontractor Invoices', icon: Receipt, group: 'Commercial & Cash' },
   { key: 'clientInvoiceTracking', label: 'Client Invoice Tracking', icon: ClipboardCheck, group: 'Commercial & Cash' },
@@ -61,6 +64,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'wbs', label: 'WBS Master', icon: GitBranch, group: 'Planning & Controls' },
   { key: 'costEntries', label: 'Cost Entries', icon: ListOrdered, group: 'Cost & Resources' },
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
+  { key: 'procurementReceipts', label: 'Goods Receipts', icon: ClipboardCheck, group: 'Cost & Resources' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
   { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Field & Governance' },
@@ -281,10 +285,66 @@ const PROCUREMENT_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'unit_cost', label: 'Unit Cost', type: 'money', editable: true },
   { key: 'total_cost', label: 'Total', type: 'money' },
+  { key: 'accepted_quantity', label: 'Accepted Qty', type: 'number', editable: false },
+  { key: 'actual_cost', label: 'Actual from Receipts', type: 'money', editable: false },
+  { key: 'open_commitment', label: 'Open Commitment', type: 'money', editable: false },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: PROC_STATUSES },
   { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
   { key: 'order_date', label: 'Order Date', type: 'date', editable: true },
   { key: 'delivery_date', label: 'Delivery Date', type: 'date', editable: true },
+];
+const PROCUREMENT_RECEIPT_COLUMNS: ColumnDef[] = [
+  { key: 'procurement_id', label: 'PO Number', type: 'select', editable: true },
+  { key: 'receipt_number', label: 'Receipt Number', type: 'text', editable: true },
+  { key: 'supplier', label: 'Supplier', type: 'text', editable: false },
+  { key: 'item', label: 'Item', type: 'text', editable: false },
+  { key: 'unit', label: 'Unit', type: 'text', editable: false },
+  { key: 'received_quantity', label: 'Received Qty', type: 'number', editable: true },
+  { key: 'accepted_quantity', label: 'Accepted Qty', type: 'number', editable: true },
+  { key: 'unit_cost', label: 'Accepted Unit Cost', type: 'money', editable: true },
+  { key: 'accepted_amount', label: 'Accepted Amount', type: 'money', editable: false },
+  { key: 'receipt_date', label: 'Receipt Date', type: 'date', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Received', 'Accepted', 'Rejected'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const SUPPLIER_INVOICE_COLUMNS: ColumnDef[] = [
+  { key: 'supplier_party_id', label: 'Supplier Master Record', type: 'select', editable: true },
+  { key: 'supplier', label: 'Supplier', type: 'text', editable: false },
+  { key: 'invoice_number', label: 'Supplier Invoice #', type: 'text', editable: true },
+  { key: 'invoice_date', label: 'Invoice Date', type: 'date', editable: true },
+  { key: 'due_date', label: 'Due Date', type: 'date', editable: true },
+  { key: 'currency', label: 'Currency', type: 'status', editable: true, options: ['SAR', 'USD', 'AED', 'EGP', 'EUR'] },
+  { key: 'goods_amount', label: 'Matched Goods', type: 'money', editable: false },
+  { key: 'tax_amount', label: 'Tax', type: 'money', editable: true },
+  { key: 'deductions_amount', label: 'Deductions', type: 'money', editable: true },
+  { key: 'net_payable_amount', label: 'Net Payable', type: 'money', editable: false },
+  { key: 'paid_amount', label: 'Paid', type: 'money', editable: false },
+  { key: 'open_payable_amount', label: 'Open AP', type: 'money', editable: false },
+  { key: 'status', label: 'AP Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Matched', 'Exception', 'Approved', 'Partially Paid', 'Paid', 'Rejected', 'Cancelled'] },
+  { key: 'approved_by', label: 'Approved By', type: 'text', editable: true },
+  { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
+  { key: 'variance_reason', label: 'Approved Variance Reason', type: 'text', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const SUPPLIER_INVOICE_LINE_COLUMNS: ColumnDef[] = [
+  { key: 'supplier_invoice_id', label: 'Supplier Invoice', type: 'select', editable: true },
+  { key: 'procurement_receipt_id', label: 'Accepted GRN', type: 'select', editable: true },
+  { key: 'procurement_id', label: 'PO', type: 'text', editable: false },
+  { key: 'quantity', label: 'Invoiced Qty', type: 'number', editable: true },
+  { key: 'unit_cost', label: 'Invoice Unit Cost', type: 'money', editable: true },
+  { key: 'goods_amount', label: 'Goods Amount', type: 'money', editable: false },
+  { key: 'tax_amount', label: 'Line Tax', type: 'money', editable: true },
+  { key: 'line_total', label: 'Line Total', type: 'money', editable: false },
+  { key: 'variance_reason', label: 'Variance Reason', type: 'text', editable: true },
+];
+const SUPPLIER_INVOICE_PAYMENT_COLUMNS: ColumnDef[] = [
+  { key: 'supplier_invoice_id', label: 'Supplier Invoice', type: 'select', editable: true },
+  { key: 'payment_number', label: 'Payment #', type: 'text', editable: true },
+  { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
+  { key: 'amount', label: 'Amount', type: 'money', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Settled', 'Cancelled'] },
+  { key: 'payment_reference', label: 'Bank / Reference', type: 'text', editable: true },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
 const SAFETY_COLUMNS: ColumnDef[] = [
@@ -367,7 +427,7 @@ const COST_CODE_COLUMNS: ColumnDef[] = [
   { key: 'name', label: 'CBS Name', type: 'text', editable: true },
   { key: 'classification', label: 'Classification', type: 'status', editable: true, options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] },
   { key: 'parent_cost_code_id', label: 'Parent Cost Code', type: 'select', editable: true },
-  { key: 'cbs_level', label: 'CBS Level', type: 'number', editable: true },
+  { key: 'cbs_level', label: 'CBS Level', type: 'number', editable: false },
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
@@ -377,7 +437,7 @@ const WBS_COLUMNS: ColumnDef[] = [
   { key: 'wbs_code', label: 'WBS Code', type: 'text', editable: true },
   { key: 'name', label: 'WBS Name', type: 'text', editable: true },
   { key: 'parent_wbs_id', label: 'Parent WBS', type: 'select', editable: true },
-  { key: 'wbs_level', label: 'WBS Level', type: 'number', editable: true },
+  { key: 'wbs_level', label: 'WBS Level', type: 'number', editable: false },
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
@@ -726,6 +786,10 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
+  procurementReceipts: { columns: PROCUREMENT_RECEIPT_COLUMNS, filters: [{ key: 'status', label: 'Receipt Status', options: ['Draft', 'Received', 'Accepted', 'Rejected'] }], showProjectFilter: true, dateRangeColumn: 'receipt_date' },
+  supplierInvoices: { columns: SUPPLIER_INVOICE_COLUMNS, filters: [{ key: 'status', label: 'AP Status', options: ['Draft', 'Submitted', 'Matched', 'Exception', 'Approved', 'Partially Paid', 'Paid', 'Rejected', 'Cancelled'] }, { key: 'supplier', label: 'Supplier', options: [] }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
+  supplierInvoiceLines: { columns: SUPPLIER_INVOICE_LINE_COLUMNS, showProjectFilter: true },
+  supplierInvoicePayments: { columns: SUPPLIER_INVOICE_PAYMENT_COLUMNS, filters: [{ key: 'status', label: 'Payment Status', options: ['Draft', 'Settled', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'payment_date' },
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
@@ -752,7 +816,8 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 
 const TABLE_NAMES: Record<string, string> = {
   projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', costChanges: 'cost_changes', paymentCertificates: 'payment_certificates',
-  procurement: 'procurement', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
+  procurement: 'procurement', procurementReceipts: 'procurement_receipts', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
+  supplierInvoices: 'supplier_invoices', supplierInvoiceLines: 'supplier_invoice_lines', supplierInvoicePayments: 'supplier_invoice_payments',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
@@ -763,7 +828,8 @@ const TABLE_NAMES: Record<string, string> = {
 
 const VIEW_TITLES: Record<string, string> = {
   projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', costChanges: 'Cost Changes', paymentCertificates: 'Payment Certificates',
-  procurement: 'Procurement', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
+  procurement: 'Procurement', procurementReceipts: 'Goods Receipts', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
+  supplierInvoices: 'Supplier Invoices / AP', supplierInvoiceLines: 'Supplier Invoice Match Lines', supplierInvoicePayments: 'Supplier Payments',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
@@ -1130,6 +1196,36 @@ export default function App() {
       cost_type: costType, invoice_number: source.purchase_order_number || source.reference_number || '', payment_order_number: '',
       amount: Math.round(amount * 100) / 100, source_type: sourceType, source_id: sourceId,
     };
+    // A PO is a commitment only. Older releases incorrectly generated an
+    // Actual Cost record the moment a procurement row was saved. Remove that
+    // legacy projection; accepted receipts/AP entries will become the only
+    // source for PO actuals in the next commercial control unit.
+    if (sourceTable === 'procurement') {
+      if (existingCost) {
+        await dataRepository.delete('cost_entries', existingCost.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existingCost.id });
+      }
+      if (existingCash) {
+        await dataRepository.delete('cash_flow', existingCash.id);
+        data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+      }
+      const posting = procurementPostingState(source);
+      const shouldForecast = posting.isForecast;
+      if (shouldForecast) {
+        const forecastRow = { project_id: contract.project_id, contract_id: contract.id, date: source.delivery_date || source.order_date || null, description: `Supplier payment forecast: ${source.item || item.item_name || ''}`, category: 'Supplier Payable', inflow: 0, outflow: amount, net: -amount, cumulative_balance: 0, movement_type: 'Forecast', status: 'Open', source_type: `${sourceType}_forecast`, source_id: sourceId };
+        if (existingForecast) {
+          const updated = await dataRepository.update<Record<string, any>>('cash_flow', existingForecast.id, forecastRow);
+          data.applyLocalMutation('cash_flow', { type: 'update', row: updated });
+        } else {
+          const inserted = await dataRepository.insert<Record<string, any>>('cash_flow', forecastRow);
+          data.applyLocalMutation('cash_flow', { type: 'insert', row: inserted });
+        }
+      } else if (existingForecast) {
+        await dataRepository.delete('cash_flow', existingForecast.id);
+        data.applyLocalMutation('cash_flow', { type: 'delete', id: existingForecast.id });
+      }
+      return;
+    }
     if (existingCost) {
       const updated = await dataRepository.update<Record<string, any>>('cost_entries', existingCost.id, costRow);
       data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
@@ -1151,21 +1247,121 @@ export default function App() {
       await dataRepository.delete('cash_flow', existingCash.id);
       data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
     }
-    if (sourceTable === 'procurement') {
-      const shouldForecast = !isPaid && ['Ordered', 'Partially Delivered', 'Delivered'].includes(String(source.status || ''));
-      if (shouldForecast) {
-        const forecastRow = { project_id: contract.project_id, contract_id: contract.id, date: source.delivery_date || source.order_date || null, description: `Supplier payment forecast: ${source.item || item.item_name || ''}`, category: 'Supplier Payable', inflow: 0, outflow: costRow.amount, net: -costRow.amount, cumulative_balance: 0, movement_type: 'Forecast', status: 'Open', source_type: `${sourceType}_forecast`, source_id: sourceId };
-        if (existingForecast) {
-          const updated = await dataRepository.update<Record<string, any>>('cash_flow', existingForecast.id, forecastRow);
-          data.applyLocalMutation('cash_flow', { type: 'update', row: updated });
-        } else {
-          const inserted = await dataRepository.insert<Record<string, any>>('cash_flow', forecastRow);
-          data.applyLocalMutation('cash_flow', { type: 'insert', row: inserted });
-        }
-      } else if (existingForecast) {
-        await dataRepository.delete('cash_flow', existingForecast.id);
-        data.applyLocalMutation('cash_flow', { type: 'delete', id: existingForecast.id });
+  }
+
+  /** Only accepted goods receipts post procurement actual cost. A purchase
+   * order itself remains a commitment/forecast event. */
+  async function syncProcurementReceiptCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
+    const receiptId = mutation.row?.id || mutation.id;
+    if (!receiptId) return;
+    const existing = data.costEntries.find((entry: any) => entry.source_type === 'procurement_receipt' && entry.source_id === receiptId) as any;
+    if (mutation.type === 'delete') {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
       }
+      return;
+    }
+    const receipt = mutation.row;
+    if (!receipt) return;
+    const po = data.procurement.find((row: any) => row.id === receipt.procurement_id) as any;
+    if (!po || !['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(po.status || ''))) {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
+      }
+      return;
+    }
+    if (String(receipt.status || '') !== 'Accepted') {
+      if (existing) {
+        await dataRepository.delete('cost_entries', existing.id);
+        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
+      }
+      return;
+    }
+    const contract = data.contracts.find((row: any) => row.id === po.contract_id) as any;
+    const item = data.boqItems.find((row: any) => row.id === po.boq_item_id) as any;
+    const header = data.boqHeaders.find((row: any) => row.id === item?.boq_header_id) as any;
+    if (!contract || contract.parent_main_contract_id || !item || header?.contract_id !== contract.id) {
+      throw new Error('The purchase order must reference a valid main-contract BOQ item before its receipt can post actual cost.');
+    }
+    const amount = Math.round((Number(receipt.accepted_quantity) || 0) * (Number(receipt.unit_cost) || 0) * 100) / 100;
+    if (amount <= 0) throw new Error('An accepted receipt must have a positive accepted amount.');
+    const costRow = {
+      project_id: contract.project_id, project_code: data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
+      contract_id: contract.id, main_contract_id: contract.id, boq_header_id: item.boq_header_id || null, boq_item_id: item.id,
+      boq_code: header?.boq_code || item.boq_code || '', company_name: contract.contractor || '',
+      boq_item_code: item.item_code || '', boq_item_name: item.item_name || item.description || '',
+      date: receipt.receipt_date || null, cost_type: 'Materials', invoice_number: receipt.receipt_number || '', payment_order_number: po.purchase_order_number || '',
+      amount, source_type: 'procurement_receipt', source_id: receiptId,
+    };
+    if (existing) {
+      const updated = await dataRepository.update<Record<string, any>>('cost_entries', existing.id, costRow);
+      data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
+    } else {
+      const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', costRow);
+      data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
+    }
+  }
+
+  /** AP posting is deliberately separate from receipt costing: Accepted GRN
+   * posts accrual/actual cost, approved AP forecasts cash, and settled AP
+   * payment posts cash. This prevents a supplier invoice from duplicating AC. */
+  async function syncSupplierInvoiceFinancials(
+    invoiceId: string,
+    overrides: { invoice?: Record<string, any>; lines?: Record<string, any>[]; payments?: Record<string, any>[] } = {},
+  ) {
+    const invoice = overrides.invoice || data.supplierInvoices.find((row: any) => row.id === invoiceId) as Record<string, any> | undefined;
+    if (!invoice) return;
+    const lines = overrides.lines || data.supplierInvoiceLines.filter((row: any) => row.supplier_invoice_id === invoiceId) as Record<string, any>[];
+    const payments = overrides.payments || data.supplierInvoicePayments.filter((row: any) => row.supplier_invoice_id === invoiceId) as Record<string, any>[];
+    const goodsAmount = Math.round(lines.reduce((sum, line) => sum + (Number(line.goods_amount) || ((Number(line.quantity) || 0) * (Number(line.unit_cost) || 0))), 0) * 100) / 100;
+    const lineTax = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0);
+    const netPayable = Math.round((goodsAmount + lineTax + (Number(invoice.tax_amount) || 0) - (Number(invoice.deductions_amount) || 0)) * 100) / 100;
+    const paidAmount = Math.round(payments.filter((payment) => payment.status === 'Settled').reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
+    const openPayable = Math.max(0, Math.round((netPayable - paidAmount) * 100) / 100);
+    if (paidAmount > netPayable + 0.000001) throw new Error('Settled supplier payments exceed the approved supplier invoice amount.');
+    const approved = ['Approved', 'Partially Paid', 'Paid'].includes(String(invoice.status || ''));
+    const nextStatus = approved && paidAmount >= netPayable && netPayable > 0 ? 'Paid'
+      : approved && paidAmount > 0 ? 'Partially Paid' : invoice.status;
+    const headerPatch = { goods_amount: goodsAmount, net_payable_amount: netPayable, paid_amount: paidAmount, open_payable_amount: openPayable, status: nextStatus };
+    const persistedInvoice = await dataRepository.update<Record<string, any>>('supplier_invoices', invoiceId, headerPatch);
+    data.applyLocalMutation('supplier_invoices', { type: 'update', row: persistedInvoice });
+
+    const existingForecast = data.cashFlow.find((row: any) => row.source_type === 'supplier_invoice_forecast' && row.source_id === invoiceId) as any;
+    if (approved && openPayable > 0) {
+      const row = { project_id: invoice.project_id, contract_id: invoice.contract_id || null, date: invoice.due_date || invoice.invoice_date || null, description: `Supplier invoice payable forecast: ${invoice.invoice_number || invoiceId}`, category: 'Supplier Payable', inflow: 0, outflow: openPayable, net: -openPayable, cumulative_balance: 0, movement_type: 'Forecast', status: 'Open', source_type: 'supplier_invoice_forecast', source_id: invoiceId };
+      const saved = existingForecast ? await dataRepository.update<Record<string, any>>('cash_flow', existingForecast.id, row) : await dataRepository.insert<Record<string, any>>('cash_flow', row);
+      data.applyLocalMutation('cash_flow', { type: existingForecast ? 'update' : 'insert', row: saved });
+    } else if (existingForecast) {
+      await dataRepository.delete('cash_flow', existingForecast.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existingForecast.id });
+    }
+    for (const payment of payments) {
+      const existingCash = data.cashFlow.find((row: any) => row.source_type === 'supplier_invoice_payment' && row.source_id === payment.id) as any;
+      if (payment.status === 'Settled') {
+        const row = { project_id: invoice.project_id, contract_id: invoice.contract_id || null, date: payment.payment_date || null, description: `Supplier payment: ${invoice.invoice_number || invoiceId}`, category: 'Supplier Payment', inflow: 0, outflow: Number(payment.amount) || 0, net: -(Number(payment.amount) || 0), cumulative_balance: 0, movement_type: 'Actual', status: 'Settled', source_type: 'supplier_invoice_payment', source_id: payment.id };
+        const saved = existingCash ? await dataRepository.update<Record<string, any>>('cash_flow', existingCash.id, row) : await dataRepository.insert<Record<string, any>>('cash_flow', row);
+        data.applyLocalMutation('cash_flow', { type: existingCash ? 'update' : 'insert', row: saved });
+      } else if (existingCash) {
+        await dataRepository.delete('cash_flow', existingCash.id); data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
+      }
+    }
+    const effectiveAllLines = overrides.lines
+      ? [...data.supplierInvoiceLines.filter((line: any) => line.supplier_invoice_id !== invoiceId), ...lines]
+      : data.supplierInvoiceLines;
+    // PO forecast represents only the portion not covered by approved AP.
+    for (const poId of new Set(lines.map((line) => String(line.procurement_id || '')).filter(Boolean))) {
+      const po = data.procurement.find((row: any) => row.id === poId) as any;
+      const forecast = data.cashFlow.find((row: any) => row.source_type === 'procurement_forecast' && row.source_id === poId) as any;
+      if (!po || !forecast) continue;
+      const approvedForPo = effectiveAllLines.filter((line: any) => line.procurement_id === poId).reduce((sum: number, line: any) => {
+        const parent = line.supplier_invoice_id === invoiceId ? { ...invoice, status: nextStatus } : data.supplierInvoices.find((candidate: any) => candidate.id === line.supplier_invoice_id) as any;
+        return ['Approved', 'Partially Paid', 'Paid'].includes(String(parent?.status || '')) ? sum + (Number(line.goods_amount) || 0) : sum;
+      }, 0);
+      const total = Number(po.total_cost) || ((Number(po.quantity) || 0) * (Number(po.unit_cost) || 0));
+      const revised = Math.max(0, Math.round((total - approvedForPo) * 100) / 100);
+      const saved = await dataRepository.update<Record<string, any>>('cash_flow', forecast.id, { ...forecast, outflow: revised, net: -revised, description: `Supplier payment forecast (open PO): ${po.purchase_order_number || po.id}` });
+      data.applyLocalMutation('cash_flow', { type: 'update', row: saved });
     }
   }
 
@@ -1939,7 +2135,7 @@ export default function App() {
     if (activeView === 'dataQuality') {
       const checks = runDataQualityChecks({
         projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
       });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
@@ -2167,8 +2363,16 @@ export default function App() {
                 ? data.contractSovLines
                 : activeView === 'costChanges'
                   ? data.costChanges
-                : activeView === 'paymentCertificates'
+          : activeView === 'paymentCertificates'
                   ? data.paymentCertificates
+                  : activeView === 'procurementReceipts'
+                    ? data.procurementReceipts
+                    : activeView === 'supplierInvoices'
+                      ? data.supplierInvoices
+                      : activeView === 'supplierInvoiceLines'
+                        ? data.supplierInvoiceLines
+                        : activeView === 'supplierInvoicePayments'
+                          ? data.supplierInvoicePayments
           : activeView === 'snapshots'
             ? data.snapshots
             : activeView === 'users'
@@ -2293,6 +2497,27 @@ export default function App() {
       })
       : activeView === 'contracts'
       ? contractsWithModifiedValue
+      : activeView === 'procurement'
+        ? rawViewData.map((po: any) => {
+          const acceptedReceipts = data.procurementReceipts
+            .filter((receipt: any) => receipt.procurement_id === po.id && receipt.status === 'Accepted');
+          const acceptedQuantity = acceptedReceipts.reduce((sum: number, receipt: any) => sum + (Number(receipt.accepted_quantity) || 0), 0);
+          const actualCost = Math.round(acceptedReceipts.reduce(
+            (sum: number, receipt: any) => sum + (Number(receipt.accepted_amount) || ((Number(receipt.accepted_quantity) || 0) * (Number(receipt.unit_cost) || 0))),
+            0,
+          ) * 100) / 100;
+          const commitment = Number(po.total_cost) || ((Number(po.quantity) || 0) * (Number(po.unit_cost) || 0));
+          return { ...po, accepted_quantity: acceptedQuantity, actual_cost: actualCost, open_commitment: Math.max(0, Math.round((commitment - actualCost) * 100) / 100) };
+        })
+      : activeView === 'supplierInvoices'
+        ? rawViewData.map((invoice: any) => {
+          const lines = data.supplierInvoiceLines.filter((line: any) => line.supplier_invoice_id === invoice.id);
+          const goodsAmount = Math.round(lines.reduce((sum: number, line: any) => sum + (Number(line.goods_amount) || 0), 0) * 100) / 100;
+          const lineTax = lines.reduce((sum: number, line: any) => sum + (Number(line.tax_amount) || 0), 0);
+          const net = Math.round((goodsAmount + lineTax + (Number(invoice.tax_amount) || 0) - (Number(invoice.deductions_amount) || 0)) * 100) / 100;
+          const paid = data.supplierInvoicePayments.filter((payment: any) => payment.supplier_invoice_id === invoice.id && payment.status === 'Settled').reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0);
+          return { ...invoice, goods_amount: goodsAmount, net_payable_amount: net, paid_amount: paid, open_payable_amount: Math.max(0, net - paid) };
+        })
       : activeView === 'contractSov'
         ? rawViewData.map((line: any) => {
           const contract = contractById.get(line.contract_id) as any;
@@ -2515,7 +2740,7 @@ export default function App() {
     }));
     relationshipOptions.cost_code_id = data.costCodes
       .filter((code: any) => code.status !== 'Inactive')
-      .map((code: any) => ({ value: code.id, label: `${code.cost_code || code.id} — ${code.name || 'Unnamed cost code'}`, data: { project_id: code.project_id, cost_code: code.cost_code, cost_code_name: code.name, classification: code.classification } }));
+      .map((code: any) => ({ value: code.id, label: `${code.cost_code || code.id} — ${code.name || 'Unnamed cost code'}`, data: { project_id: code.project_id, cost_code: code.cost_code, cost_code_name: code.name, classification: code.classification, cbs_level: code.cbs_level } }));
     relationshipOptions.parent_cost_code_id = relationshipOptions.cost_code_id;
     relationshipOptions.contract_sov_line_id = data.contractSovLines
       .filter((line: any) => line.status !== 'Closed')
@@ -2529,7 +2754,7 @@ export default function App() {
       }));
     relationshipOptions.wbs_id = data.wbsNodes
       .filter((node: any) => node.status !== 'Inactive')
-      .map((node: any) => ({ value: node.id, label: `${node.wbs_code || node.id} — ${node.name || 'Unnamed WBS'}`, data: { project_id: node.project_id, contract_id: node.contract_id, wbs_code: node.wbs_code } }));
+      .map((node: any) => ({ value: node.id, label: `${node.wbs_code || node.id} — ${node.name || 'Unnamed WBS'}`, data: { project_id: node.project_id, contract_id: node.contract_id, wbs_code: node.wbs_code, wbs_level: node.wbs_level } }));
     relationshipOptions.parent_wbs_id = relationshipOptions.wbs_id;
     relationshipOptions.party_id = data.parties
       .filter((party: any) => party.status !== 'Inactive')
@@ -2570,6 +2795,31 @@ export default function App() {
         })(),
       },
     }));
+    relationshipOptions.procurement_id = data.procurement
+      .filter((po: any) => !['Draft', 'Cancelled'].includes(String(po.status || 'Draft')))
+      .map((po: any) => ({
+        value: po.id,
+        label: po.purchase_order_number || po.id,
+        data: {
+          project_id: po.project_id, contract_id: po.contract_id, boq_header_id: po.boq_header_id,
+          boq_item_id: po.boq_item_id, supplier: po.supplier, item: po.item, unit: po.unit,
+          unit_cost: po.unit_cost, cost_code_id: po.cost_code_id, quantity: po.quantity,
+        },
+      }));
+    relationshipOptions.supplier_invoice_id = data.supplierInvoices
+      .filter((invoice: any) => !['Cancelled', 'Rejected', 'Paid'].includes(String(invoice.status || 'Draft')))
+      .map((invoice: any) => ({
+        value: invoice.id,
+        label: `${invoice.invoice_number || invoice.id} — ${invoice.supplier || 'Supplier'}`,
+        data: { project_id: invoice.project_id, contract_id: invoice.contract_id, supplier_party_id: invoice.supplier_party_id, supplier: invoice.supplier, invoice_date: invoice.invoice_date, status: invoice.status },
+      }));
+    relationshipOptions.procurement_receipt_id = data.procurementReceipts
+      .filter((receipt: any) => receipt.status === 'Accepted')
+      .map((receipt: any) => ({
+        value: receipt.id,
+        label: `${receipt.receipt_number || receipt.id} — ${receipt.supplier || 'Supplier'}`,
+        data: { project_id: receipt.project_id, contract_id: receipt.contract_id, boq_header_id: receipt.boq_header_id, boq_item_id: receipt.boq_item_id, procurement_id: receipt.procurement_id, supplier: receipt.supplier, supplier_party_id: data.procurement.find((po: any) => po.id === receipt.procurement_id)?.supplier_party_id || null, quantity: receipt.accepted_quantity, unit_cost: receipt.unit_cost, accepted_unit_cost: receipt.unit_cost, accepted_amount: receipt.accepted_amount, receipt_date: receipt.receipt_date },
+      }));
     relationshipOptions.variation_id = data.variations
       .filter((variation: any) => !['Approved', 'Rejected'].includes(String(variation.status || 'Draft')))
       .map((variation: any) => ({
@@ -2913,6 +3163,41 @@ export default function App() {
               mutation.rows.forEach((row) => void syncOperationalCost(sourceTable, { type: 'insert', row }).catch((error) => alert(`Failed to synchronize ${sourceTable} cost: ${error.message || 'Unknown error'}`)));
             } else {
               void syncOperationalCost(sourceTable, mutation).catch((error) => alert(`Failed to synchronize ${sourceTable} cost: ${error.message || 'Unknown error'}`));
+            }
+            if (tableName === 'procurement' && mutation.type !== 'insertMany' && mutation.row?.id) {
+              data.procurementReceipts
+                .filter((receipt: any) => receipt.procurement_id === mutation.row?.id)
+                .forEach((receipt: any) => void syncProcurementReceiptCost({ type: 'update', row: receipt }).catch((error) => alert(`Failed to reconcile receipt actual cost: ${error.message || 'Unknown error'}`)));
+            }
+          }
+          if (tableName === 'procurement_receipts') {
+            if (mutation.type === 'insertMany') {
+              mutation.rows.forEach((row) => void syncProcurementReceiptCost({ type: 'insert', row }).catch((error) => alert(`Failed to synchronize receipt actual cost: ${error.message || 'Unknown error'}`)));
+            } else {
+              void syncProcurementReceiptCost(mutation).catch((error) => alert(`Failed to synchronize receipt actual cost: ${error.message || 'Unknown error'}`));
+            }
+          }
+          if (['supplier_invoices', 'supplier_invoice_lines', 'supplier_invoice_payments'].includes(tableName)) {
+            const sourceRow = (mutation as any).row as Record<string, any> | undefined;
+            const invoiceId = tableName === 'supplier_invoices' ? (sourceRow?.id || '') : String(sourceRow?.supplier_invoice_id || '');
+            if (invoiceId) {
+              const override: { invoice?: Record<string, any>; lines?: Record<string, any>[]; payments?: Record<string, any>[] } = {};
+              if (tableName === 'supplier_invoices' && sourceRow) override.invoice = sourceRow;
+              if (tableName === 'supplier_invoice_lines' && sourceRow) {
+                override.lines = [
+                  ...data.supplierInvoiceLines.filter((line: any) => line.supplier_invoice_id === invoiceId && line.id !== sourceRow.id),
+                  sourceRow,
+                ];
+              }
+              if (tableName === 'supplier_invoice_payments' && sourceRow) {
+                override.payments = [
+                  ...data.supplierInvoicePayments.filter((payment: any) => payment.supplier_invoice_id === invoiceId && payment.id !== sourceRow.id),
+                  sourceRow,
+                ];
+              }
+              void syncSupplierInvoiceFinancials(invoiceId, override).catch((error) =>
+                alert(`Supplier AP was saved, but its financial projections could not be synchronized: ${error.message || 'Unknown error'}`),
+              );
             }
           }
         }}

@@ -5,6 +5,44 @@ const PARENT_FIELDS: Record<string, string> = {
   wbs_nodes: 'parent_wbs_id',
 };
 
+const LEVEL_FIELDS: Record<string, string> = {
+  cost_codes: 'cbs_level',
+  wbs_nodes: 'wbs_level',
+};
+
+/**
+ * CBS and WBS levels are derived from their selected parent.  They are not
+ * user-entered attributes: allowing manual values causes broken trees after
+ * a node is moved.  A root node is level 1.
+ */
+export function deriveHierarchyLevel(
+  tableName: string,
+  rows: Record<string, unknown>[],
+  parentId: unknown,
+): number {
+  const levelField = LEVEL_FIELDS[tableName];
+  if (!levelField) return 0;
+  const parentKey = parentId ? String(parentId) : '';
+  if (!parentKey) return 1;
+  const parent = rows.find((row) => String(row.id) === parentKey);
+  if (!parent) throw new Error('Select a valid parent node before saving.');
+  const parentLevel = Number(parent[levelField]);
+  return Math.max(1, Number.isFinite(parentLevel) && parentLevel > 0 ? parentLevel + 1 : 2);
+}
+
+/** Applies the controlled CBS/WBS level before any form, inline edit or
+ * import record is validated and persisted. */
+export function applyDerivedHierarchyLevel(
+  tableName: string,
+  rows: Record<string, unknown>[],
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  const parentField = PARENT_FIELDS[tableName];
+  const levelField = LEVEL_FIELDS[tableName];
+  if (!parentField || !levelField) return record;
+  return { ...record, [levelField]: deriveHierarchyLevel(tableName, rows, record[parentField]) };
+}
+
 /** Reject self-references and cycles before persisting any governed hierarchy change. */
 export function assertValidHierarchyChange(
   tableName: string,

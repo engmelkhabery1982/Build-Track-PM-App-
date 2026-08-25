@@ -102,3 +102,53 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('procurement receipt migration creates a controlled actual-cost source table', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*25,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 25 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE projects (id TEXT PRIMARY KEY)')
+db.execute('CREATE TABLE contracts (id TEXT PRIMARY KEY)')
+db.execute('CREATE TABLE boq_items (id TEXT PRIMARY KEY)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO procurement_receipts VALUES ('r-1','2026-08-25','p-1','c-1',NULL,'b-1',NULL,NULL,?)", ('{"receipt_number":"GRN-001","procurement_id":"po-1","status":"Accepted"}',))
+try:
+    db.execute("INSERT INTO procurement_receipts VALUES ('r-2','2026-08-25','p-1','c-1',NULL,'b-1',NULL,NULL,?)", ('{"receipt_number":"grn-001","procurement_id":"po-1","status":"Accepted"}',))
+    raise AssertionError('receipt number must be unique')
+except sqlite3.IntegrityError:
+    pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});
+
+test('supplier AP migration protects vendor invoice and payment references', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*26,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 26 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE projects (id TEXT PRIMARY KEY)')
+db.execute('CREATE TABLE contracts (id TEXT PRIMARY KEY)')
+db.execute('CREATE TABLE boq_items (id TEXT PRIMARY KEY)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO supplier_invoices VALUES ('si1','2026-08-25','p1','c1',NULL,NULL,NULL,NULL,?)", ('{"supplier_party_id":"sup1","invoice_number":"SI-77"}',))
+try:
+  db.execute("INSERT INTO supplier_invoices VALUES ('si2','2026-08-25','p1','c1',NULL,NULL,NULL,NULL,?)", ('{"supplier_party_id":"sup1","invoice_number":"si-77"}',))
+  raise AssertionError('supplier invoice must be unique per supplier')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO supplier_invoice_payments VALUES ('pay1','2026-08-25','p1','c1',NULL,NULL,NULL,NULL,?)", ('{"payment_number":"PAY-77"}',))
+try:
+  db.execute("INSERT INTO supplier_invoice_payments VALUES ('pay2','2026-08-25','p1','c1',NULL,NULL,NULL,NULL,?)", ('{"payment_number":"pay-77"}',))
+  raise AssertionError('payment number must be unique')
+except sqlite3.IntegrityError: pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

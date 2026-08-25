@@ -25,3 +25,22 @@ export function certificateCashStatus(certificate: Record<string, unknown>): Pay
 export function certificateCashDirection(certificate: Record<string, unknown>): 'Inflow' | 'Outflow' {
   return String(certificate.certificate_type || '') === 'Client' ? 'Inflow' : 'Outflow';
 }
+
+/**
+ * A purchase order is a commitment, not proof that a cost was incurred or
+ * paid.  Actual cost must come from an accepted receipt/AP fact (or a
+ * separately governed cost entry).  This small state rule is shared by the
+ * operational sync and the acceptance tests so a Draft/Ordered PO can never
+ * silently become actual cost.
+ */
+export function procurementPostingState(procurement: Record<string, unknown>) {
+  const status = String(procurement.status || 'Draft');
+  const isCommitment = ['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(status);
+  const isForecast = ['Ordered', 'Partially Delivered', 'Delivered'].includes(status);
+  return {
+    isCommitment,
+    isForecast,
+    postsActualCost: false,
+    postsActualCash: false,
+  };
+}

@@ -175,6 +175,7 @@ export interface Procurement {
   boq_header_id: string | null;
   boq_item_id: string | null;
   cost_code_id?: string | null;
+  supplier_party_id?: string | null;
   purchase_order_number?: string;
   purchase_order_number_locked?: boolean;
   item: string;
@@ -186,6 +187,141 @@ export interface Procurement {
   status: string;
   order_date: string | null;
   delivery_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
+/** Accepted receipt is the controlled source for PO actual cost. */
+export interface ProcurementReceipt {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  procurement_id: string;
+  receipt_number: string;
+  receipt_number_locked: boolean;
+  supplier: string;
+  item: string;
+  unit: string;
+  received_quantity: number;
+  accepted_quantity: number;
+  unit_cost: number;
+  accepted_amount: number;
+  receipt_date: string | null;
+  status: 'Draft' | 'Received' | 'Accepted' | 'Rejected' | string;
+  notes: string;
+  created_at: string;
+}
+
+/** Supplier AP is separate from client/subcontractor progress invoices. */
+export interface SupplierInvoice {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  supplier_party_id: string | null;
+  supplier: string;
+  invoice_number: string;
+  invoice_number_locked: boolean;
+  invoice_date: string | null;
+  due_date: string | null;
+  currency: string;
+  goods_amount: number;
+  tax_amount: number;
+  deductions_amount: number;
+  net_payable_amount: number;
+  status: 'Draft' | 'Submitted' | 'Matched' | 'Exception' | 'Approved' | 'Partially Paid' | 'Paid' | 'Rejected' | 'Cancelled' | string;
+  approved_by: string;
+  approved_date: string | null;
+  variance_reason: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SupplierInvoiceLine {
+  id: string;
+  supplier_invoice_id: string;
+  procurement_receipt_id: string;
+  procurement_id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  quantity: number;
+  unit_cost: number;
+  goods_amount: number;
+  tax_amount: number;
+  line_total: number;
+  variance_reason: string;
+  created_at: string;
+}
+
+export interface SupplierInvoicePayment {
+  id: string;
+  supplier_invoice_id: string;
+  project_id: string;
+  contract_id: string | null;
+  payment_number: string;
+  payment_number_locked: boolean;
+  payment_date: string | null;
+  amount: number;
+  status: 'Draft' | 'Settled' | 'Cancelled' | string;
+  payment_reference: string;
+  notes: string;
+  created_at: string;
+}
+
+/** Supplier AP is separate from client/subcontractor progress invoices. */
+export interface SupplierInvoice {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  supplier_party_id: string | null;
+  supplier: string;
+  invoice_number: string;
+  invoice_number_locked: boolean;
+  invoice_date: string | null;
+  due_date: string | null;
+  currency: string;
+  goods_amount: number;
+  tax_amount: number;
+  deductions_amount: number;
+  net_payable_amount: number;
+  status: 'Draft' | 'Submitted' | 'Matched' | 'Exception' | 'Approved' | 'Partially Paid' | 'Paid' | 'Rejected' | 'Cancelled' | string;
+  approved_by: string;
+  approved_date: string | null;
+  variance_reason: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SupplierInvoiceLine {
+  id: string;
+  supplier_invoice_id: string;
+  procurement_receipt_id: string;
+  procurement_id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  quantity: number;
+  unit_cost: number;
+  goods_amount: number;
+  tax_amount: number;
+  line_total: number;
+  variance_reason: string;
+  created_at: string;
+}
+
+export interface SupplierInvoicePayment {
+  id: string;
+  supplier_invoice_id: string;
+  project_id: string;
+  contract_id: string | null;
+  payment_number: string;
+  payment_number_locked: boolean;
+  payment_date: string | null;
+  amount: number;
+  status: 'Draft' | 'Settled' | 'Cancelled' | string;
+  payment_reference: string;
   notes: string;
   created_at: string;
 }
@@ -748,7 +884,9 @@ export interface ReportTemplate {
 
 export type ViewKey =
   | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
-  | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
+  | 'procurement' | 'procurementReceipts' | 'safety' | 'progress' | 'schedule' | 'contracts'
+  | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
+  | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'

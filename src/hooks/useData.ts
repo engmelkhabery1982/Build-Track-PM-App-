@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dataRepository } from '@/data';
 import type {
-  Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
+  Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
   InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange,
@@ -19,6 +19,10 @@ export function useData() {
   const [costs, setCosts] = useState<Cost[]>([]);
   const [costEntries, setCostEntries] = useState<CostEntry[]>([]);
   const [procurement, setProcurement] = useState<Procurement[]>([]);
+  const [procurementReceipts, setProcurementReceipts] = useState<ProcurementReceipt[]>([]);
+  const [supplierInvoices, setSupplierInvoices] = useState<SupplierInvoice[]>([]);
+  const [supplierInvoiceLines, setSupplierInvoiceLines] = useState<SupplierInvoiceLine[]>([]);
+  const [supplierInvoicePayments, setSupplierInvoicePayments] = useState<SupplierInvoicePayment[]>([]);
   const [safety, setSafety] = useState<Safety[]>([]);
   const [progress, setProgress] = useState<ProgressEntry[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -75,13 +79,17 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
         dataRepository.list<Cost>('costs'),
         dataRepository.list<CostEntry>('cost_entries'),
         dataRepository.list<Procurement>('procurement'),
+        listOptional<ProcurementReceipt>('procurement_receipts'),
+        listOptional<SupplierInvoice>('supplier_invoices'),
+        listOptional<SupplierInvoiceLine>('supplier_invoice_lines'),
+        listOptional<SupplierInvoicePayment>('supplier_invoice_payments'),
         dataRepository.list<Safety>('safety'),
         dataRepository.list<ProgressEntry>('progress_entries'),
         dataRepository.list<Schedule>('schedules'),
@@ -122,6 +130,8 @@ export function useData() {
       setCosts(c);
       setCostEntries(ce);
       setProcurement(pr);
+      setProcurementReceipts(prec);
+      setSupplierInvoices(supi); setSupplierInvoiceLines(supil); setSupplierInvoicePayments(supip);
       setSafety(s);
       setProgress(pg);
       setSchedules(sc);
@@ -188,6 +198,10 @@ export function useData() {
       case 'costs': apply(setCosts); break;
       case 'cost_entries': apply(setCostEntries); break;
       case 'procurement': apply(setProcurement); break;
+      case 'procurement_receipts': apply(setProcurementReceipts); break;
+      case 'supplier_invoices': apply(setSupplierInvoices); break;
+      case 'supplier_invoice_lines': apply(setSupplierInvoiceLines); break;
+      case 'supplier_invoice_payments': apply(setSupplierInvoicePayments); break;
       case 'safety': apply(setSafety); break;
       case 'progress_entries': apply(setProgress); break;
       case 'schedules': apply(setSchedules); break;
@@ -237,7 +251,7 @@ export function useData() {
   }, [listOptional]);
 
   return {
-    projects, tasks, costs, costEntries, procurement, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
+    projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,

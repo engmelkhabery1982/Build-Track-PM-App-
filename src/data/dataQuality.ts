@@ -18,6 +18,14 @@ export interface DataQualitySource {
   costEntries: Record<string, any>[];
   reportingPeriods: Record<string, any>[];
   baselines: Record<string, any>[];
+  contractSovLines?: Record<string, any>[];
+  variations?: Record<string, any>[];
+  variationLines?: Record<string, any>[];
+  procurement?: Record<string, any>[];
+  procurementReceipts?: Record<string, any>[];
+  supplierInvoices?: Record<string, any>[];
+  supplierInvoiceLines?: Record<string, any>[];
+  supplierInvoicePayments?: Record<string, any>[];
   documents?: Record<string, any>[];
   rfis?: Record<string, any>[];
   submittals?: Record<string, any>[];
@@ -48,6 +56,14 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const submittals = data.submittals || [];
   const quality = data.quality || [];
   const dailyReports = data.dailyReports || [];
+  const sovLines = data.contractSovLines || [];
+  const variations = data.variations || [];
+  const variationLines = data.variationLines || [];
+  const procurement = data.procurement || [];
+  const procurementReceipts = data.procurementReceipts || [];
+  const supplierInvoices = data.supplierInvoices || [];
+  const supplierInvoiceLines = data.supplierInvoiceLines || [];
+  const supplierInvoicePayments = data.supplierInvoicePayments || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -74,6 +90,54 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, overMeasuredItems.length > 0, { severity: 'Error', title: 'Measured quantities exceed BOQ', detail: `${overMeasuredItems.length} BOQ item(s) have accepted inspection quantities above their contractual quantity.`, view: 'wir' });
   const unscopedCosts = data.costEntries.filter((row) => !row.project_id || !row.contract_id || !row.boq_item_id);
   pushIf(findings, unscopedCosts.length > 0, { severity: 'Warning', title: 'Cost entry without full allocation', detail: `${unscopedCosts.length} cost entry(ies) will not be reliably reflected by BOQ control reports.`, view: 'costEntries' });
+
+  // Commercial control requires every main-contract BOQ line to be visible in
+  // the SOV.  The check is read-only: it shows an explicit variance rather
+  // than inventing budgets or silently changing a contract.
+  const mainContractIds = new Set(data.contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => contract.id));
+  const commercialItems = data.boqItems.filter((item) => mainContractIds.has(headerById.get(item.boq_header_id)?.contract_id));
+  const uncoveredSovItems = commercialItems.filter((item) => !sovLines.some((line) => line.boq_item_id === item.id));
+  pushIf(findings, uncoveredSovItems.length > 0, { severity: 'Warning', title: 'BOQ items missing Contract SOV coverage', detail: `${uncoveredSovItems.length} main-contract BOQ item(s) have no SOV line, so commercial reconciliation is incomplete.`, view: 'contractSov' });
+  const invalidSovScope = sovLines.filter((line) => {
+    const item = line.boq_item_id ? itemById.get(line.boq_item_id) : undefined;
+    const contract = contractById.get(line.contract_id);
+    return !contract || contract.project_id !== line.project_id || (item && headerById.get(item.boq_header_id)?.contract_id !== line.contract_id);
+  });
+  pushIf(findings, invalidSovScope.length > 0, { severity: 'Error', title: 'Contract SOV relationship mismatch', detail: `${invalidSovScope.length} SOV line(s) do not match their project, contract, or BOQ item.`, view: 'contractSov' });
+  const mismatchedSovBudgets = sovLines.filter((line) => {
+    const item = itemById.get(line.boq_item_id);
+    if (!item || line.status === 'Closed') return false;
+    const boqValue = Math.round((Number(item.quantity) || 0) * (Number(item.unit_rate) || 0) * 100) / 100;
+    return Math.abs((Number(line.original_budget) || 0) - boqValue) > 0.01;
+  });
+  pushIf(findings, mismatchedSovBudgets.length > 0, { severity: 'Warning', title: 'SOV original budget differs from BOQ', detail: `${mismatchedSovBudgets.length} active SOV line(s) differ from their linked BOQ original value; review allocation or approved baseline.`, view: 'contractSov' });
+  const unappliedApprovedVariationLines = variationLines.filter((line) => {
+    const variation = variations.find((candidate) => candidate.id === line.variation_id);
+    return variation?.status === 'Approved' && !line.applied_at;
+  });
+  pushIf(findings, unappliedApprovedVariationLines.length > 0, { severity: 'Error', title: 'Approved variation line not applied', detail: `${unappliedApprovedVariationLines.length} approved variation line(s) have not created or updated their governed BOQ impact.`, view: 'variationLines' });
+  const invalidReceipts = procurementReceipts.filter((receipt) => {
+    const po = procurement.find((candidate) => candidate.id === receipt.procurement_id);
+    return !po || po.project_id !== receipt.project_id || (po.contract_id && po.contract_id !== receipt.contract_id) || (po.boq_item_id && po.boq_item_id !== receipt.boq_item_id);
+  });
+  pushIf(findings, invalidReceipts.length > 0, { severity: 'Error', title: 'Goods receipt relationship mismatch', detail: `${invalidReceipts.length} receipt(s) do not match their selected purchase order scope.`, view: 'procurementReceipts' });
+  const overAcceptedPurchaseOrders = procurement.filter((po) => procurementReceipts
+    .filter((receipt) => receipt.procurement_id === po.id && receipt.status === 'Accepted')
+    .reduce((sum, receipt) => sum + (Number(receipt.accepted_quantity) || 0), 0) > (Number(po.quantity) || 0) + 0.000001);
+  pushIf(findings, overAcceptedPurchaseOrders.length > 0, { severity: 'Error', title: 'Accepted receipts exceed purchase order', detail: `${overAcceptedPurchaseOrders.length} purchase order(s) have accepted quantities above the ordered quantity.`, view: 'procurementReceipts' });
+  const invalidSupplierMatches = supplierInvoiceLines.filter((line) => {
+    const invoice = supplierInvoices.find((candidate) => candidate.id === line.supplier_invoice_id);
+    const receipt = procurementReceipts.find((candidate) => candidate.id === line.procurement_receipt_id);
+    const po = procurement.find((candidate) => candidate.id === line.procurement_id || candidate.id === receipt?.procurement_id);
+    return !invoice || !receipt || receipt.status !== 'Accepted' || invoice.project_id !== receipt.project_id || String(invoice.contract_id || '') !== String(receipt.contract_id || '') || (invoice.supplier_party_id && po?.supplier_party_id && invoice.supplier_party_id !== po.supplier_party_id);
+  });
+  pushIf(findings, invalidSupplierMatches.length > 0, { severity: 'Error', title: 'Supplier AP three-way match mismatch', detail: `${invalidSupplierMatches.length} supplier invoice match line(s) do not resolve to an accepted GRN in the same scope.`, view: 'supplierInvoiceLines' });
+  const overBilledReceipts = procurementReceipts.filter((receipt) => supplierInvoiceLines.filter((line) => line.procurement_receipt_id === receipt.id)
+    .reduce((sum, line) => sum + (Number(line.quantity) || 0), 0) > (Number(receipt.accepted_quantity) || 0) + 0.000001);
+  pushIf(findings, overBilledReceipts.length > 0, { severity: 'Error', title: 'Supplier invoice quantity exceeds accepted GRN', detail: `${overBilledReceipts.length} accepted receipt(s) are over-invoiced.`, view: 'supplierInvoiceLines' });
+  const overPaidSupplierInvoices = supplierInvoices.filter((invoice) => supplierInvoicePayments.filter((payment) => payment.supplier_invoice_id === invoice.id && payment.status === 'Settled')
+    .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) > (Number(invoice.net_payable_amount) || 0) + 0.000001);
+  pushIf(findings, overPaidSupplierInvoices.length > 0, { severity: 'Error', title: 'Supplier payment exceeds AP', detail: `${overPaidSupplierInvoices.length} supplier invoice(s) have settled payments above their payable amount.`, view: 'supplierInvoicePayments' });
 
   const fieldRows: Array<Record<string, any> & { view: string }> = [
     ...data.wirEntries.map((row) => ({ ...row, view: 'wir' })),
