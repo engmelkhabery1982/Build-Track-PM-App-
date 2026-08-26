@@ -1137,6 +1137,49 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 30,
+            description: "enforce_supplier_ap_posting_entry_points",
+            sql: r#"
+      CREATE TRIGGER IF NOT EXISTS supplier_invoice_governed_insert_v2
+      BEFORE INSERT ON supplier_invoices
+      WHEN json_extract(NEW.payload, '$.status') IN ('Approved','Partially Paid','Paid')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Supplier AP approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_invoice_governed_update_v2
+      BEFORE UPDATE ON supplier_invoices
+      WHEN json_extract(NEW.payload, '$.status') IN ('Approved','Partially Paid','Paid')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed supplier invoice changes must use an AP posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_payment_governed_insert_v2
+      BEFORE INSERT ON supplier_invoice_payments
+      WHEN json_extract(NEW.payload, '$.status') = 'Settled'
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Supplier payment settlement must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_payment_governed_update_v2
+      BEFORE UPDATE ON supplier_invoice_payments
+      WHEN json_extract(NEW.payload, '$.status') = 'Settled'
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed supplier payment changes must use an AP posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_ap_line_governed_update_v2
+      BEFORE UPDATE ON supplier_invoice_lines
+      WHEN EXISTS (
+        SELECT 1 FROM supplier_invoices i
+        WHERE i.id = json_extract(OLD.payload, '$.supplier_invoice_id')
+          AND json_extract(i.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+      )
+      BEGIN SELECT RAISE(ABORT, 'Approved supplier invoice match lines are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_ap_line_governed_delete_v2
+      BEFORE DELETE ON supplier_invoice_lines
+      WHEN EXISTS (
+        SELECT 1 FROM supplier_invoices i
+        WHERE i.id = json_extract(OLD.payload, '$.supplier_invoice_id')
+          AND json_extract(i.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+      )
+      BEGIN SELECT RAISE(ABORT, 'Approved supplier invoice match lines are immutable.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
