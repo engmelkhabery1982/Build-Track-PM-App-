@@ -1245,6 +1245,9 @@ export function DataTableView({
     }
     if (tableName === 'supplier_invoice_lines') {
       if (!selectedSupplierInvoice) throw new Error('Select a valid supplier invoice before allocating a goods receipt.');
+      if (['Approved', 'Partially Paid', 'Paid', 'Reversed'].includes(String(selectedSupplierInvoice.data?.status || ''))) {
+        throw new Error('Invoice match lines are frozen after approval. Reverse the supplier invoice before changing them.');
+      }
       if (!selectedProcurementReceipt) throw new Error('Select an accepted goods receipt for the supplier-invoice match.');
       if (selectedSupplierInvoice.data?.project_id !== selectedProcurementReceipt.data?.project_id
         || String(selectedSupplierInvoice.data?.contract_id || '') !== String(selectedProcurementReceipt.data?.contract_id || '')) {
@@ -1255,7 +1258,7 @@ export function DataTableView({
         throw new Error('The supplier invoice and accepted goods receipt must belong to the same supplier.');
       }
       const quantity = Number(record.quantity) || 0;
-      const receiptQuantity = Number(selectedProcurementReceipt.data?.quantity) || 0;
+      const receiptQuantity = Number(selectedProcurementReceipt.data?.accepted_quantity) || 0;
       if (quantity <= 0) throw new Error('An invoice match line requires a positive invoiced quantity.');
       const allocated = data.filter((row) => row.id !== record.id && row.procurement_receipt_id === record.procurement_receipt_id)
         .reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
@@ -2333,6 +2336,18 @@ export function DataTableView({
     preserveViewport();
     try {
       const row = data.find((item) => item.id === deleteId);
+      if (row && tableName === 'supplier_invoices' && ['Approved', 'Partially Paid', 'Paid', 'Reversed'].includes(String(row.status || ''))) {
+        throw new Error('Approved supplier invoices cannot be deleted. Use a governed reversal.');
+      }
+      if (row && tableName === 'supplier_invoice_payments' && ['Settled', 'Reversed'].includes(String(row.status || ''))) {
+        throw new Error('Settled supplier payments cannot be deleted. Use a governed reversal.');
+      }
+      if (row && tableName === 'supplier_invoice_lines') {
+        const header = relationshipOptions?.supplier_invoice_id?.find((option) => option.value === row.supplier_invoice_id)?.data;
+        if (['Approved', 'Partially Paid', 'Paid', 'Reversed'].includes(String(header?.status || ''))) {
+          throw new Error('Approved supplier-invoice match lines cannot be deleted. Reverse the invoice first.');
+        }
+      }
       const deletedRows = row && onDeleteGroup
         ? await onDeleteGroup(row)
         : [row].filter(Boolean) as Record<string, any>[];

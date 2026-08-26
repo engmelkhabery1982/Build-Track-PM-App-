@@ -18,6 +18,7 @@ export {
   lockedPeriodForRecord,
 } from "./reportingPeriodGovernance";
 export { runDataQualityChecks } from "./dataQuality";
+export { approveSupplierInvoice, settleSupplierInvoicePayment, reverseSupplierApPosting } from "./supplierAp";
 export { CANONICAL_FIELDS, IMPORT_FIELD_ALIASES, STATUS_SETS, isCanonicalStatus } from "./dataDictionary";
 export {
   assertCodeCanBeLocked,

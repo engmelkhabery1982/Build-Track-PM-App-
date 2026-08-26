@@ -132,12 +132,22 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return !invoice || !receipt || receipt.status !== 'Accepted' || invoice.project_id !== receipt.project_id || String(invoice.contract_id || '') !== String(receipt.contract_id || '') || (invoice.supplier_party_id && po?.supplier_party_id && invoice.supplier_party_id !== po.supplier_party_id);
   });
   pushIf(findings, invalidSupplierMatches.length > 0, { severity: 'Error', title: 'Supplier AP three-way match mismatch', detail: `${invalidSupplierMatches.length} supplier invoice match line(s) do not resolve to an accepted GRN in the same scope.`, view: 'supplierInvoiceLines' });
-  const overBilledReceipts = procurementReceipts.filter((receipt) => supplierInvoiceLines.filter((line) => line.procurement_receipt_id === receipt.id)
+  const activeSupplierInvoiceIds = new Set(supplierInvoices
+    .filter((invoice) => !['Reversed', 'Cancelled', 'Rejected'].includes(String(invoice.status || '')))
+    .map((invoice) => invoice.id));
+  const overBilledReceipts = procurementReceipts.filter((receipt) => supplierInvoiceLines
+    .filter((line) => line.procurement_receipt_id === receipt.id && activeSupplierInvoiceIds.has(line.supplier_invoice_id))
     .reduce((sum, line) => sum + (Number(line.quantity) || 0), 0) > (Number(receipt.accepted_quantity) || 0) + 0.000001);
   pushIf(findings, overBilledReceipts.length > 0, { severity: 'Error', title: 'Supplier invoice quantity exceeds accepted GRN', detail: `${overBilledReceipts.length} accepted receipt(s) are over-invoiced.`, view: 'supplierInvoiceLines' });
   const overPaidSupplierInvoices = supplierInvoices.filter((invoice) => supplierInvoicePayments.filter((payment) => payment.supplier_invoice_id === invoice.id && payment.status === 'Settled')
     .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) > (Number(invoice.net_payable_amount) || 0) + 0.000001);
   pushIf(findings, overPaidSupplierInvoices.length > 0, { severity: 'Error', title: 'Supplier payment exceeds AP', detail: `${overPaidSupplierInvoices.length} supplier invoice(s) have settled payments above their payable amount.`, view: 'supplierInvoicePayments' });
+  const multiPoApprovedInvoices = supplierInvoices.filter((invoice) => ['Approved', 'Partially Paid', 'Paid'].includes(String(invoice.status || ''))
+    && new Set(supplierInvoiceLines.filter((line) => line.supplier_invoice_id === invoice.id).map((line) => String(line.procurement_id || '')).filter(Boolean)).size !== 1);
+  pushIf(findings, multiPoApprovedInvoices.length > 0, { severity: 'Error', title: 'Governed supplier invoice has invalid PO allocation', detail: `${multiPoApprovedInvoices.length} approved supplier invoice(s) do not resolve to exactly one purchase order for the governed AP lifecycle.`, view: 'supplierInvoiceLines' });
+  const staleApprovedAp = supplierInvoices.filter((invoice) => ['Approved', 'Partially Paid', 'Paid'].includes(String(invoice.status || ''))
+    && !supplierInvoiceLines.some((line) => line.supplier_invoice_id === invoice.id));
+  pushIf(findings, staleApprovedAp.length > 0, { severity: 'Error', title: 'Approved supplier invoice has no match lines', detail: `${staleApprovedAp.length} approved supplier invoice(s) have no retained GRN match line and must be reversed or corrected through the governed workflow.`, view: 'supplierInvoices' });
 
   const fieldRows: Array<Record<string, any> & { view: string }> = [
     ...data.wirEntries.map((row) => ({ ...row, view: 'wir' })),

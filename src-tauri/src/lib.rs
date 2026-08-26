@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 mod import_batch;
+mod supplier_ap;
 
 #[tauri::command]
 async fn commit_governed_import(
@@ -24,6 +25,22 @@ async fn reverse_governed_import(
 ) -> Result<import_batch::ImportReverseResult, String> {
     let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     import_batch::reverse_governed_import(&database_path, request).await
+}
+
+#[tauri::command]
+async fn reverse_supplier_ap_posting(app: tauri::AppHandle, request: supplier_ap::SupplierApOperationRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::reverse_supplier_ap_posting(&database_path, request).await
+}
+#[tauri::command]
+async fn approve_supplier_invoice(app: tauri::AppHandle, request: supplier_ap::SupplierInvoiceApprovalRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::approve_supplier_invoice(&database_path, request).await
+}
+#[tauri::command]
+async fn settle_supplier_invoice_payment(app: tauri::AppHandle, request: supplier_ap::SupplierPaymentSettlementRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::settle_supplier_invoice_payment(&database_path, request).await
 }
 
 #[tauri::command]
@@ -1042,6 +1059,84 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 27,
+            description: "add_supplier_ap_posting_audit",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS supplier_ap_postings (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, source_table TEXT NOT NULL,
+        source_id TEXT NOT NULL, posting_type TEXT NOT NULL, status TEXT NOT NULL,
+        actor TEXT NOT NULL, effective_date TEXT, reason TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+        UNIQUE(source_table, source_id, posting_type)
+      );
+      CREATE INDEX IF NOT EXISTS idx_supplier_ap_postings_source ON supplier_ap_postings(source_table, source_id, status);
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 28,
+            description: "lock_governed_supplier_ap_documents",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS supplier_ap_mutation_guard (
+        operation_id TEXT PRIMARY KEY, created_at TEXT NOT NULL
+      );
+      CREATE TRIGGER IF NOT EXISTS supplier_invoice_governed_insert
+      BEFORE INSERT ON supplier_invoices
+      WHEN json_extract(NEW.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Supplier AP approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_invoice_governed_update
+      BEFORE UPDATE ON supplier_invoices
+      WHEN (json_extract(OLD.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+         OR json_extract(NEW.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed'))
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed supplier invoice is immutable; use a reversal.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_payment_governed_insert
+      BEFORE INSERT ON supplier_invoice_payments
+      WHEN json_extract(NEW.payload, '$.status') IN ('Settled','Reversed')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Supplier payment settlement must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_payment_governed_update
+      BEFORE UPDATE ON supplier_invoice_payments
+      WHEN (json_extract(OLD.payload, '$.status') IN ('Settled','Reversed')
+         OR json_extract(NEW.payload, '$.status') IN ('Settled','Reversed'))
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed supplier payment is immutable; use a reversal.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_ap_line_governed_update
+      BEFORE UPDATE ON supplier_invoice_lines
+      WHEN EXISTS (
+        SELECT 1 FROM supplier_invoices i
+        WHERE i.id = json_extract(OLD.payload, '$.supplier_invoice_id')
+          AND json_extract(i.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+      ) AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Approved supplier invoice match lines are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS supplier_ap_line_governed_delete
+      BEFORE DELETE ON supplier_invoice_lines
+      WHEN EXISTS (
+        SELECT 1 FROM supplier_invoices i
+        WHERE i.id = json_extract(OLD.payload, '$.supplier_invoice_id')
+          AND json_extract(i.payload, '$.status') IN ('Approved','Partially Paid','Paid','Reversed')
+      ) AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Approved supplier invoice match lines are immutable.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        // The command layer already owns AP state changes.  These initial
+        // triggers are retired immediately until all legacy direct-write
+        // paths have been migrated to the scoped mutation guard.
+        tauri_plugin_sql::Migration {
+            version: 29,
+            description: "retire_incomplete_supplier_ap_sql_guards",
+            sql: r#"
+      DROP TRIGGER IF EXISTS supplier_invoice_governed_insert;
+      DROP TRIGGER IF EXISTS supplier_invoice_governed_update;
+      DROP TRIGGER IF EXISTS supplier_payment_governed_insert;
+      DROP TRIGGER IF EXISTS supplier_payment_governed_update;
+      DROP TRIGGER IF EXISTS supplier_ap_line_governed_update;
+      DROP TRIGGER IF EXISTS supplier_ap_line_governed_delete;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1056,7 +1151,7 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
-            ,commit_governed_import, reverse_governed_import
+            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment
         ])
         .setup(|app| {
             apply_staged_restore(app.handle())?;
