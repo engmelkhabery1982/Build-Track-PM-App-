@@ -19,6 +19,8 @@ export interface DataQualitySource {
   reportingPeriods: Record<string, any>[];
   baselines: Record<string, any>[];
   contractSovLines?: Record<string, any>[];
+  costChanges?: Record<string, any>[];
+  paymentCertificates?: Record<string, any>[];
   variations?: Record<string, any>[];
   variationLines?: Record<string, any>[];
   procurement?: Record<string, any>[];
@@ -57,6 +59,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const quality = data.quality || [];
   const dailyReports = data.dailyReports || [];
   const sovLines = data.contractSovLines || [];
+  const costChanges = data.costChanges || [];
+  const paymentCertificates = data.paymentCertificates || [];
   const variations = data.variations || [];
   const variationLines = data.variationLines || [];
   const procurement = data.procurement || [];
@@ -111,6 +115,19 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return Math.abs((Number(line.original_budget) || 0) - boqValue) > 0.01;
   });
   pushIf(findings, mismatchedSovBudgets.length > 0, { severity: 'Warning', title: 'SOV original budget differs from BOQ', detail: `${mismatchedSovBudgets.length} active SOV line(s) differ from their linked BOQ original value; review allocation or approved baseline.`, view: 'contractSov' });
+  const invalidCostChanges = costChanges.filter((change) => {
+    const sov = sovLines.find((line) => line.id === change.contract_sov_line_id);
+    return ['Approved', 'Reversed'].includes(String(change.status || ''))
+      && (!sov || sov.project_id !== change.project_id || sov.contract_id !== change.contract_id);
+  });
+  pushIf(findings, invalidCostChanges.length > 0, { severity: 'Error', title: 'Governed cost change has invalid SOV allocation', detail: `${invalidCostChanges.length} approved/reversed cost change(s) do not resolve to exactly one SOV line in the same project and contract.`, view: 'costChanges' });
+  const invalidCertificates = paymentCertificates.filter((certificate) => {
+    const contract = contractById.get(certificate.contract_id);
+    const net = Number(certificate.net_certified_value) || 0;
+    return ['Approved', 'Paid'].includes(String(certificate.status || ''))
+      && (!contract || contract.project_id !== certificate.project_id || !['Client', 'Subcontractor'].includes(String(certificate.certificate_type || '')) || net <= 0);
+  });
+  pushIf(findings, invalidCertificates.length > 0, { severity: 'Error', title: 'Governed payment certificate is incomplete', detail: `${invalidCertificates.length} approved/paid certificate(s) have invalid scope, type or governed net value.`, view: 'paymentCertificates' });
   const unappliedApprovedVariationLines = variationLines.filter((line) => {
     const variation = variations.find((candidate) => candidate.id === line.variation_id);
     return variation?.status === 'Approved' && !line.applied_at;

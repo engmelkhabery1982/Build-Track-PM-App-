@@ -99,3 +99,15 @@ test('data quality exposes supplier AP over-billing and over-payment', () => {
   assert.ok(findings.some((finding) => finding.title === 'Supplier invoice quantity exceeds accepted GRN'));
   assert.ok(findings.some((finding) => finding.title === 'Supplier payment exceeds AP'));
 });
+
+test('data quality exposes governed commercial records with invalid scope or net value', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [], boqItems: [], schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    contractSovLines: [{ id: 's1', project_id: 'p1', contract_id: 'c1', status: 'Active' }],
+    costChanges: [{ id: 'cc1', project_id: 'p1', contract_id: 'wrong', contract_sov_line_id: 's1', status: 'Approved' }],
+    paymentCertificates: [{ id: 'pc1', project_id: 'p1', contract_id: 'c1', certificate_type: 'Client', status: 'Approved', net_certified_value: 0 }],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Governed cost change has invalid SOV allocation'));
+  assert.ok(findings.some((finding) => finding.title === 'Governed payment certificate is incomplete'));
+});

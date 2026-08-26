@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseSupplierApPosting, runDataQualityChecks, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { approveCostChange, approvePaymentCertificate, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -498,7 +498,7 @@ const PAYMENT_CERTIFICATE_COLUMNS: ColumnDef[] = [
   { key: 'tax_rate', label: 'Tax %', type: 'number', editable: true },
   { key: 'tax_amount', label: 'Tax', type: 'money', editable: false },
   { key: 'net_certified_value', label: 'Net Certified', type: 'money', editable: false },
-  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid', 'Reversed'] },
   { key: 'approved_by', label: 'Approved By', type: 'text', editable: true },
   { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
   { key: 'payment_date', label: 'Payment Date', type: 'date', editable: true },
@@ -786,8 +786,8 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   costCodes: { columns: COST_CODE_COLUMNS, filters: [{ key: 'classification', label: 'Classification', options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
   wbs: { columns: WBS_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
   contractSov: { columns: CONTRACT_SOV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Active', 'Closed'] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }], showProjectFilter: true },
-  costChanges: { columns: COST_CHANGE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected'] }, { key: 'change_type', label: 'Type', options: ['Budget Transfer', 'Scope Cost', 'Forecast Adjustment', 'Procurement Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
-  paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
+  costChanges: { columns: COST_CHANGE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Reversed'] }, { key: 'change_type', label: 'Type', options: ['Budget Transfer', 'Scope Cost', 'Forecast Adjustment', 'Procurement Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
+  paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid', 'Reversed'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
   procurementReconciliation: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
@@ -2142,7 +2142,7 @@ export default function App() {
     if (activeView === 'dataQuality') {
       const checks = runDataQualityChecks({
         projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
       });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
@@ -3093,6 +3093,18 @@ export default function App() {
                   : approval.entity_type === 'RFI' ? 'rfi_register'
                     : approval.entity_type === 'Quality Record' ? 'quality_register' : null;
             if (decision && target && approval.entity_id) {
+              if (decision === 'Approved' && target === 'cost_changes') {
+                void approveCostChange({ operationId: crypto.randomUUID(), sourceId: approval.entity_id, actor: approval.approver || 'Approval Workflow', approvedAt: approval.decision_date || new Date().toISOString().slice(0, 10) })
+                  .then(() => data.reload())
+                  .catch((error) => alert(`Approval was saved, but the governed Cost Change posting failed: ${error.message || 'Unknown error'}`));
+                return;
+              }
+              if (decision === 'Approved' && target === 'payment_certificates') {
+                void approvePaymentCertificate({ operationId: crypto.randomUUID(), sourceId: approval.entity_id, actor: approval.approver || 'Approval Workflow', approvedAt: approval.decision_date || new Date().toISOString().slice(0, 10) })
+                  .then(() => data.reload())
+                  .catch((error) => alert(`Approval was saved, but the governed Payment Certificate posting failed: ${error.message || 'Unknown error'}`));
+                return;
+              }
               void dataRepository.update<Record<string, any>>(target, approval.entity_id, {
                 status: target === 'rfi_register' ? (decision === 'Approved' ? 'Answered' : 'Open')
                   : target === 'quality_register' ? (decision === 'Approved' ? 'In Progress' : 'Open')
@@ -3134,21 +3146,9 @@ export default function App() {
               alert(`Failed to synchronize project dates: ${error.message || 'Unknown error'}`),
             );
           }
-          if (tableName === 'payment_certificates') {
-            if (mutation.type === 'delete') {
-              void removeStandaloneCertificateCash(String(mutation.id)).catch((error) =>
-                alert(`Certificate was deleted, but its generated Cash Flow could not be removed: ${error.message || 'Unknown error'}`),
-              );
-            } else if (mutation.type === 'insertMany') {
-              mutation.rows.forEach((certificate) => void synchronizeCertificateToInvoiceTracking(certificate).catch((error) =>
-                alert(`A certificate was imported, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
-              ));
-            } else {
-              void synchronizeCertificateToInvoiceTracking(mutation.row as Record<string, any>).catch((error) =>
-                alert(`Certificate was saved, but its invoice register could not be synchronized: ${error.message || 'Unknown error'}`),
-              );
-            }
-          }
+          // Certificates remain editable while Draft/Submitted. Approval,
+          // settlement and reversal are one SQLite transaction; the UI must
+          // never independently write a second cash movement afterwards.
           if (tableName === 'documents' && (mutation.type === 'insert' || mutation.type === 'update')) {
             const document = mutation.row as Record<string, any>;
             if (document.supersedes_document_id) {
@@ -3249,6 +3249,24 @@ export default function App() {
             const reason = window.prompt('Reason for governed supplier-payment reversal:');
             if (!reason?.trim()) return;
             await reverseSupplierApPosting({ operationId: crypto.randomUUID(), sourceTable: 'supplier_invoice_payments', sourceId: row.id, actor: 'Local User', reason: reason.trim() });
+            await data.reload();
+          },
+        } : tableName === 'cost_changes' ? {
+          label: 'Reverse Cost Change',
+          title: 'Reverse an approved cost change and recompute the governed SOV value without deleting history.',
+          onClick: async (row) => {
+            const reason = window.prompt('Reason for governed cost-change reversal:');
+            if (!reason?.trim()) return;
+            await reverseCommercialPosting({ operationId: crypto.randomUUID(), sourceTable: 'cost_changes', sourceId: row.id, actor: 'Local User', reason: reason.trim() });
+            await data.reload();
+          },
+        } : tableName === 'payment_certificates' ? {
+          label: 'Reverse Certificate',
+          title: 'Reverse a governed payment certificate and remove its generated cash movement without deleting history.',
+          onClick: async (row) => {
+            const reason = window.prompt('Reason for governed payment-certificate reversal:');
+            if (!reason?.trim()) return;
+            await reverseCommercialPosting({ operationId: crypto.randomUUID(), sourceTable: 'payment_certificates', sourceId: row.id, actor: 'Local User', reason: reason.trim() });
             await data.reload();
           },
         } : tableName === 'client_invoices' ? {
@@ -3463,6 +3481,29 @@ export default function App() {
           }
           if (['Settled', 'Reversed'].includes(String(current?.status || ''))) throw new Error('Governed supplier payments are immutable; use a governed reversal.');
           return dataRepository.update<Record<string, any>>('supplier_invoice_payments', id, patch);
+        } : tableName === 'cost_changes' ? async (id, patch) => {
+          const current = data.costChanges.find((row: any) => row.id === id) as any;
+          if (patch.status === 'Approved' && current?.status !== 'Approved') {
+            await approveCostChange({ operationId: crypto.randomUUID(), sourceId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
+            const rows = await dataRepository.list<Record<string, any>>('cost_changes');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (['Approved', 'Reversed'].includes(String(current?.status || ''))) throw new Error('Governed cost changes are immutable; use a governed reversal.');
+          return dataRepository.update<Record<string, any>>('cost_changes', id, patch);
+        } : tableName === 'payment_certificates' ? async (id, patch) => {
+          const current = data.paymentCertificates.find((row: any) => row.id === id) as any;
+          if (patch.status === 'Approved' && current?.status !== 'Approved') {
+            await approvePaymentCertificate({ operationId: crypto.randomUUID(), sourceId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
+            const rows = await dataRepository.list<Record<string, any>>('payment_certificates');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (patch.status === 'Paid' && current?.status === 'Approved') {
+            await settlePaymentCertificate({ operationId: crypto.randomUUID(), certificateId: id, actor: 'Local User', paidAt: patch.payment_date || new Date().toISOString().slice(0, 10) });
+            const rows = await dataRepository.list<Record<string, any>>('payment_certificates');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (['Approved', 'Paid', 'Reversed'].includes(String(current?.status || ''))) throw new Error('Governed payment certificates are immutable; use settlement or reversal.');
+          return dataRepository.update<Record<string, any>>('payment_certificates', id, patch);
         } : tableName === 'supplier_invoice_lines' ? async (id, patch) => {
           const current = data.supplierInvoiceLines.find((row: any) => row.id === id) as any;
           const invoice = data.supplierInvoices.find((row: any) => row.id === current?.supplier_invoice_id) as any;

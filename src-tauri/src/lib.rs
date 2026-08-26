@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod import_batch;
 mod supplier_ap;
+mod commercial_workflow;
 
 #[tauri::command]
 async fn commit_governed_import(
@@ -41,6 +42,27 @@ async fn approve_supplier_invoice(app: tauri::AppHandle, request: supplier_ap::S
 async fn settle_supplier_invoice_payment(app: tauri::AppHandle, request: supplier_ap::SupplierPaymentSettlementRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
     let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     supplier_ap::settle_supplier_invoice_payment(&database_path, request).await
+}
+
+#[tauri::command]
+async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::approve_cost_change(&path, request).await
+}
+#[tauri::command]
+async fn approve_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::approve_payment_certificate(&path, request).await
+}
+#[tauri::command]
+async fn settle_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::CertificateSettlementRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::settle_payment_certificate(&path, request).await
+}
+#[tauri::command]
+async fn reverse_commercial_posting(app: tauri::AppHandle, request: commercial_workflow::ReversalRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::reverse_commercial_posting(&path, request).await
 }
 
 #[tauri::command]
@@ -1180,6 +1202,64 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 31,
+            description: "govern_commercial_sov_cost_change_and_certificate_postings",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS commercial_workflow_postings (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, source_table TEXT NOT NULL,
+        source_id TEXT NOT NULL, posting_type TEXT NOT NULL, status TEXT NOT NULL,
+        actor TEXT NOT NULL, effective_date TEXT, reason TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+        UNIQUE(source_table, source_id, posting_type)
+      );
+      CREATE INDEX IF NOT EXISTS idx_commercial_workflow_postings_source
+        ON commercial_workflow_postings(source_table, source_id, status);
+      CREATE TABLE IF NOT EXISTS commercial_mutation_guard (
+        operation_id TEXT PRIMARY KEY, created_at TEXT NOT NULL
+      );
+
+      -- The ledger is a reporting fact. Certificates report their governed
+      -- net certified value once it has been calculated by the posting command.
+      DROP TRIGGER IF EXISTS financial_ledger_payment_certificates_ai;
+      DROP TRIGGER IF EXISTS financial_ledger_payment_certificates_au;
+      INSERT OR REPLACE INTO financial_ledger (id, source_table, source_id, project_id, contract_id, boq_item_id, transaction_date, ledger_type, direction, amount, status, created_at)
+        SELECT 'certificate:' || id, 'payment_certificates', id, project_id, contract_id, boq_item_id,
+          json_extract(payload, '$.certificate_date'), 'Payment Certificate',
+          CASE WHEN json_extract(payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END,
+          CAST(COALESCE(json_extract(payload, '$.net_certified_value'), json_extract(payload, '$.gross_certified_value'), 0) AS REAL),
+          json_extract(payload, '$.status'), created_at FROM payment_certificates;
+      CREATE TRIGGER financial_ledger_payment_certificates_ai AFTER INSERT ON payment_certificates BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('certificate:' || NEW.id, 'payment_certificates', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.certificate_date'), 'Payment Certificate', CASE WHEN json_extract(NEW.payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END, CAST(COALESCE(json_extract(NEW.payload, '$.net_certified_value'), json_extract(NEW.payload, '$.gross_certified_value'), 0) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+      CREATE TRIGGER financial_ledger_payment_certificates_au AFTER UPDATE ON payment_certificates BEGIN
+        INSERT OR REPLACE INTO financial_ledger VALUES ('certificate:' || NEW.id, 'payment_certificates', NEW.id, NEW.project_id, NEW.contract_id, NEW.boq_item_id, json_extract(NEW.payload, '$.certificate_date'), 'Payment Certificate', CASE WHEN json_extract(NEW.payload, '$.certificate_type') = 'Client' THEN 'Inflow' ELSE 'Outflow' END, CAST(COALESCE(json_extract(NEW.payload, '$.net_certified_value'), json_extract(NEW.payload, '$.gross_certified_value'), 0) AS REAL), json_extract(NEW.payload, '$.status'), NEW.created_at);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS cost_change_governed_insert_v1
+      BEFORE INSERT ON cost_changes
+      WHEN json_extract(NEW.payload, '$.status') IN ('Approved','Reversed')
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Cost-change approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS cost_change_governed_update_v1
+      BEFORE UPDATE ON cost_changes
+      WHEN (json_extract(OLD.payload, '$.status') IN ('Approved','Reversed')
+         OR json_extract(NEW.payload, '$.status') IN ('Approved','Reversed'))
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed cost change is immutable; use a reversal.'); END;
+      CREATE TRIGGER IF NOT EXISTS certificate_governed_insert_v1
+      BEFORE INSERT ON payment_certificates
+      WHEN json_extract(NEW.payload, '$.status') IN ('Approved','Paid','Reversed')
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Certificate approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS certificate_governed_update_v1
+      BEFORE UPDATE ON payment_certificates
+      WHEN (json_extract(OLD.payload, '$.status') IN ('Approved','Paid','Reversed')
+         OR json_extract(NEW.payload, '$.status') IN ('Approved','Paid','Reversed'))
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed payment certificate is immutable; use settlement or reversal.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1194,7 +1274,8 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
-            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment
+            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment,
+            approve_cost_change, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
         ])
         .setup(|app| {
             apply_staged_restore(app.handle())?;
