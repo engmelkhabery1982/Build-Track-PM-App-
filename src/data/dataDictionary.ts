@@ -3,7 +3,7 @@ export const STATUS_SETS = {
   project: ['Planning', 'In Progress', 'On Hold', 'Completed', 'Delayed'],
   contract: ['Draft', 'Active', 'Completed', 'Terminated'],
   schedule: ['Not Started', 'In Progress', 'Completed', 'Delayed'],
-  variation: ['Draft', 'Submitted', 'Pending', 'Approved', 'Rejected'],
+  variation: ['Draft', 'Submitted', 'Pending', 'Approved', 'Rejected', 'Reversed'],
   invoice: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid'],
   payment: ['Unpaid', 'Partially Paid', 'Paid'],
   wir: ['Pending', 'Approved', 'Rejected'],

@@ -3331,6 +3331,7 @@ export default function App() {
           label: 'Reverse Variation',
           title: 'Reverse an approved variation, its generated BOQ/SOV scope and commercial forecast without deleting history.',
           onClick: async (row) => {
+            if (row.status !== 'Approved') throw new Error('Only an approved variation can be reversed.');
             const reason = window.prompt('Reason for governed variation reversal:');
             if (!reason?.trim()) return;
             await reverseVariation({ operationId: crypto.randomUUID(), sourceId: row.id, actor: 'Local User', reason: reason.trim() });
