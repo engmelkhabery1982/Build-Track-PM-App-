@@ -59,6 +59,30 @@ test('purchase orders remain commitment/forecast events until an accepted cost f
   });
 });
 
+test('SOV forecast consumes accepted procurement cost before carrying open commitment', () => {
+  const forecast = commercial.calculateSovCostForecast({
+    originalBudget: 1000, approvedVariations: 100, approvedCostChanges: 50,
+    procurementCommitment: 900, procurementActual: 600, otherActual: 200,
+  });
+  assert.deepEqual(forecast, {
+    revisedBudget: 1150, procurementCommitment: 900, procurementActual: 600, otherActual: 200,
+    actualCost: 800, openCommitment: 300, governedForecastFloor: 1150, requestedOverride: 0,
+    forecastAtCompletion: 1150, costToComplete: 350, forecastVariance: 0, overrideBelowGovernedFloor: false,
+  });
+});
+
+test('SOV forecast rejects a manual override that hides actual cost or open PO commitment', () => {
+  const forecast = commercial.calculateSovCostForecast({
+    originalBudget: 500, approvedVariations: 0, approvedCostChanges: 0,
+    procurementCommitment: 1200, procurementActual: 700, otherActual: 100, manualForecastOverride: 900,
+  });
+  assert.equal(forecast.openCommitment, 500);
+  assert.equal(forecast.governedForecastFloor, 1300);
+  assert.equal(forecast.forecastAtCompletion, 1300);
+  assert.equal(forecast.costToComplete, 500);
+  assert.equal(forecast.overrideBelowGovernedFloor, true);
+});
+
 test('data quality exposes missing and unreconciled SOV coverage instead of hiding it', () => {
   const findings = quality.runDataQualityChecks({
     projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
@@ -127,4 +151,17 @@ test('data quality exposes governed commercial records with invalid scope or net
   });
   assert.ok(findings.some((finding) => finding.title === 'Governed cost change has invalid SOV allocation'));
   assert.ok(findings.some((finding) => finding.title === 'Governed payment certificate is incomplete'));
+});
+
+test('data quality flags a manual SOV forecast below the governed floor', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }],
+    boqItems: [{ id: 'b1', project_id: 'p1', boq_header_id: 'h1', item_code: 'A', quantity: 10, unit_rate: 100 }],
+    schedules: [], wirEntries: [], reportingPeriods: [], baselines: [],
+    contractSovLines: [{ id: 's1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', original_budget: 1000, forecast_override: 900, status: 'Active' }],
+    procurement: [{ id: 'po1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 10, total_cost: 1200, status: 'Ordered' }],
+    costEntries: [{ id: 'ce1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', source_type: 'procurement_receipt', amount: 700 }],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Manual SOV forecast is below governed cost floor'));
 });

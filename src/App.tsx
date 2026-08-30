@@ -16,7 +16,7 @@ import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPa
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm } from '@/utils/cpm';
-import { calculateCertificateValues, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
+import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -458,8 +458,11 @@ const CONTRACT_SOV_COLUMNS: ColumnDef[] = [
   { key: 'revised_budget', label: 'Revised Budget', type: 'money', editable: false },
   { key: 'committed_cost', label: 'Committed Cost', type: 'money', editable: false },
   { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
-  { key: 'forecast_at_completion', label: 'Forecast at Completion', type: 'money', editable: true },
+  { key: 'open_commitment', label: 'Open Commitment', type: 'money', editable: false },
+  { key: 'forecast_override', label: 'Manual FAC Override', type: 'money', editable: true },
+  { key: 'forecast_at_completion', label: 'Forecast at Completion', type: 'money', editable: false },
   { key: 'cost_to_complete', label: 'Cost to Complete', type: 'money', editable: false },
+  { key: 'forecast_variance', label: 'Forecast Variance', type: 'money', editable: false },
   { key: 'retention_rate', label: 'Retention %', type: 'number', editable: true },
   { key: 'tax_rate', label: 'Tax %', type: 'number', editable: true },
   { key: 'markup_rate', label: 'Markup %', type: 'number', editable: true },
@@ -2498,23 +2501,36 @@ export default function App() {
             .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
               && ['Approved', 'Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(entry.status || '')))
             .reduce((sum: number, entry: any) => sum + (Number(entry.total_cost) || ((Number(entry.quantity) || 0) * (Number(entry.unit_cost) || 0))), 0);
-          const actualCost = data.costEntries
-            .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id)
+          const procurementActual = data.costEntries
+            .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
+              && String(entry.source_type || '') === 'procurement_receipt')
             .reduce((sum: number, entry: any) => sum + (Number(entry.amount) || 0), 0);
-          const originalBudget = Number(line.original_budget) || 0;
-          const revisedBudget = Math.round((originalBudget + approvedVariationValue + approvedCostChangeValue) * 100) / 100;
-          const forecast = Number(line.forecast_at_completion) || Math.max(revisedBudget, committedCost, actualCost);
+          const otherActual = data.costEntries
+            .filter((entry: any) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id)
+            .filter((entry: any) => String(entry.source_type || '') !== 'procurement_receipt')
+            .reduce((sum: number, entry: any) => sum + (Number(entry.amount) || 0), 0);
+          const forecast = calculateSovCostForecast({
+            originalBudget: Number(line.original_budget) || 0,
+            approvedVariations: approvedVariationValue,
+            approvedCostChanges: approvedCostChangeValue,
+            procurementCommitment: committedCost,
+            procurementActual,
+            otherActual,
+            manualForecastOverride: Number(line.forecast_override) || 0,
+          });
           return {
             ...line,
             contract_role: contract?.contract_role || 'Main Contract',
             contract_number: contract?.contract_number || '',
             approved_variation_value: Math.round(approvedVariationValue * 100) / 100,
             approved_cost_change_value: Math.round(approvedCostChangeValue * 100) / 100,
-            revised_budget: revisedBudget,
-            committed_cost: Math.round(committedCost * 100) / 100,
-            actual_cost: Math.round(actualCost * 100) / 100,
-            forecast_at_completion: Math.round(forecast * 100) / 100,
-            cost_to_complete: Math.max(0, Math.round((forecast - actualCost) * 100) / 100),
+            revised_budget: forecast.revisedBudget,
+            committed_cost: forecast.procurementCommitment,
+            actual_cost: forecast.actualCost,
+            open_commitment: forecast.openCommitment,
+            forecast_at_completion: forecast.forecastAtCompletion,
+            cost_to_complete: forecast.costToComplete,
+            forecast_variance: forecast.forecastVariance,
           };
         })
       : activeView === 'paymentCertificates'

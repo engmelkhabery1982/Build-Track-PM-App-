@@ -9,7 +9,7 @@ const NON_NEGATIVE_FIELDS = new Set([
   'lag_days', 'duration_days', 'remaining_duration_days', 'budget',
   'planned_value', 'actual_cost', 'earned_work_value', 'contract_value',
   'modified_contract_value', 'amount', 'item_amount', 'total_cost', 'inflow', 'outflow',
-  'original_budget', 'forecast_at_completion', 'retention_rate', 'tax_rate', 'markup_rate',
+  'original_budget', 'forecast_at_completion', 'forecast_override', 'retention_rate', 'tax_rate', 'markup_rate',
   'gross_certified_value', 'advance_recovery', 'deductions',
 ]);
 

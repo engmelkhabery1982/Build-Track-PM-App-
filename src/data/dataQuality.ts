@@ -1,4 +1,5 @@
 import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts';
+import { calculateSovCostForecast } from '../utils/commercialControl.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -117,6 +118,22 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return Math.abs((Number(line.original_budget) || 0) - boqValue) > 0.01;
   });
   pushIf(findings, mismatchedSovBudgets.length > 0, { severity: 'Warning', title: 'SOV original budget differs from BOQ', detail: `${mismatchedSovBudgets.length} active SOV line(s) differ from their linked BOQ original value; review allocation or approved baseline.`, view: 'contractSov' });
+  const invalidForecastOverrides = sovLines.filter((line) => {
+    const approvedVariations = variationLines.filter((variationLine) => {
+      const variation = variations.find((candidate) => candidate.id === variationLine.variation_id);
+      return variation?.status === 'Approved' && variationLine.contract_id === line.contract_id && variationLine.boq_item_id === line.boq_item_id;
+    }).reduce((sum, variationLine) => sum + (Number(variationLine.value_impact) || 0), 0);
+    const approvedCostChanges = costChanges.filter((change) => change.status === 'Approved' && change.contract_sov_line_id === line.id)
+      .reduce((sum, change) => sum + (Number(change.amount) || 0), 0);
+    const scopedPos = procurement.filter((po) => po.contract_id === line.contract_id && po.boq_item_id === line.boq_item_id
+      && ['Approved', 'Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(po.status || '')));
+    const procurementCommitment = scopedPos.reduce((sum, po) => sum + (Number(po.total_cost) || ((Number(po.quantity) || 0) * (Number(po.unit_cost) || 0))), 0);
+    const scopedCost = data.costEntries.filter((entry) => entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id);
+    const procurementActual = scopedCost.filter((entry) => String(entry.source_type || '') === 'procurement_receipt').reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    const otherActual = scopedCost.filter((entry) => String(entry.source_type || '') !== 'procurement_receipt').reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    return calculateSovCostForecast({ originalBudget: Number(line.original_budget) || 0, approvedVariations, approvedCostChanges, procurementCommitment, procurementActual, otherActual, manualForecastOverride: Number(line.forecast_override) || 0 }).overrideBelowGovernedFloor;
+  });
+  pushIf(findings, invalidForecastOverrides.length > 0, { severity: 'Warning', title: 'Manual SOV forecast is below governed cost floor', detail: `${invalidForecastOverrides.length} SOV line(s) have an override below revised budget, actual cost plus open PO commitment; the governed forecast is used instead.`, view: 'contractSov' });
   const invalidCostChanges = costChanges.filter((change) => {
     const sov = sovLines.find((line) => line.id === change.contract_sov_line_id);
     return ['Approved', 'Reversed'].includes(String(change.status || ''))

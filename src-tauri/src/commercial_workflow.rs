@@ -50,7 +50,10 @@ async fn recompute_sov(tx:&mut Transaction<'_,Sqlite>,sov_id:&str)->std::result:
  let (_,mut sov)=scope_doc(tx,"contract_sov_lines",sov_id).await?;
  let changes:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM cost_changes WHERE contract_sov_line_id=? AND json_extract(payload,'$.status')='Approved'").bind(sov_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
  let revised=money(n(&sov,"original_budget")+changes); let actual=n(&sov,"actual_cost");
- let forecast=if n(&sov,"forecast_at_completion")<=0.0 {revised} else {n(&sov,"forecast_at_completion")};
+ // The persisted value is a governed baseline only.  The UI/reporting control
+ // engine combines it with live PO/GRN facts; an explicit override is never
+ // allowed to lower the revised SOV budget during a cost-change approval.
+ let forecast=revised.max(n(&sov,"forecast_override"));
  let o=sov.as_object_mut().ok_or("Invalid SOV payload.")?;
  o.insert("approved_cost_change_value".into(),json!(money(changes)));o.insert("revised_budget".into(),json!(revised));o.insert("forecast_at_completion".into(),json!(forecast));o.insert("cost_to_complete".into(),json!(money((forecast-actual).max(0.0))));
  put(tx,"contract_sov_lines",sov_id,&sov).await
