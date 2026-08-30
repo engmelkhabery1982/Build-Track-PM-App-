@@ -140,6 +140,14 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
       && (!sov || sov.project_id !== change.project_id || sov.contract_id !== change.contract_id);
   });
   pushIf(findings, invalidCostChanges.length > 0, { severity: 'Error', title: 'Governed cost change has invalid SOV allocation', detail: `${invalidCostChanges.length} approved/reversed cost change(s) do not resolve to exactly one SOV line in the same project and contract.`, view: 'costChanges' });
+  const invalidBudgetTransfers = costChanges.filter((change) => {
+    if (change.status !== 'Approved' || change.change_type !== 'Budget Transfer') return false;
+    const target = sovLines.find((line) => line.id === change.contract_sov_line_id);
+    const source = sovLines.find((line) => line.id === change.transfer_from_sov_line_id);
+    return !source || !target || source.id === target.id || source.project_id !== change.project_id || target.project_id !== change.project_id
+      || source.contract_id !== change.contract_id || target.contract_id !== change.contract_id || Number(change.amount) <= 0;
+  });
+  pushIf(findings, invalidBudgetTransfers.length > 0, { severity: 'Error', title: 'Budget transfer has invalid source or target', detail: `${invalidBudgetTransfers.length} approved transfer(s) lack two different SOV lines in the same contract, or have a non-positive amount.`, view: 'costChanges' });
   const invalidCertificates = paymentCertificates.filter((certificate) => {
     const contract = contractById.get(certificate.contract_id);
     const net = Number(certificate.net_certified_value) || 0;

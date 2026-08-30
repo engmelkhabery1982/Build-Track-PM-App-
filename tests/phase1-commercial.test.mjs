@@ -179,3 +179,13 @@ test('data quality exposes approved variation scope that is missing SOV or comme
   assert.ok(findings.some((finding) => finding.title === 'Approved variation missing commercial cash forecast'));
   assert.ok(findings.some((finding) => finding.title === 'Approved new variation item missing SOV'));
 });
+
+test('data quality rejects an approved budget transfer without two SOV allocations', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }], boqHeaders: [], boqItems: [],
+    schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    contractSovLines: [{ id: 's1', project_id: 'p1', contract_id: 'c1', status: 'Active' }],
+    costChanges: [{ id: 'cc1', project_id: 'p1', contract_id: 'c1', contract_sov_line_id: 's1', transfer_from_sov_line_id: 's1', change_type: 'Budget Transfer', amount: 100, status: 'Approved' }],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Budget transfer has invalid source or target'));
+});

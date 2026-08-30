@@ -473,6 +473,8 @@ const COST_CHANGE_COLUMNS: ColumnDef[] = [
   { key: 'cost_change_number', label: 'Cost Change #', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
   { key: 'contract_sov_line_id', label: 'SOV Line', type: 'select', editable: true },
+  { key: 'transfer_from_sov_line_id', label: 'Transfer From SOV', type: 'select', editable: true },
+  { key: 'transfer_from_sov_line_id', label: 'Transfer From SOV', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
   { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
@@ -2795,6 +2797,8 @@ export default function App() {
           boq_item_id: line.boq_item_id, cost_code_id: line.cost_code_id,
         },
       }));
+    relationshipOptions.transfer_from_sov_line_id = relationshipOptions.contract_sov_line_id;
+    relationshipOptions.transfer_from_sov_line_id = relationshipOptions.contract_sov_line_id;
     relationshipOptions.wbs_id = data.wbsNodes
       .filter((node: any) => node.status !== 'Inactive')
       .map((node: any) => ({ value: node.id, label: `${node.wbs_code || node.id} — ${node.name || 'Unnamed WBS'}`, data: { project_id: node.project_id, contract_id: node.contract_id, wbs_code: node.wbs_code, wbs_level: node.wbs_level } }));
