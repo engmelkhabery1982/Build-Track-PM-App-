@@ -152,6 +152,15 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return variation?.status === 'Approved' && !line.applied_at;
   });
   pushIf(findings, unappliedApprovedVariationLines.length > 0, { severity: 'Error', title: 'Approved variation line not applied', detail: `${unappliedApprovedVariationLines.length} approved variation line(s) have not created or updated their governed BOQ impact.`, view: 'variationLines' });
+  const approvedVariationsMissingForecast = variations.filter((variation) => variation.status === 'Approved' && Math.abs(Number(variation.cost_impact) || 0) > 0.000001
+    && !cashFlow.some((entry) => entry.source_type === 'variation_cash_forecast' && entry.source_id === variation.id && entry.status === 'Open'));
+  pushIf(findings, approvedVariationsMissingForecast.length > 0, { severity: 'Warning', title: 'Approved variation missing commercial cash forecast', detail: `${approvedVariationsMissingForecast.length} approved variation(s) have a financial impact but no governed forecast movement.`, view: 'variations' });
+  const approvedNewVariationLinesWithoutSov = variationLines.filter((line) => {
+    const variation = variations.find((candidate) => candidate.id === line.variation_id);
+    return variation?.status === 'Approved' && line.change_type === 'New Item' && line.boq_item_id
+      && !sovLines.some((sov) => sov.contract_id === line.contract_id && sov.boq_item_id === line.boq_item_id);
+  });
+  pushIf(findings, approvedNewVariationLinesWithoutSov.length > 0, { severity: 'Error', title: 'Approved new variation item missing SOV', detail: `${approvedNewVariationLinesWithoutSov.length} approved new variation item(s) are not represented in Contract SOV.`, view: 'contractSov' });
   const invalidReceipts = procurementReceipts.filter((receipt) => {
     const po = procurement.find((candidate) => candidate.id === receipt.procurement_id);
     return !po || po.project_id !== receipt.project_id || (po.contract_id && po.contract_id !== receipt.contract_id) || (po.boq_item_id && po.boq_item_id !== receipt.boq_item_id);

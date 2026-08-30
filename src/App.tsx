@@ -1060,12 +1060,13 @@ export default function App() {
 
   async function synchronizeVariationLines(variationId: string) {
     if (!variationId) return;
-    const [lines, variations, items, headers, contracts] = await Promise.all([
+    const [lines, variations, items, headers, contracts, sovLines] = await Promise.all([
       dataRepository.list<Record<string, any>>('variation_lines'),
       dataRepository.list<Record<string, any>>('variations'),
       dataRepository.list<Record<string, any>>('boq_items'),
       dataRepository.list<Record<string, any>>('boq_headers'),
       dataRepository.list<Record<string, any>>('contracts'),
+      dataRepository.list<Record<string, any>>('contract_sov_lines'),
     ]);
     const variation = variations.find((row) => row.id === variationId);
     if (!variation) return;
@@ -1076,10 +1077,51 @@ export default function App() {
       data.applyLocalMutation('variations', { type: 'update', row: updated });
     }
 
-    // A draft/submitted order is a commercial scenario only. Its BOQ impact is
-    // intentionally deferred until the order is formally approved.
-    if (variation.status !== 'Approved') return;
+    const variationCashSource = `variation_cash_forecast:${variation.id}`;
+    const existingVariationCash = data.cashFlow.find((entry: any) => entry.source_type === 'variation_cash_forecast' && entry.source_id === variation.id) as any;
+    // A draft/submitted order is a commercial scenario only. Its BOQ and cash
+    // impact are intentionally deferred until the order is formally approved.
+    if (variation.status !== 'Approved') {
+      if (existingVariationCash) {
+        await dataRepository.delete('cash_flow', existingVariationCash.id);
+        data.applyLocalMutation('cash_flow', { type: 'delete', id: existingVariationCash.id });
+      }
+      return;
+    }
     const effectiveDate = variation.approved_date || new Date().toISOString().slice(0, 10);
+    const variationContract = contracts.find((row) => row.id === variation.contract_id);
+    if (!variationContract) throw new Error(`Variation ${variation.variation_number || variation.id} has no valid contract.`);
+    // This is the variation's controlled commercial cash projection, not an
+    // invoice/payment fact. A main-contract VO forecasts an inflow; a
+    // subcontract VO forecasts an outflow. The deterministic source key makes
+    // repeat synchronization idempotent.
+    const variationCash = {
+      project_id: variation.project_id,
+      contract_id: variation.contract_id,
+      date: effectiveDate,
+      description: `Approved variation forecast: ${variation.variation_number || variation.id}`,
+      category: 'Commercial Variation',
+      // A negative main-contract VO reduces expected collection; a negative
+      // subcontract VO is a supplier credit. Keep inflow/outflow non-negative
+      // and express direction through net instead of storing a negative cash leg.
+      inflow: variationContract.parent_main_contract_id ? Math.max(0, -totalImpact) : Math.max(0, totalImpact),
+      outflow: variationContract.parent_main_contract_id ? Math.max(0, totalImpact) : Math.max(0, -totalImpact),
+      net: variationContract.parent_main_contract_id ? -totalImpact : totalImpact,
+      cumulative_balance: 0,
+      movement_type: 'Forecast',
+      status: 'Open',
+      source_type: 'variation_cash_forecast',
+      source_id: variation.id,
+    };
+    if (Math.abs(totalImpact) > 0.000001) {
+      const saved = existingVariationCash
+        ? await dataRepository.update<Record<string, any>>('cash_flow', existingVariationCash.id, variationCash)
+        : await dataRepository.insert<Record<string, any>>('cash_flow', { id: variationCashSource, ...variationCash });
+      data.applyLocalMutation('cash_flow', { type: existingVariationCash ? 'update' : 'insert', row: saved });
+    } else if (existingVariationCash) {
+      await dataRepository.delete('cash_flow', existingVariationCash.id);
+      data.applyLocalMutation('cash_flow', { type: 'delete', id: existingVariationCash.id });
+    }
     for (const line of variationLines) {
       if (line.applied_at) continue;
       const changeType = String(line.change_type || '');
@@ -1113,6 +1155,28 @@ export default function App() {
           notes: `Created by approved variation ${variation.variation_number || variation.id} effective ${effectiveDate}.`,
         });
         data.applyLocalMutation('boq_items', { type: 'insert', row: created });
+        // A new approved variation is a new commercial scope. It must have a
+        // zero-original SOV line so its approved value is visible exactly once
+        // in budget, forecast and cost control rather than being hidden in BOQ.
+        if (!sovLines.some((sov) => sov.contract_id === line.contract_id && sov.boq_item_id === created.id)) {
+          const reference = String(variation.variation_number || variation.id).replace(/[^A-Za-z0-9-]/g, '');
+          const sov = await dataRepository.insert<Record<string, any>>('contract_sov_lines', {
+            project_id: line.project_id,
+            contract_id: line.contract_id,
+            boq_header_id: line.boq_header_id,
+            boq_item_id: created.id,
+            sov_line_code: `SOV-VO-${reference}-${line.item_code || created.id}`,
+            description: created.item_name || created.description || 'Approved variation scope',
+            original_budget: 0,
+            status: 'Active',
+            notes: `Generated from approved variation ${variation.variation_number || variation.id}.`,
+          });
+          sovLines.push(sov);
+          data.applyLocalMutation('contract_sov_lines', { type: 'insert', row: sov });
+        }
+        // Point the approved line to its generated BOQ item. This is the
+        // allocation key used by SOV, dashboard and data-quality reconciliation.
+        line.boq_item_id = created.id;
       } else {
         const item = items.find((row) => row.id === line.boq_item_id);
         if (!item) throw new Error(`Variation line ${line.item_code || line.id} has no valid existing BOQ item.`);
@@ -1164,7 +1228,7 @@ export default function App() {
           data.applyLocalMutation('boq_items', { type: 'insert', row: created });
         }
       }
-      const marked = await dataRepository.update<Record<string, any>>('variation_lines', line.id, { effective_date: effectiveDate, applied_at: new Date().toISOString() });
+      const marked = await dataRepository.update<Record<string, any>>('variation_lines', line.id, { boq_item_id: line.boq_item_id || null, effective_date: effectiveDate, applied_at: new Date().toISOString() });
       data.applyLocalMutation('variation_lines', { type: 'update', row: marked });
     }
   }

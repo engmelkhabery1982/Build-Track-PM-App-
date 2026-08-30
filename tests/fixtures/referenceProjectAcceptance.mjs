@@ -43,6 +43,9 @@ export const referenceProject = {
   variations: [
     { id: 'var-acc-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', variation_number: 'VO-ACC-001', status: 'Approved', approved_date: '2026-01-10', cost_impact: 100_000, time_impact_days: 14 },
   ],
+  cashFlow: [
+    { id: 'variation_cash_forecast:var-acc-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', date: '2026-01-10', inflow: 100_000, outflow: 0, net: 100_000, movement_type: 'Forecast', status: 'Open', source_type: 'variation_cash_forecast', source_id: 'var-acc-01' },
+  ],
   paymentCertificate: {
     id: 'cert-acc-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', certificate_number: 'PC-ACC-001', certificate_type: 'Client', certificate_date: '2026-01-31',
     gross_certified_value: 250_000, retention_rate: 5, advance_recovery: 10_000, deductions: 5_000, tax_rate: 15, status: 'Approved',

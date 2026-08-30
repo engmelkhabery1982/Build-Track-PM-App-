@@ -165,3 +165,17 @@ test('data quality flags a manual SOV forecast below the governed floor', () => 
   });
   assert.ok(findings.some((finding) => finding.title === 'Manual SOV forecast is below governed cost floor'));
 });
+
+test('data quality exposes approved variation scope that is missing SOV or commercial forecast', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }],
+    boqItems: [{ id: 'b1', project_id: 'p1', boq_header_id: 'h1', item_code: 'VO-A', quantity: 1, unit_rate: 100 }],
+    schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [], cashFlow: [],
+    variations: [{ id: 'v1', project_id: 'p1', contract_id: 'c1', status: 'Approved', cost_impact: 100 }],
+    variationLines: [{ id: 'vl1', variation_id: 'v1', contract_id: 'c1', boq_item_id: 'b1', change_type: 'New Item', applied_at: '2026-08-30' }],
+    contractSovLines: [],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Approved variation missing commercial cash forecast'));
+  assert.ok(findings.some((finding) => finding.title === 'Approved new variation item missing SOV'));
+});
