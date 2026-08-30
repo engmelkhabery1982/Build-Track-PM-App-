@@ -9,3 +9,4 @@ export const approveVariation = (request: { operationId: string; sourceId: strin
 export const approvePaymentCertificate = (request: { operationId: string; sourceId: string; actor: string; approvedAt: string }) => invokeCommercial<CommercialWorkflowResult>('approve_payment_certificate', request);
 export const settlePaymentCertificate = (request: { operationId: string; certificateId: string; actor: string; paidAt: string }) => invokeCommercial<CommercialWorkflowResult>('settle_payment_certificate', request);
 export const reverseCommercialPosting = (request: { operationId: string; sourceTable: 'cost_changes' | 'payment_certificates'; sourceId: string; actor: string; reason: string }) => invokeCommercial<CommercialWorkflowResult>('reverse_commercial_posting', request);
+export const reverseVariation = (request: { operationId: string; sourceId: string; actor: string; reason: string }) => invokeCommercial<CommercialWorkflowResult>('reverse_variation', request);

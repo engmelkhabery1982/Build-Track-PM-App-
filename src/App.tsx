@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -3328,9 +3328,14 @@ export default function App() {
           title: 'Render this inspection request using a saved flexible template.',
           onClick: (row) => previewRecordWithTemplate('WIR', row),
         } : tableName === 'variations' ? {
-          label: 'Preview VO',
-          title: 'Render this variation order using a saved flexible template.',
-          onClick: (row) => previewRecordWithTemplate('Variation Order', row),
+          label: 'Reverse Variation',
+          title: 'Reverse an approved variation, its generated BOQ/SOV scope and commercial forecast without deleting history.',
+          onClick: async (row) => {
+            const reason = window.prompt('Reason for governed variation reversal:');
+            if (!reason?.trim()) return;
+            await reverseVariation({ operationId: crypto.randomUUID(), sourceId: row.id, actor: 'Local User', reason: reason.trim() });
+            await data.reload();
+          },
         } : tableName === 'costs' ? {
           label: 'Preview Cost',
           title: 'Render this cost-control record using a saved flexible template.',

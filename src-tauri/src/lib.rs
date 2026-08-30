@@ -89,6 +89,11 @@ async fn reverse_commercial_posting(app: tauri::AppHandle, request: commercial_w
     let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     commercial_workflow::reverse_commercial_posting(&path, request).await
 }
+#[tauri::command]
+async fn reverse_variation(app: tauri::AppHandle, request: commercial_workflow::ReversalRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::reverse_variation(&path, request).await
+}
 
 #[tauri::command]
 fn save_excel_download(
@@ -1419,7 +1424,7 @@ pub fn run() {
             verify_local_backup,
             stage_local_restore
             ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order, amend_purchase_order,
-            approve_cost_change, approve_variation, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
+            approve_cost_change, approve_variation, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting, reverse_variation
         ])
         .setup(|app| {
             apply_staged_restore(app.handle())?;
