@@ -1336,6 +1336,23 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 35,
+            description: "governed_time_phased_cash_timeline",
+            sql: r#"
+      DROP VIEW IF EXISTS governed_cash_flow_timeline;
+      CREATE VIEW governed_cash_flow_timeline AS
+      SELECT
+        id, project_id, contract_id, boq_item_id, financial_date AS cash_date,
+        movement_type_sql AS movement_type, financial_status AS status,
+        financial_inflow AS inflow, financial_outflow AS outflow,
+        financial_inflow - financial_outflow AS net,
+        sum(CASE WHEN financial_status IN ('Cancelled','Reversed') THEN 0 ELSE financial_inflow - financial_outflow END)
+          OVER (PARTITION BY project_id, movement_type_sql ORDER BY COALESCE(financial_date, '9999-12-31'), created_at, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_balance
+      FROM cash_flow;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

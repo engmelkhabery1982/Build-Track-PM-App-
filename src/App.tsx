@@ -474,7 +474,6 @@ const COST_CHANGE_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
   { key: 'contract_sov_line_id', label: 'SOV Line', type: 'select', editable: true },
   { key: 'transfer_from_sov_line_id', label: 'Transfer From SOV', type: 'select', editable: true },
-  { key: 'transfer_from_sov_line_id', label: 'Transfer From SOV', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
   { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'title', label: 'Title', type: 'text', editable: true },
@@ -2528,6 +2527,21 @@ export default function App() {
       })
       : activeView === 'contracts'
       ? contractsWithModifiedValue
+      : activeView === 'cashflow'
+        ? (() => {
+          const running = new Map<string, number>();
+          return [...rawViewData]
+            .sort((left: any, right: any) => `${left.date || '9999-12-31'}:${left.id}`.localeCompare(`${right.date || '9999-12-31'}:${right.id}`))
+            .map((entry: any) => {
+              const key = `${entry.project_id || ''}:${entry.movement_type || 'Manual'}`;
+              const prior = running.get(key) || 0;
+              const active = !['Cancelled', 'Reversed'].includes(String(entry.status || ''));
+              const net = Math.round(((Number(entry.inflow) || 0) - (Number(entry.outflow) || 0)) * 100) / 100;
+              const cumulative = Math.round((prior + (active ? net : 0)) * 100) / 100;
+              running.set(key, cumulative);
+              return { ...entry, net, cumulative_balance: cumulative };
+            });
+        })()
       : (activeView === 'procurement' || activeView === 'procurementReconciliation')
         ? rawViewData.map((po: any) => {
           const acceptedReceipts = data.procurementReceipts
@@ -2801,7 +2815,6 @@ export default function App() {
           boq_item_id: line.boq_item_id, cost_code_id: line.cost_code_id,
         },
       }));
-    relationshipOptions.transfer_from_sov_line_id = relationshipOptions.contract_sov_line_id;
     relationshipOptions.transfer_from_sov_line_id = relationshipOptions.contract_sov_line_id;
     relationshipOptions.wbs_id = data.wbsNodes
       .filter((node: any) => node.status !== 'Inactive')

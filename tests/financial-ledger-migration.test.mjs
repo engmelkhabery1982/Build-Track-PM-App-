@@ -227,3 +227,26 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('governed cash timeline is time-phased and excludes cancelled movements', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*35,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 35 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE cash_flow (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_item_id TEXT, financial_date TEXT, movement_type_sql TEXT, financial_status TEXT, financial_inflow REAL, financial_outflow REAL)')
+db.executescript(sys.stdin.read())
+db.executemany('INSERT INTO cash_flow VALUES (?,?,?,?,?,?,?,?,?,?)', [
+ ('a','2026-01-01T01:00','p','c',None,'2026-01-01','Forecast','Open',100,0),
+ ('b','2026-01-02T01:00','p','c',None,'2026-01-02','Forecast','Open',0,30),
+ ('c','2026-01-03T01:00','p','c',None,'2026-01-03','Forecast','Cancelled',0,99),
+ ('d','2026-01-01T01:00','p','c',None,'2026-01-01','Actual','Settled',0,20),
+])
+rows = db.execute('SELECT id,net,cumulative_balance FROM governed_cash_flow_timeline ORDER BY movement_type,id').fetchall()
+assert rows == [('d',-20.0,-20.0),('a',100.0,100.0),('b',-30.0,70.0),('c',-99.0,70.0)]
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});
