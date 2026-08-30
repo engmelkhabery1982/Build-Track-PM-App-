@@ -3,6 +3,8 @@ export type NetworkActivity = {
   duration_days?: number | null;
   predecessor_item?: string | null;
   predecessor_items?: string[] | string | null;
+  /** One edge per P6 predecessor. Legacy activities may use the fields above. */
+  predecessor_links?: Array<{ predecessor_id?: string; id?: string; relationship_type?: string; lag_days?: number | string }> | string | null;
   relationship_type?: string | null;
   lag_days?: number | null;
 };
@@ -28,6 +30,31 @@ function predecessorIds(row: NetworkActivity): string[] {
     .filter(Boolean))];
 }
 
+type PredecessorEdge = { id: string; relationship: string; lag: number };
+
+function predecessorEdges(row: NetworkActivity): PredecessorEdge[] {
+  let links: Array<{ predecessor_id?: string; id?: string; relationship_type?: string; lag_days?: number | string }> = [];
+  if (Array.isArray(row.predecessor_links)) links = row.predecessor_links;
+  else if (typeof row.predecessor_links === 'string' && row.predecessor_links.trim()) {
+    try {
+      const parsed = JSON.parse(row.predecessor_links);
+      if (Array.isArray(parsed)) links = parsed;
+    } catch { /* Legacy comma-separated values fall through below. */ }
+  }
+  const imported = links.map((link) => ({
+    id: String(link.predecessor_id || link.id || '').trim(),
+    relationship: String(link.relationship_type || 'FS').toUpperCase(),
+    lag: Number(link.lag_days) || 0,
+  })).filter((link) => link.id);
+  const legacy = predecessorIds(row).map((id) => ({
+    id,
+    relationship: String(row.relationship_type || 'FS').toUpperCase(),
+    lag: Number(row.lag_days) || 0,
+  }));
+  const combined = imported.length ? imported : legacy;
+  return [...new Map(combined.map((link) => [`${link.id}|${link.relationship}|${link.lag}`, link])).values()];
+}
+
 /** Calculates CPM dates in working-day offsets.  Each relationship is reduced
  * to ES(successor) >= ES(predecessor) + constraint, covering FS/SS/FF/SF. */
 export function calculateCpm(activities: NetworkActivity[]): Map<string, CpmResult> {
@@ -37,11 +64,10 @@ export function calculateCpm(activities: NetworkActivity[]): Map<string, CpmResu
   const indegree = new Map<string, number>();
   for (const row of activities) indegree.set(row.id, 0);
   for (const row of activities) {
-    for (const predecessorId of predecessorIds(row)) {
-      const predecessor = rows.get(predecessorId);
+    for (const edge of predecessorEdges(row)) {
+      const predecessor = rows.get(edge.id);
       if (!predecessor || predecessor.id === row.id) continue;
-      const lag = Number(row.lag_days) || 0;
-      const relationship = String(row.relationship_type || 'FS').toUpperCase();
+      const { lag, relationship } = edge;
       const constraint = relationship === 'SS' ? lag
         : relationship === 'FF' ? duration(predecessor) + lag - duration(row)
           : relationship === 'SF' ? lag - duration(row)

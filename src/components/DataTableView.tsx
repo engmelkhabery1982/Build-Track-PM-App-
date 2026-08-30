@@ -1703,6 +1703,7 @@ export function DataTableView({
           'planned cost': 'budget', 'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
           'resource names': 'responsible', 'calendar name': 'calendar_name',
           'calendar': 'calendar_name', 'primary constraint': 'notes', 'predecessors': 'predecessors',
+          'predecessor links': 'predecessor_links',
           'relationship': 'relationship_type', 'relationship type': 'relationship_type', 'lag': 'lag_days', 'lag days': 'lag_days',
           'critical': 'critical_path', 'critical path': 'critical_path',
         });
@@ -1842,12 +1843,23 @@ export function DataTableView({
           row.boq_header_id = item.boq_header_id || null;
           row.boq_item_name = item.item_name || item.description || '';
           row.unit_rate = Number(item.unit_rate) || 0;
-          const predecessorCodes = String(row.predecessors || '').split(/[,;]+/).map((value) => value.trim().replace(/\s+(FS|SS|FF|SF).*$/i, '')).filter(Boolean);
+          let predecessorLinks: Array<{ predecessor_code: string; relationship_type: string; lag_days: number }> = [];
+          try {
+            const parsed = typeof row.predecessor_links === 'string' ? JSON.parse(row.predecessor_links) : row.predecessor_links;
+            if (Array.isArray(parsed)) predecessorLinks = parsed.map((link) => ({
+              predecessor_code: String(link.predecessor_code || link.activity_code || '').trim(),
+              relationship_type: String(link.relationship_type || 'FS').toUpperCase(),
+              lag_days: Number(link.lag_days) || 0,
+            })).filter((link) => link.predecessor_code);
+          } catch { /* Fall back to the readable predecessor column. */ }
+          const predecessorCodes = predecessorLinks.length
+            ? predecessorLinks.map((link) => link.predecessor_code)
+            : String(row.predecessors || '').split(/[,;]+/).map((value) => value.trim().replace(/\s+(FS|SS|FF|SF).*$/i, '')).filter(Boolean);
           if (predecessorCodes.length) {
             row._primavera_predecessor_code = predecessorCodes[0];
+            row._primavera_predecessor_links = predecessorLinks.length ? predecessorLinks : predecessorCodes.map((predecessor_code) => ({ predecessor_code, relationship_type: String(row.relationship_type || 'FS').toUpperCase(), lag_days: Number(row.lag_days) || 0 }));
             row.predecessors = predecessorCodes.join(', ');
             row.predecessor_item = '';
-            if (predecessorCodes.length > 1) row.notes = `${row.notes || ''}${row.notes ? '\n' : ''}Additional Primavera predecessors retained: ${predecessorCodes.slice(1).join(', ')}`;
           }
         });
       }
@@ -1973,17 +1985,25 @@ export function DataTableView({
         const createdAt = new Date().toISOString();
         const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
         const preparedRows = importPreview.rows.map((source) => {
-          const { _imported_governed_dates, _primavera_predecessor_code, ...row } = source;
+          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, ...row } = source;
           return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
         });
         if (tableName === 'schedules') {
           const activitiesByCode = new Map([...data, ...preparedRows].map((activity) => [String(activity.activity_code || ''), activity]));
           importPreview.rows.forEach((source, index) => {
-            const predecessorCode = String(source._primavera_predecessor_code || '');
-            if (!predecessorCode) return;
-            const predecessor = activitiesByCode.get(predecessorCode);
-            if (!predecessor || predecessor.id === preparedRows[index].id) throw new Error(`Row ${index + 2}: predecessor ${predecessorCode} could not be resolved; no rows were saved.`);
-            preparedRows[index].predecessor_item = predecessor.id;
+            const sourceLinks = Array.isArray(source._primavera_predecessor_links) ? source._primavera_predecessor_links : source._primavera_predecessor_code ? [{ predecessor_code: source._primavera_predecessor_code, relationship_type: source.relationship_type || 'FS', lag_days: source.lag_days || 0 }] : [];
+            if (!sourceLinks.length) return;
+            const resolved = sourceLinks.map((link: any) => {
+              const predecessorCode = String(link.predecessor_code || '').trim();
+              const predecessor = activitiesByCode.get(predecessorCode);
+              if (!predecessor || predecessor.id === preparedRows[index].id) throw new Error(`Row ${index + 2}: predecessor ${predecessorCode} could not be resolved; no rows were saved.`);
+              return { predecessor_id: predecessor.id, relationship_type: String(link.relationship_type || 'FS').toUpperCase(), lag_days: Number(link.lag_days) || 0 };
+            });
+            preparedRows[index].predecessor_links = resolved;
+            preparedRows[index].predecessor_items = resolved.map((link: any) => link.predecessor_id);
+            preparedRows[index].predecessor_item = resolved[0].predecessor_id;
+            preparedRows[index].relationship_type = resolved[0].relationship_type;
+            preparedRows[index].lag_days = resolved[0].lag_days;
           });
         }
         const contractId = String(preparedRows[0]?.contract_id || headerContract.get(preparedRows[0]?.boq_header_id) || '');

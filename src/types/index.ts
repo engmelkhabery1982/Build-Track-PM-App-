@@ -333,6 +333,8 @@ export interface Schedule {
   actual_cost?: number;
   predecessors: string;
   predecessor_item: string;
+  predecessor_items?: string[] | string;
+  predecessor_links?: Array<{ predecessor_id?: string; relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string; lag_days?: number }> | string;
   relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string;
   lag_days?: number;
   calendar_name?: string;

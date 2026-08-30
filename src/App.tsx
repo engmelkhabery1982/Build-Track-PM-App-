@@ -2477,6 +2477,7 @@ export default function App() {
       predecessor_items: String(activity.predecessors || '').split(',')
         .map((reference) => activityIdByReference.get(String(reference).trim()) || String(reference).trim())
         .filter(Boolean),
+      predecessor_links: activity.predecessor_links,
       relationship_type: activity.relationship_type,
       lag_days: activity.lag_days,
     })));

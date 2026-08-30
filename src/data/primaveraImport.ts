@@ -42,6 +42,13 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Planned Qty': '',
       Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
       Predecessors: predecessorCodes.join(', '),
+      // P6 supports multiple independent links for one successor. Preserve
+      // each relationship type and lag rather than collapsing to the first.
+      'Predecessor Links': JSON.stringify(links.map((link) => ({
+        predecessor_code: taskCodeById.get(link.pred_task_id) || '',
+        relationship_type: String(link.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS',
+        lag_days: Number(link.lag_hr_cnt) ? Math.round((Number(link.lag_hr_cnt) / 8) * 100) / 100 : 0,
+      })).filter((link) => link.predecessor_code)),
       Relationship: relation,
       'Lag (days)': lagHours ? Math.round((lagHours / 8) * 100) / 100 : 0,
       Critical: task.driving_path_flag === 'Y' || task.critical_path_flag === 'Y',

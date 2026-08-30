@@ -60,6 +60,31 @@ test('Primavera XER import preserves calendar, logic, dates and duplicate activi
   assert.equal(rows[0].Critical, true);
 });
 
+test('Primavera import preserves every predecessor relationship and CPM applies each link', () => {
+  const xer = `%T\tTASK
+%F\ttask_id\ttask_code\ttask_name\ttarget_drtn
+%R\t1\tA\tExcavate\t4
+%R\t2\tB\tSurvey\t3
+%R\t3\tC\tConcrete\t2
+%T\tTASKPRED
+%F\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt
+%R\t3\t1\tPR_FS\t0
+%R\t3\t2\tPR_SS\t16
+`;
+  const rows = primavera.parsePrimaveraXerTasks(xer);
+  const links = JSON.parse(rows.find((row) => row['Activity ID'] === 'C')['Predecessor Links']);
+  assert.deepEqual(links, [
+    { predecessor_code: 'A', relationship_type: 'FS', lag_days: 0 },
+    { predecessor_code: 'B', relationship_type: 'SS', lag_days: 2 },
+  ]);
+  const network = cpm.calculateCpm([
+    { id: 'A', duration_days: 4 },
+    { id: 'B', duration_days: 3 },
+    { id: 'C', duration_days: 2, predecessor_links: links.map((link) => ({ ...link, predecessor_id: link.predecessor_code })) },
+  ]);
+  assert.equal(network.get('C').earlyStart, 4);
+});
+
 test('new governed commercial and field records receive scoped codes', () => {
   const costChange = codes.prepareCodeControlledInsert('cost_changes', { contract_id: 'contract-1', title: 'Forecast correction' }, [{ id: 'old', contract_id: 'contract-1', cost_change_number: 'CC-004' }]);
   assert.equal(costChange.cost_change_number, 'CC-005');
