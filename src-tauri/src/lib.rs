@@ -72,7 +72,7 @@ async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow
 #[tauri::command]
 async fn approve_variation(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
     let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
-    commercial_workflow::approve_variation(&path, request).await
+    commercial_workflow::approve_variation_with_boq(&path, request).await
 }
 #[tauri::command]
 async fn approve_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
@@ -1378,6 +1378,29 @@ pub fn run() {
          OR json_extract(NEW.payload, '$.status') = 'Approved')
        AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
       BEGIN SELECT RAISE(ABORT, 'Governed variation is immutable; use a controlled reversal.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 37,
+            description: "freeze_approved_variation_lines",
+            sql: r#"
+      CREATE TRIGGER IF NOT EXISTS variation_line_governed_update_v1
+      BEFORE UPDATE ON variation_lines
+      WHEN EXISTS (
+        SELECT 1 FROM variations v
+        WHERE v.id = json_extract(OLD.payload, '$.variation_id')
+          AND json_extract(v.payload, '$.status') = 'Approved'
+      ) AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Approved variation lines are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS variation_line_governed_delete_v1
+      BEFORE DELETE ON variation_lines
+      WHEN EXISTS (
+        SELECT 1 FROM variations v
+        WHERE v.id = json_extract(OLD.payload, '$.variation_id')
+          AND json_extract(v.payload, '$.status') = 'Approved'
+      ) AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Approved variation lines are immutable.'); END;
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },

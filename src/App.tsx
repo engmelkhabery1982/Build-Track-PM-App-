@@ -3151,7 +3151,7 @@ export default function App() {
               }
               if (decision === 'Approved' && target === 'variations') {
                 void approveVariation({ operationId: crypto.randomUUID(), sourceId: approval.entity_id, actor: approval.approver || 'Approval Workflow', approvedAt: approval.decision_date || new Date().toISOString().slice(0, 10) })
-                  .then(async () => { await data.reload(); await synchronizeVariationLines(approval.entity_id); await data.reload(); })
+                  .then(() => data.reload())
                   .catch((error) => alert(`Approval was saved, but the governed Variation posting failed: ${error.message || 'Unknown error'}`));
                 return;
               }
@@ -3513,8 +3513,6 @@ export default function App() {
           const current = data.variations.find((row: any) => row.id === id) as any;
           if (patch.status === 'Approved' && current?.status !== 'Approved') {
             await approveVariation({ operationId: crypto.randomUUID(), sourceId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
-            await data.reload();
-            await synchronizeVariationLines(id);
             await data.reload();
             const rows = await dataRepository.list<Record<string, any>>('variations');
             return rows.find((row) => row.id === id) || current;
