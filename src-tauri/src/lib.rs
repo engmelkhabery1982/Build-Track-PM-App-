@@ -58,6 +58,11 @@ async fn cancel_purchase_order(app: tauri::AppHandle, request: supplier_ap::Purc
     let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     supplier_ap::cancel_purchase_order(&database_path, request).await
 }
+#[tauri::command]
+async fn amend_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderAmendmentRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::amend_purchase_order(&database_path, request).await
+}
 
 #[tauri::command]
 async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
@@ -1367,7 +1372,7 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
-            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order,
+            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order, amend_purchase_order,
             approve_cost_change, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
         ])
         .setup(|app| {
