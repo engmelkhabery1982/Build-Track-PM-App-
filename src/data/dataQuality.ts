@@ -265,6 +265,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, periodIssues.length > 0, { severity: 'Error', title: 'Reporting-period governance issue', detail: `${periodIssues.length} reporting period(s) have an invalid range, data date, or overlap.`, view: 'reportingPeriods' });
   const duplicateApprovedBaselines = duplicateCount(data.baselines.filter((row) => row.status === 'Approved'), (row) => String(row.contract_id || ''));
   pushIf(findings, duplicateApprovedBaselines > 0, { severity: 'Warning', title: 'Multiple approved baselines', detail: `${duplicateApprovedBaselines} contract(s) have more than one approved baseline; confirm the current baseline.`, view: 'baselines' });
+  const approvedBaselinesWithoutSnapshots = data.baselines.filter((row) => row.status === 'Approved' && (!Array.isArray(row.activity_snapshot) || row.activity_snapshot.length === 0));
+  pushIf(findings, approvedBaselinesWithoutSnapshots.length > 0, { severity: 'Warning', title: 'Approved baseline missing activity snapshot', detail: `${approvedBaselinesWithoutSnapshots.length} approved baseline(s) predate activity-level freezing and cannot provide an auditable schedule comparison. Create a governed revision.`, view: 'baselines' });
 
   if (!findings.length) findings.push({ severity: 'Pass', title: 'Acceptance data-quality checks passed', detail: 'All checked project, commercial, BOQ, schedule, field, document, cost, baseline and reporting-period controls are internally consistent.', view: 'dashboard' });
   return findings;

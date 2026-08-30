@@ -9,6 +9,7 @@ const dictionary = await import('../src/data/dataDictionary.ts');
 const periods = await import('../src/data/reportingPeriodGovernance.ts');
 const quality = await import('../src/data/dataQuality.ts');
 const primavera = await import('../src/data/primaveraImport.ts');
+const baselines = await import('../src/data/baselineGovernance.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
@@ -83,6 +84,29 @@ test('Primavera import preserves every predecessor relationship and CPM applies 
     { id: 'C', duration_days: 2, predecessor_links: links.map((link) => ({ ...link, predecessor_id: link.predecessor_code })) },
   ]);
   assert.equal(network.get('C').earlyStart, 4);
+});
+
+test('approved baselines freeze activity-level schedule scope and require a governed revision', () => {
+  const activities = [
+    { id: 'a-2', activity_code: 'B', activity: 'Concrete', start_date: '2026-01-08', end_date: '2026-01-12', duration_days: 4, planned_quantity: 50, budget: 2000, calendar_name: '6-Day Week', critical_path: true },
+    { id: 'a-1', activity_code: 'A', activity: 'Excavate', start_date: '2026-01-01', end_date: '2026-01-07', duration_days: 6, planned_quantity: 100, planned_value: 1000 },
+  ];
+  const snapshot = baselines.createBaselineActivitySnapshot(activities);
+  assert.deepEqual(snapshot.map((row) => row.activity_code), ['A', 'B']);
+  assert.deepEqual(baselines.summarizeBaselineSchedule(snapshot), {
+    activity_count: 2, critical_activity_count: 1, planned_start_date: '2026-01-01', planned_end_date: '2026-01-12', planned_budget: 3000,
+  });
+  assert.throws(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: '', activities: [], hasPriorApprovedBaseline: false }), /at least one scheduled activity/i);
+  assert.throws(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: '', activities, hasPriorApprovedBaseline: true }), /revision reason/i);
+  assert.doesNotThrow(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: 'Client-approved extension', activities, hasPriorApprovedBaseline: true }));
+});
+
+test('data quality flags approved legacy baselines without an activity snapshot', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [], contracts: [], boqHeaders: [], boqItems: [], schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [],
+    baselines: [{ id: 'legacy-baseline', status: 'Approved', contract_id: 'contract-1' }],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Approved baseline missing activity snapshot'));
 });
 
 test('new governed commercial and field records receive scoped codes', () => {

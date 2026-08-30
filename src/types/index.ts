@@ -677,6 +677,10 @@ export interface ProjectBaseline {
   planned_budget: number;
   planned_start_date: string | null;
   planned_end_date: string | null;
+  /** Frozen activity-level schedule captured exactly when this baseline is approved. */
+  activity_snapshot?: Array<Record<string, unknown>>;
+  baseline_activity_count?: number;
+  baseline_critical_activity_count?: number;
   notes: string;
   created_at: string;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -132,6 +132,10 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'planned_budget', label: 'Planned Budget', type: 'money', editable: true },
   { key: 'planned_start_date', label: 'Planned Start', type: 'date', editable: true },
   { key: 'planned_end_date', label: 'Planned Finish', type: 'date', editable: true },
+  { key: 'baseline_activity_count', label: 'Baseline Activities', type: 'number', editable: false },
+  { key: 'baseline_critical_activity_count', label: 'Baseline Critical Activities', type: 'number', editable: false },
+  { key: 'current_activity_count', label: 'Current Activities', type: 'number', editable: false },
+  { key: 'activity_count_variance', label: 'Activity Count Variance', type: 'number', editable: false },
   { key: 'current_schedule_start', label: 'Current Forecast Start', type: 'date', editable: false },
   { key: 'current_schedule_finish', label: 'Current Forecast Finish', type: 'date', editable: false },
   { key: 'start_variance_days', label: 'Start Variance (days)', type: 'number', editable: false },
@@ -2506,6 +2510,7 @@ export default function App() {
     const viewData = activeView === 'baselines'
       ? rawViewData.map((baseline: any) => {
         const activities = data.schedules.filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim());
+        const snapshotSummary = summarizeBaselineSchedule(baseline.activity_snapshot);
         const activityStarts = activities
           .map((activity: any) => String(activity.start_date || ''))
           .filter(Boolean)
@@ -2524,7 +2529,24 @@ export default function App() {
           ? Math.ceil((new Date(`${currentFinish}T00:00:00`).getTime() - new Date(`${baseline.planned_end_date}T00:00:00`).getTime()) / 86400000)
           : null;
         const currentBudget = activities.reduce((sum: number, activity: any) => sum + (Number(activity.budget) || 0), 0);
-        return { ...baseline, current_schedule_start: currentStart, current_schedule_finish: currentFinish, start_variance_days: startVariance, finish_variance_days: finishVariance, current_schedule_budget: currentBudget, budget_variance: currentBudget - (Number(baseline.planned_budget) || 0) };
+        const baselineActivityCount = snapshotSummary.activity_count || Number(baseline.baseline_activity_count) || 0;
+        const baselineCriticalCount = snapshotSummary.critical_activity_count || Number(baseline.baseline_critical_activity_count) || 0;
+        return {
+          ...baseline,
+          planned_start_date: snapshotSummary.planned_start_date || baseline.planned_start_date,
+          planned_end_date: snapshotSummary.planned_end_date || baseline.planned_end_date,
+          planned_budget: snapshotSummary.planned_budget || baseline.planned_budget,
+          baseline_activity_count: baselineActivityCount,
+          baseline_critical_activity_count: baselineCriticalCount,
+          current_activity_count: activities.length,
+          activity_count_variance: activities.length - baselineActivityCount,
+          current_schedule_start: currentStart,
+          current_schedule_finish: currentFinish,
+          start_variance_days: startVariance,
+          finish_variance_days: finishVariance,
+          current_schedule_budget: currentBudget,
+          budget_variance: currentBudget - (snapshotSummary.planned_budget || Number(baseline.planned_budget) || 0),
+        };
       })
       : activeView === 'contracts'
       ? contractsWithModifiedValue
@@ -3376,14 +3398,30 @@ export default function App() {
           const original = Number(contract.contract_value) || 0;
           const priorBaselines = data.baselines.filter((baseline: any) => baseline.contract_id === contract.id);
           const revisionNumber = priorBaselines.reduce((highest: number, baseline: any) => Math.max(highest, Number(baseline.revision_number) || 0), 0) + 1;
-          return dataRepository.insert<Record<string, any>>('project_baselines', {
+          const status = baselineDraft.status || 'Draft';
+          const approvedPredecessors = priorBaselines.filter((baseline: any) => baseline.status === 'Approved');
+          if (status === 'Approved') {
+            assertBaselineApproval({ baselineDate: baselineDraft.baseline_date, revisionReason: baselineDraft.revision_reason, activities, hasPriorApprovedBaseline: approvedPredecessors.length > 0 });
+          }
+          const snapshot = status === 'Approved' ? createBaselineActivitySnapshot(activities) : [];
+          const snapshotSummary = summarizeBaselineSchedule(snapshot);
+          const inserted = await dataRepository.insert<Record<string, any>>('project_baselines', {
             ...baselineDraft, project_id: contract.project_id, status: baselineDraft.status || 'Draft',
             baseline_number: baselineDraft.baseline_number || `BL-${String(revisionNumber).padStart(3, '0')}`,
             revision_number: revisionNumber,
             original_contract_value: original, approved_variation_value: variationValue, modified_contract_value: original + variationValue,
-            planned_budget: budget, planned_start_date: starts[0] || contract.start_date || null,
-            planned_end_date: ends[ends.length - 1] || contract.end_date || null,
+            planned_budget: snapshotSummary.planned_budget || budget,
+            planned_start_date: snapshotSummary.planned_start_date || starts[0] || contract.start_date || null,
+            planned_end_date: snapshotSummary.planned_end_date || ends[ends.length - 1] || contract.end_date || null,
+            activity_snapshot: snapshot,
+            baseline_activity_count: snapshotSummary.activity_count,
+            baseline_critical_activity_count: snapshotSummary.critical_activity_count,
           });
+          for (const predecessor of approvedPredecessors) {
+            const superseded = await dataRepository.update<Record<string, any>>('project_baselines', predecessor.id, { status: 'Superseded' });
+            data.applyLocalMutation('project_baselines', { type: 'update', row: superseded });
+          }
+          return inserted;
         } : tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
           const projectCosts = data.costs.filter((cost: any) => cost.project_id === snapshotDraft.project_id);
           const planned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
@@ -3508,12 +3546,26 @@ export default function App() {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;
           if (existing?.status === 'Approved') throw new Error('An approved baseline is frozen. Create a new revision instead of changing it.');
           if (baselinePatch.status === 'Approved') {
-            if (!baselinePatch.baseline_date && !existing?.baseline_date) throw new Error('An approved baseline requires an approval date.');
+            const activities = data.schedules.filter((schedule: any) => schedule.contract_id === existing?.contract_id && String(schedule.activity || '').trim());
             const approvedPredecessors = data.baselines.filter((baseline: any) => baseline.contract_id === existing?.contract_id && baseline.id !== id && baseline.status === 'Approved');
+            assertBaselineApproval({ baselineDate: baselinePatch.baseline_date || existing?.baseline_date, revisionReason: baselinePatch.revision_reason || existing?.revision_reason, activities, hasPriorApprovedBaseline: approvedPredecessors.length > 0 });
+            const snapshot = createBaselineActivitySnapshot(activities);
+            const summary = summarizeBaselineSchedule(snapshot);
+            const approvedPatch = {
+              ...baselinePatch,
+              activity_snapshot: snapshot,
+              baseline_activity_count: summary.activity_count,
+              baseline_critical_activity_count: summary.critical_activity_count,
+              planned_budget: summary.planned_budget,
+              planned_start_date: summary.planned_start_date,
+              planned_end_date: summary.planned_end_date,
+            };
+            const updated = await dataRepository.update<Record<string, any>>('project_baselines', id, approvedPatch);
             for (const predecessor of approvedPredecessors) {
               const superseded = await dataRepository.update<Record<string, any>>('project_baselines', predecessor.id, { status: 'Superseded' });
               data.applyLocalMutation('project_baselines', { type: 'update', row: superseded });
             }
+            return updated;
           }
           return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
         } : tableName === 'variations' ? async (id, patch) => {
