@@ -498,6 +498,7 @@ const PAYMENT_CERTIFICATE_COLUMNS: ColumnDef[] = [
   { key: 'retention_amount', label: 'Retention', type: 'money', editable: false },
   { key: 'advance_recovery', label: 'Advance Recovery', type: 'money', editable: true },
   { key: 'deductions', label: 'Deductions', type: 'money', editable: true },
+  { key: 'taxable_amount', label: 'Taxable Amount', type: 'money', editable: false },
   { key: 'tax_rate', label: 'Tax %', type: 'number', editable: true },
   { key: 'tax_amount', label: 'Tax', type: 'money', editable: false },
   { key: 'net_certified_value', label: 'Net Certified', type: 'money', editable: false },

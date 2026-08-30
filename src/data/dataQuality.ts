@@ -1,5 +1,5 @@
 import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts';
-import { calculateSovCostForecast } from '../utils/commercialControl.ts';
+import { calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -143,8 +143,13 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const invalidCertificates = paymentCertificates.filter((certificate) => {
     const contract = contractById.get(certificate.contract_id);
     const net = Number(certificate.net_certified_value) || 0;
+    const calculated = calculateCertificateValues(certificate);
     return ['Approved', 'Paid'].includes(String(certificate.status || ''))
-      && (!contract || contract.project_id !== certificate.project_id || !['Client', 'Subcontractor'].includes(String(certificate.certificate_type || '')) || net <= 0);
+      && (!contract || contract.project_id !== certificate.project_id || !['Client', 'Subcontractor'].includes(String(certificate.certificate_type || '')) || net <= 0
+        || Math.abs((Number(certificate.retention_amount) || 0) - calculated.retention_amount) > 0.01
+        || Math.abs((Number(certificate.taxable_amount) || 0) - calculated.taxable_amount) > 0.01
+        || Math.abs((Number(certificate.tax_amount) || 0) - calculated.tax_amount) > 0.01
+        || Math.abs(net - calculated.net_certified_value) > 0.01);
   });
   pushIf(findings, invalidCertificates.length > 0, { severity: 'Error', title: 'Governed payment certificate is incomplete', detail: `${invalidCertificates.length} approved/paid certificate(s) have invalid scope, type or governed net value.`, view: 'paymentCertificates' });
   const unappliedApprovedVariationLines = variationLines.filter((line) => {

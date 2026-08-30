@@ -3,9 +3,9 @@ export type PaymentCertificateCashStatus = 'Forecast' | 'Actual' | null;
 export function calculateCertificateValues(certificate: Record<string, unknown>) {
   const gross = Number(certificate.gross_certified_value) || 0;
   const retention = Math.round(gross * (Number(certificate.retention_rate) || 0) / 100 * 100) / 100;
-  const beforeTax = gross - retention - (Number(certificate.advance_recovery) || 0) - (Number(certificate.deductions) || 0);
-  const tax = Math.round(Math.max(0, beforeTax) * (Number(certificate.tax_rate) || 0) / 100 * 100) / 100;
-  return { gross, retention_amount: retention, tax_amount: tax, net_certified_value: Math.round((beforeTax + tax) * 100) / 100 };
+  const taxableAmount = Math.round((gross - retention - (Number(certificate.advance_recovery) || 0) - (Number(certificate.deductions) || 0)) * 100) / 100;
+  const tax = Math.round(Math.max(0, taxableAmount) * (Number(certificate.tax_rate) || 0) / 100 * 100) / 100;
+  return { gross, retention_amount: retention, taxable_amount: taxableAmount, tax_amount: tax, net_certified_value: Math.round((taxableAmount + tax) * 100) / 100 };
 }
 
 /** A Cost Change has exactly one commercial allocation target. This prevents

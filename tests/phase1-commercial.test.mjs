@@ -39,7 +39,7 @@ test('certificate cash uses the net certified value and one governed movement st
     retention_rate: 10, advance_recovery: 50, deductions: 25, tax_rate: 15,
   };
   const values = commercial.calculateCertificateValues(certificate);
-  assert.deepEqual(values, { gross: 1000, retention_amount: 100, tax_amount: 123.75, net_certified_value: 948.75 });
+  assert.deepEqual(values, { gross: 1000, retention_amount: 100, taxable_amount: 825, tax_amount: 123.75, net_certified_value: 948.75 });
   assert.equal(commercial.certificateCashStatus(certificate), 'Forecast');
   assert.equal(commercial.certificateCashDirection(certificate), 'Inflow');
   assert.equal(commercial.certificateCashStatus({ ...certificate, status: 'Paid' }), 'Actual');
