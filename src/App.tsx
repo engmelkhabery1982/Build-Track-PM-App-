@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -3149,6 +3149,12 @@ export default function App() {
                   .catch((error) => alert(`Approval was saved, but the governed Cost Change posting failed: ${error.message || 'Unknown error'}`));
                 return;
               }
+              if (decision === 'Approved' && target === 'variations') {
+                void approveVariation({ operationId: crypto.randomUUID(), sourceId: approval.entity_id, actor: approval.approver || 'Approval Workflow', approvedAt: approval.decision_date || new Date().toISOString().slice(0, 10) })
+                  .then(async () => { await data.reload(); await synchronizeVariationLines(approval.entity_id); await data.reload(); })
+                  .catch((error) => alert(`Approval was saved, but the governed Variation posting failed: ${error.message || 'Unknown error'}`));
+                return;
+              }
               if (decision === 'Approved' && target === 'payment_certificates') {
                 void approvePaymentCertificate({ operationId: crypto.randomUUID(), sourceId: approval.entity_id, actor: approval.approver || 'Approval Workflow', approvedAt: approval.decision_date || new Date().toISOString().slice(0, 10) })
                   .then(() => data.reload())
@@ -3503,6 +3509,18 @@ export default function App() {
             }
           }
           return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
+        } : tableName === 'variations' ? async (id, patch) => {
+          const current = data.variations.find((row: any) => row.id === id) as any;
+          if (patch.status === 'Approved' && current?.status !== 'Approved') {
+            await approveVariation({ operationId: crypto.randomUUID(), sourceId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
+            await data.reload();
+            await synchronizeVariationLines(id);
+            await data.reload();
+            const rows = await dataRepository.list<Record<string, any>>('variations');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (current?.status === 'Approved') throw new Error('Approved variations are immutable; use a controlled reversal.');
+          return dataRepository.update<Record<string, any>>('variations', id, patch);
         } : tableName === 'procurement' ? async (id, patch) => {
           const current = data.procurement.find((row: any) => row.id === id) as any;
           if (patch.status === 'Ordered' && current?.status !== 'Ordered') {

@@ -70,6 +70,11 @@ async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow
     commercial_workflow::approve_cost_change(&path, request).await
 }
 #[tauri::command]
+async fn approve_variation(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    commercial_workflow::approve_variation(&path, request).await
+}
+#[tauri::command]
 async fn approve_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
     let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     commercial_workflow::approve_payment_certificate(&path, request).await
@@ -1358,6 +1363,24 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 36,
+            description: "govern_variation_approval",
+            sql: r#"
+      CREATE TRIGGER IF NOT EXISTS variation_governed_approval_insert_v1
+      BEFORE INSERT ON variations
+      WHEN json_extract(NEW.payload, '$.status') = 'Approved'
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Variation approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS variation_governed_approval_update_v1
+      BEFORE UPDATE ON variations
+      WHEN (json_extract(OLD.payload, '$.status') = 'Approved'
+         OR json_extract(NEW.payload, '$.status') = 'Approved')
+       AND NOT EXISTS (SELECT 1 FROM commercial_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed variation is immutable; use a controlled reversal.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1373,7 +1396,7 @@ pub fn run() {
             verify_local_backup,
             stage_local_restore
             ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order, amend_purchase_order,
-            approve_cost_change, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
+            approve_cost_change, approve_variation, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
         ])
         .setup(|app| {
             apply_staged_restore(app.handle())?;
