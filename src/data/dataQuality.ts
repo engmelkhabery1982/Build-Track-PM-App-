@@ -28,6 +28,7 @@ export interface DataQualitySource {
   supplierInvoices?: Record<string, any>[];
   supplierInvoiceLines?: Record<string, any>[];
   supplierInvoicePayments?: Record<string, any>[];
+  cashFlow?: Record<string, any>[];
   documents?: Record<string, any>[];
   rfis?: Record<string, any>[];
   submittals?: Record<string, any>[];
@@ -68,6 +69,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const supplierInvoices = data.supplierInvoices || [];
   const supplierInvoiceLines = data.supplierInvoiceLines || [];
   const supplierInvoicePayments = data.supplierInvoicePayments || [];
+  const cashFlow = data.cashFlow || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -165,6 +167,11 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const staleApprovedAp = supplierInvoices.filter((invoice) => ['Approved', 'Partially Paid', 'Paid'].includes(String(invoice.status || ''))
     && !supplierInvoiceLines.some((line) => line.supplier_invoice_id === invoice.id));
   pushIf(findings, staleApprovedAp.length > 0, { severity: 'Error', title: 'Approved supplier invoice has no match lines', detail: `${staleApprovedAp.length} approved supplier invoice(s) have no retained GRN match line and must be reversed or corrected through the governed workflow.`, view: 'supplierInvoices' });
+  const duplicatePoForecasts = duplicateCount(cashFlow.filter((row) => row.source_type === 'procurement_forecast'), (row) => String(row.source_id || ''));
+  pushIf(findings, duplicatePoForecasts > 0, { severity: 'Error', title: 'Duplicate purchase-order cash forecast', detail: `${duplicatePoForecasts} purchase order(s) have more than one open forecast projection; commercial cash must be reconciled before reporting.`, view: 'procurement' });
+  const ungovernedCommittedPos = procurement.filter((po) => ['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(po.status || ''))
+    && !cashFlow.some((row) => row.source_type === 'procurement_forecast' && row.source_id === po.id));
+  pushIf(findings, ungovernedCommittedPos.length > 0, { severity: 'Warning', title: 'Ordered purchase order missing cash forecast', detail: `${ungovernedCommittedPos.length} ordered purchase order(s) are not represented in the governed cash forecast.`, view: 'procurement' });
 
   const fieldRows: Array<Record<string, any> & { view: string }> = [
     ...data.wirEntries.map((row) => ({ ...row, view: 'wir' })),

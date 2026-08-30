@@ -84,6 +84,23 @@ test('data quality rejects accepted receipt quantities above the purchase order'
   assert.ok(findings.some((finding) => finding.title === 'Accepted receipts exceed purchase order'));
 });
 
+test('data quality detects missing or duplicate governed PO cash forecasts', () => {
+  const common = {
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }],
+    boqItems: [{ id: 'b1', project_id: 'p1', boq_header_id: 'h1', item_code: 'A', quantity: 10, unit_rate: 20 }],
+    schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    procurement: [{ id: 'po1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 10, status: 'Ordered' }],
+  };
+  const missing = quality.runDataQualityChecks({ ...common, cashFlow: [] });
+  assert.ok(missing.some((finding) => finding.title === 'Ordered purchase order missing cash forecast'));
+  const duplicate = quality.runDataQualityChecks({ ...common, cashFlow: [
+    { id: 'cf1', source_type: 'procurement_forecast', source_id: 'po1' },
+    { id: 'cf2', source_type: 'procurement_forecast', source_id: 'po1' },
+  ] });
+  assert.ok(duplicate.some((finding) => finding.title === 'Duplicate purchase-order cash forecast'));
+});
+
 test('data quality exposes supplier AP over-billing and over-payment', () => {
   const findings = quality.runDataQualityChecks({
     projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],

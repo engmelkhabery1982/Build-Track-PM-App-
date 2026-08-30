@@ -8,4 +8,6 @@ async function invokeAp<T>(command: string, request: Record<string, unknown>): P
 
 export const approveSupplierInvoice = (request: { operationId: string; invoiceId: string; actor: string; approvedAt: string }) => invokeAp<SupplierApOperationResult>('approve_supplier_invoice', request);
 export const settleSupplierInvoicePayment = (request: { operationId: string; paymentId: string; actor: string; settledAt: string }) => invokeAp<SupplierApOperationResult>('settle_supplier_invoice_payment', request);
+export const approvePurchaseOrder = (request: { operationId: string; procurementId: string; actor: string; approvedAt: string }) => invokeAp<SupplierApOperationResult>('approve_purchase_order', request);
+export const acceptProcurementReceipt = (request: { operationId: string; receiptId: string; actor: string; acceptedAt: string }) => invokeAp<SupplierApOperationResult>('accept_procurement_receipt', request);
 export const reverseSupplierApPosting = (request: { operationId: string; sourceTable: 'supplier_invoices' | 'supplier_invoice_payments'; sourceId: string; actor: string; reason: string }) => invokeAp<SupplierApOperationResult>('reverse_supplier_ap_posting', request);

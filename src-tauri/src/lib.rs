@@ -43,6 +43,16 @@ async fn settle_supplier_invoice_payment(app: tauri::AppHandle, request: supplie
     let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     supplier_ap::settle_supplier_invoice_payment(&database_path, request).await
 }
+#[tauri::command]
+async fn approve_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderApprovalRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::approve_purchase_order(&database_path, request).await
+}
+#[tauri::command]
+async fn accept_procurement_receipt(app: tauri::AppHandle, request: supplier_ap::ProcurementReceiptAcceptanceRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::accept_procurement_receipt(&database_path, request).await
+}
 
 #[tauri::command]
 async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
@@ -1260,6 +1270,37 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 32,
+            description: "govern_purchase_order_commitment_and_grn_acceptance",
+            sql: r#"
+      CREATE TRIGGER IF NOT EXISTS procurement_governed_insert_v1
+      BEFORE INSERT ON procurement
+      WHEN json_extract(NEW.payload, '$.status') IN ('Ordered','Partially Delivered','Delivered','Closed')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Purchase-order approval must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS procurement_governed_update_v1
+      BEFORE UPDATE ON procurement
+      WHEN (json_extract(OLD.payload, '$.status') IN ('Ordered','Partially Delivered','Delivered','Closed')
+         OR json_extract(NEW.payload, '$.status') IN ('Ordered','Partially Delivered','Delivered','Closed'))
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed purchase order is immutable; use a controlled amendment or reversal.'); END;
+      CREATE TRIGGER IF NOT EXISTS procurement_receipt_governed_insert_v1
+      BEFORE INSERT ON procurement_receipts
+      WHEN json_extract(NEW.payload, '$.status') = 'Accepted'
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'GRN acceptance must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS procurement_receipt_governed_update_v1
+      BEFORE UPDATE ON procurement_receipts
+      WHEN (json_extract(OLD.payload, '$.status') = 'Accepted'
+         OR json_extract(NEW.payload, '$.status') = 'Accepted')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Accepted GRN is immutable; use a controlled correction.'); END;
+      CREATE INDEX IF NOT EXISTS idx_procurement_commitment_status
+        ON procurement(project_id, contract_id, boq_item_id, json_extract(payload, '$.status'));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1274,7 +1315,7 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
-            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment,
+            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt,
             approve_cost_change, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
         ])
         .setup(|app| {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { approveCostChange, approvePaymentCertificate, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { acceptProcurementReceipt, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -1169,6 +1169,9 @@ export default function App() {
   async function syncOperationalCost(sourceTable: 'procurement' | 'labor_duty' | 'equipment', mutation: { type: string; row?: Record<string, any>; id?: string }) {
     const sourceId = mutation.row?.id || mutation.id;
     if (!sourceId) return;
+    // PO forecasts are an SQLite-governed commercial posting.  They must
+    // never be recreated by a component re-render or by the browser client.
+    if ((['procurement'] as string[]).includes(sourceTable)) return;
     const sourceType = sourceTable === 'procurement' ? 'procurement' : sourceTable === 'labor_duty' ? 'labor' : 'equipment';
     const existingCost = data.costEntries.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
     const existingCash = data.cashFlow.find((entry: any) => entry.source_type === sourceType && entry.source_id === sourceId) as any;
@@ -1253,61 +1256,6 @@ export default function App() {
     } else if (existingCash) {
       await dataRepository.delete('cash_flow', existingCash.id);
       data.applyLocalMutation('cash_flow', { type: 'delete', id: existingCash.id });
-    }
-  }
-
-  /** Only accepted goods receipts post procurement actual cost. A purchase
-   * order itself remains a commitment/forecast event. */
-  async function syncProcurementReceiptCost(mutation: { type: string; row?: Record<string, any>; id?: string }) {
-    const receiptId = mutation.row?.id || mutation.id;
-    if (!receiptId) return;
-    const existing = data.costEntries.find((entry: any) => entry.source_type === 'procurement_receipt' && entry.source_id === receiptId) as any;
-    if (mutation.type === 'delete') {
-      if (existing) {
-        await dataRepository.delete('cost_entries', existing.id);
-        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
-      }
-      return;
-    }
-    const receipt = mutation.row;
-    if (!receipt) return;
-    const po = data.procurement.find((row: any) => row.id === receipt.procurement_id) as any;
-    if (!po || !['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(po.status || ''))) {
-      if (existing) {
-        await dataRepository.delete('cost_entries', existing.id);
-        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
-      }
-      return;
-    }
-    if (String(receipt.status || '') !== 'Accepted') {
-      if (existing) {
-        await dataRepository.delete('cost_entries', existing.id);
-        data.applyLocalMutation('cost_entries', { type: 'delete', id: existing.id });
-      }
-      return;
-    }
-    const contract = data.contracts.find((row: any) => row.id === po.contract_id) as any;
-    const item = data.boqItems.find((row: any) => row.id === po.boq_item_id) as any;
-    const header = data.boqHeaders.find((row: any) => row.id === item?.boq_header_id) as any;
-    if (!contract || contract.parent_main_contract_id || !item || header?.contract_id !== contract.id) {
-      throw new Error('The purchase order must reference a valid main-contract BOQ item before its receipt can post actual cost.');
-    }
-    const amount = Math.round((Number(receipt.accepted_quantity) || 0) * (Number(receipt.unit_cost) || 0) * 100) / 100;
-    if (amount <= 0) throw new Error('An accepted receipt must have a positive accepted amount.');
-    const costRow = {
-      project_id: contract.project_id, project_code: data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
-      contract_id: contract.id, main_contract_id: contract.id, boq_header_id: item.boq_header_id || null, boq_item_id: item.id,
-      boq_code: header?.boq_code || item.boq_code || '', company_name: contract.contractor || '',
-      boq_item_code: item.item_code || '', boq_item_name: item.item_name || item.description || '',
-      date: receipt.receipt_date || null, cost_type: 'Materials', invoice_number: receipt.receipt_number || '', payment_order_number: po.purchase_order_number || '',
-      amount, source_type: 'procurement_receipt', source_id: receiptId,
-    };
-    if (existing) {
-      const updated = await dataRepository.update<Record<string, any>>('cost_entries', existing.id, costRow);
-      data.applyLocalMutation('cost_entries', { type: 'update', row: updated });
-    } else {
-      const inserted = await dataRepository.insert<Record<string, any>>('cost_entries', costRow);
-      data.applyLocalMutation('cost_entries', { type: 'insert', row: inserted });
     }
   }
 
@@ -2142,7 +2090,7 @@ export default function App() {
     if (activeView === 'dataQuality') {
       const checks = runDataQualityChecks({
         projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
       });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
@@ -3178,19 +3126,9 @@ export default function App() {
             } else {
               void syncOperationalCost(sourceTable, mutation).catch((error) => alert(`Failed to synchronize ${sourceTable} cost: ${error.message || 'Unknown error'}`));
             }
-            if (tableName === 'procurement' && mutation.type !== 'insertMany' && mutation.row?.id) {
-              data.procurementReceipts
-                .filter((receipt: any) => receipt.procurement_id === mutation.row?.id)
-                .forEach((receipt: any) => void syncProcurementReceiptCost({ type: 'update', row: receipt }).catch((error) => alert(`Failed to reconcile receipt actual cost: ${error.message || 'Unknown error'}`)));
-            }
           }
-          if (tableName === 'procurement_receipts') {
-            if (mutation.type === 'insertMany') {
-              mutation.rows.forEach((row) => void syncProcurementReceiptCost({ type: 'insert', row }).catch((error) => alert(`Failed to synchronize receipt actual cost: ${error.message || 'Unknown error'}`)));
-            } else {
-              void syncProcurementReceiptCost(mutation).catch((error) => alert(`Failed to synchronize receipt actual cost: ${error.message || 'Unknown error'}`));
-            }
-          }
+          // Accepted GRNs post their actual cost inside the same governed
+          // SQLite transaction. The UI deliberately never replays it.
           if (['supplier_invoices', 'supplier_invoice_lines', 'supplier_invoice_payments'].includes(tableName)) {
             const sourceRow = (mutation as any).row as Record<string, any> | undefined;
             const invoiceId = tableName === 'supplier_invoices' ? (sourceRow?.id || '') : String(sourceRow?.supplier_invoice_id || '');
@@ -3463,6 +3401,26 @@ export default function App() {
             }
           }
           return dataRepository.update<Record<string, any>>('project_baselines', id, baselinePatch);
+        } : tableName === 'procurement' ? async (id, patch) => {
+          const current = data.procurement.find((row: any) => row.id === id) as any;
+          if (patch.status === 'Ordered' && current?.status !== 'Ordered') {
+            await approvePurchaseOrder({ operationId: crypto.randomUUID(), procurementId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
+            await data.reload();
+            const rows = await dataRepository.list<Record<string, any>>('procurement');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(current?.status || ''))) throw new Error('Governed purchase orders are immutable; use a controlled amendment or reversal.');
+          return dataRepository.update<Record<string, any>>('procurement', id, patch);
+        } : tableName === 'procurement_receipts' ? async (id, patch) => {
+          const current = data.procurementReceipts.find((row: any) => row.id === id) as any;
+          if (patch.status === 'Accepted' && current?.status !== 'Accepted') {
+            await acceptProcurementReceipt({ operationId: crypto.randomUUID(), receiptId: id, actor: 'Local User', acceptedAt: patch.accepted_date || new Date().toISOString().slice(0, 10) });
+            await data.reload();
+            const rows = await dataRepository.list<Record<string, any>>('procurement_receipts');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (current?.status === 'Accepted') throw new Error('Accepted GRNs are immutable; create a controlled correction instead of changing the receipt.');
+          return dataRepository.update<Record<string, any>>('procurement_receipts', id, patch);
         } : tableName === 'supplier_invoices' ? async (id, patch) => {
           const current = data.supplierInvoices.find((row: any) => row.id === id) as any;
           if (patch.status === 'Approved' && current?.status !== 'Approved') {
@@ -3522,7 +3480,7 @@ export default function App() {
           contract_role: 'Main Contract',
           ...createCodeDraft('contracts', data.contracts as Record<string, any>[]),
           ...createCodeDraft('projects', data.projects as Record<string, any>[]),
-        }) : undefined}
+        }) : tableName === 'procurement' || tableName === 'procurement_receipts' ? () => ({ status: 'Draft' }) : undefined}
       />
     );
   }

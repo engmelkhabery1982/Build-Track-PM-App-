@@ -152,3 +152,33 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('purchase-order governance migration blocks direct commitment and GRN acceptance', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*32,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 32 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE supplier_ap_mutation_guard (operation_id TEXT PRIMARY KEY, created_at TEXT)')
+for table in ('procurement', 'procurement_receipts'):
+  db.execute(f'CREATE TABLE {table} (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, boq_item_id TEXT, payload TEXT NOT NULL)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO procurement VALUES ('po-1','p-1','c-1','b-1',?)", (json.dumps({'status':'Draft'}),))
+try:
+  db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Ordered'}),))
+  raise AssertionError('direct ordered status must be rejected')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO supplier_ap_mutation_guard VALUES ('op-1','now')")
+db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Ordered'}),))
+db.execute("DELETE FROM supplier_ap_mutation_guard")
+db.execute("INSERT INTO procurement_receipts VALUES ('grn-1','p-1','c-1','b-1',?)", (json.dumps({'status':'Received'}),))
+try:
+  db.execute("UPDATE procurement_receipts SET payload=? WHERE id='grn-1'", (json.dumps({'status':'Accepted'}),))
+  raise AssertionError('direct accepted receipt must be rejected')
+except sqlite3.IntegrityError: pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});
