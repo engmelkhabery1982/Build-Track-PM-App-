@@ -1,5 +1,5 @@
 import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts';
-import { calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
+import { calculateCertificateBalances, calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -160,6 +160,25 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
         || Math.abs(net - calculated.net_certified_value) > 0.01);
   });
   pushIf(findings, invalidCertificates.length > 0, { severity: 'Error', title: 'Governed payment certificate is incomplete', detail: `${invalidCertificates.length} approved/paid certificate(s) have invalid scope, type or governed net value.`, view: 'paymentCertificates' });
+  const invalidCertificateBalances = paymentCertificates.filter((certificate) => {
+    if (!['Approved', 'Paid'].includes(String(certificate.status || ''))) return false;
+    const contract = contractById.get(certificate.contract_id);
+    if (!contract) return true;
+    const prior = paymentCertificates.filter((row) => row.id !== certificate.id && row.contract_id === certificate.contract_id
+      && row.certificate_type === certificate.certificate_type && ['Approved', 'Paid'].includes(String(row.status || ''))
+      && String(row.certificate_date || '') <= String(certificate.certificate_date || ''));
+    const balances = calculateCertificateBalances({
+      contractAdvanceAmount: Number(contract.advance_amount) || 0,
+      retentionCapAmount: Number(contract.retention_cap_amount) || 0,
+      priorAdvanceRecovery: prior.reduce((sum, row) => sum + (Number(row.advance_recovery) || 0), 0),
+      priorRetention: prior.reduce((sum, row) => sum + (Number(row.retention_amount) || 0), 0),
+      certificate,
+    });
+    return balances.advanceExceeded || balances.retentionCapExceeded
+      || Math.abs((Number(certificate.cumulative_retention_amount) || 0) - balances.cumulativeRetentionAmount) > 0.01
+      || Math.abs((Number(certificate.remaining_advance_balance) || 0) - balances.remainingAdvanceBalance) > 0.01;
+  });
+  pushIf(findings, invalidCertificateBalances.length > 0, { severity: 'Error', title: 'Certificate retention or advance balance is invalid', detail: `${invalidCertificateBalances.length} certificate(s) exceed contractual retention/advance terms or do not hold their governed cumulative balance.`, view: 'paymentCertificates' });
   const unappliedApprovedVariationLines = variationLines.filter((line) => {
     const variation = variations.find((candidate) => candidate.id === line.variation_id);
     return variation?.status === 'Approved' && !line.applied_at;

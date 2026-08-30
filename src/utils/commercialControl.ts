@@ -8,6 +8,27 @@ export function calculateCertificateValues(certificate: Record<string, unknown>)
   return { gross, retention_amount: retention, taxable_amount: taxableAmount, tax_amount: tax, net_certified_value: Math.round((taxableAmount + tax) * 100) / 100 };
 }
 
+/** Contract-level retention and advance balances shared by workflow, reports and data quality. */
+export function calculateCertificateBalances(input: {
+  contractAdvanceAmount?: number;
+  retentionCapAmount?: number;
+  priorAdvanceRecovery?: number;
+  priorRetention?: number;
+  certificate: Record<string, unknown>;
+}) {
+  const advanceLimit = Math.max(0, Number(input.contractAdvanceAmount) || 0);
+  const retentionCap = Math.max(0, Number(input.retentionCapAmount) || 0);
+  const cumulativeAdvanceRecovery = Math.round(((Number(input.priorAdvanceRecovery) || 0) + (Number(input.certificate.advance_recovery) || 0)) * 100) / 100;
+  const values = calculateCertificateValues(input.certificate);
+  const cumulativeRetentionAmount = Math.round(((Number(input.priorRetention) || 0) + values.retention_amount) * 100) / 100;
+  return {
+    ...values, advanceLimit, retentionCap, cumulativeAdvanceRecovery, cumulativeRetentionAmount,
+    remainingAdvanceBalance: Math.round(Math.max(0, advanceLimit - cumulativeAdvanceRecovery) * 100) / 100,
+    advanceExceeded: cumulativeAdvanceRecovery > advanceLimit + 0.000001,
+    retentionCapExceeded: retentionCap > 0 && cumulativeRetentionAmount > retentionCap + 0.000001,
+  };
+}
+
 /** A Cost Change has exactly one commercial allocation target. This prevents
  * a project-wide change being added once to every SOV line. */
 export function costChangeAppliesToSovLine(change: Record<string, unknown>, line: Record<string, unknown>): boolean {

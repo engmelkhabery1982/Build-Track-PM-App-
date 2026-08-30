@@ -1324,6 +1324,18 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 34,
+            description: "index_certificate_retention_and_advance_balances",
+            sql: r#"
+      ALTER TABLE payment_certificates ADD COLUMN retention_amount_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.retention_amount'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE payment_certificates ADD COLUMN cumulative_retention_amount_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.cumulative_retention_amount'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE payment_certificates ADD COLUMN advance_recovery_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.advance_recovery'), 0) AS REAL)) VIRTUAL;
+      ALTER TABLE payment_certificates ADD COLUMN remaining_advance_balance_sql REAL GENERATED ALWAYS AS (CAST(COALESCE(json_extract(payload, '$.remaining_advance_balance'), 0) AS REAL)) VIRTUAL;
+      CREATE INDEX IF NOT EXISTS idx_certificate_contract_balances ON payment_certificates(contract_id, certificate_date_sql, status_sql);
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

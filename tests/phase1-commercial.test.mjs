@@ -47,6 +47,18 @@ test('certificate cash uses the net certified value and one governed movement st
   assert.equal(commercial.certificateCashStatus({ ...certificate, status: 'Draft' }), null);
 });
 
+test('certificate balances cannot exceed contractual advance or retention cap', () => {
+  const certificate = { gross_certified_value: 1000, retention_rate: 10, advance_recovery: 60, deductions: 0, tax_rate: 0 };
+  const balances = commercial.calculateCertificateBalances({
+    contractAdvanceAmount: 100, retentionCapAmount: 150, priorAdvanceRecovery: 30, priorRetention: 60, certificate,
+  });
+  assert.equal(balances.cumulativeAdvanceRecovery, 90);
+  assert.equal(balances.remainingAdvanceBalance, 10);
+  assert.equal(balances.cumulativeRetentionAmount, 160);
+  assert.equal(balances.advanceExceeded, false);
+  assert.equal(balances.retentionCapExceeded, true);
+});
+
 test('purchase orders remain commitment/forecast events until an accepted cost fact exists', () => {
   assert.deepEqual(commercial.procurementPostingState({ status: 'Draft' }), {
     isCommitment: false, isForecast: false, postsActualCost: false, postsActualCash: false,

@@ -210,3 +210,20 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('certificate balance migration exposes governed financial columns', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*34,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 34 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE payment_certificates (id TEXT PRIMARY KEY, contract_id TEXT, certificate_date_sql TEXT, status_sql TEXT, payload TEXT NOT NULL)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO payment_certificates (id,contract_id,certificate_date_sql,status_sql,payload) VALUES ('pc-1','c-1','2026-01-01','Approved','{\"retention_amount\":50,\"cumulative_retention_amount\":50,\"advance_recovery\":20,\"remaining_advance_balance\":80}')")
+assert db.execute("SELECT retention_amount_sql,cumulative_retention_amount_sql,advance_recovery_sql,remaining_advance_balance_sql FROM payment_certificates WHERE id='pc-1'").fetchone() == (50.0,50.0,20.0,80.0)
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

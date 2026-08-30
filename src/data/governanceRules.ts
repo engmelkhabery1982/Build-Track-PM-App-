@@ -10,7 +10,7 @@ const NON_NEGATIVE_FIELDS = new Set([
   'planned_value', 'actual_cost', 'earned_work_value', 'contract_value',
   'modified_contract_value', 'amount', 'item_amount', 'total_cost', 'inflow', 'outflow',
   'original_budget', 'forecast_at_completion', 'forecast_override', 'retention_rate', 'tax_rate', 'markup_rate',
-  'gross_certified_value', 'advance_recovery', 'deductions',
+  'gross_certified_value', 'advance_recovery', 'deductions', 'advance_amount', 'retention_cap_amount',
 ]);
 
 const DATE_PAIRS: Array<[string, string, string]> = [
