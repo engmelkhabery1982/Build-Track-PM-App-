@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
+import { acceptProcurementReceipt, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -3490,6 +3490,14 @@ export default function App() {
           const current = data.procurement.find((row: any) => row.id === id) as any;
           if (patch.status === 'Ordered' && current?.status !== 'Ordered') {
             await approvePurchaseOrder({ operationId: crypto.randomUUID(), procurementId: id, actor: 'Local User', approvedAt: patch.approved_date || new Date().toISOString().slice(0, 10) });
+            await data.reload();
+            const rows = await dataRepository.list<Record<string, any>>('procurement');
+            return rows.find((row) => row.id === id) || current;
+          }
+          if (patch.status === 'Cancelled' && current?.status !== 'Cancelled') {
+            const reason = String(patch.cancellation_reason || window.prompt('Reason for governed PO cancellation:') || '').trim();
+            if (!reason) throw new Error('A cancellation reason is required.');
+            await cancelPurchaseOrder({ operationId: crypto.randomUUID(), procurementId: id, actor: 'Local User', cancelledAt: patch.cancelled_date || new Date().toISOString().slice(0, 10), reason });
             await data.reload();
             const rows = await dataRepository.list<Record<string, any>>('procurement');
             return rows.find((row) => row.id === id) || current;

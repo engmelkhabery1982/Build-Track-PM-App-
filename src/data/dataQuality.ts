@@ -211,6 +211,9 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const ungovernedCommittedPos = procurement.filter((po) => ['Ordered', 'Partially Delivered', 'Delivered', 'Closed'].includes(String(po.status || ''))
     && !cashFlow.some((row) => row.source_type === 'procurement_forecast' && row.source_id === po.id));
   pushIf(findings, ungovernedCommittedPos.length > 0, { severity: 'Warning', title: 'Ordered purchase order missing cash forecast', detail: `${ungovernedCommittedPos.length} ordered purchase order(s) are not represented in the governed cash forecast.`, view: 'procurement' });
+  const cancelledPoForecasts = procurement.filter((po) => String(po.status || '') === 'Cancelled'
+    && cashFlow.some((row) => row.source_type === 'procurement_forecast' && row.source_id === po.id));
+  pushIf(findings, cancelledPoForecasts.length > 0, { severity: 'Error', title: 'Cancelled purchase order retains cash forecast', detail: `${cancelledPoForecasts.length} cancelled purchase order(s) still affect the cash forecast and require governed correction.`, view: 'procurement' });
 
   const fieldRows: Array<Record<string, any> & { view: string }> = [
     ...data.wirEntries.map((row) => ({ ...row, view: 'wir' })),

@@ -53,6 +53,11 @@ async fn accept_procurement_receipt(app: tauri::AppHandle, request: supplier_ap:
     let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     supplier_ap::accept_procurement_receipt(&database_path, request).await
 }
+#[tauri::command]
+async fn cancel_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderCancellationRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    supplier_ap::cancel_purchase_order(&database_path, request).await
+}
 
 #[tauri::command]
 async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
@@ -1301,6 +1306,24 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 33,
+            description: "govern_purchase_order_cancellation",
+            sql: r#"
+      CREATE TRIGGER IF NOT EXISTS procurement_governed_cancel_insert_v1
+      BEFORE INSERT ON procurement
+      WHEN json_extract(NEW.payload, '$.status') = 'Cancelled'
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Purchase-order cancellation must use a governed posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS procurement_governed_cancel_update_v1
+      BEFORE UPDATE ON procurement
+      WHEN (json_extract(OLD.payload, '$.status') = 'Cancelled'
+         OR json_extract(NEW.payload, '$.status') = 'Cancelled')
+       AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard)
+      BEGIN SELECT RAISE(ABORT, 'Governed purchase-order cancellation is immutable.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1315,7 +1338,7 @@ pub fn run() {
             backup_local_database,
             verify_local_backup,
             stage_local_restore
-            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt,
+            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order,
             approve_cost_change, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting
         ])
         .setup(|app| {

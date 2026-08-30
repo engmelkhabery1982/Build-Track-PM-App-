@@ -182,3 +182,31 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('purchase-order cancellation migration blocks direct cancellation', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*33,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 33 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('CREATE TABLE supplier_ap_mutation_guard (operation_id TEXT PRIMARY KEY, created_at TEXT)')
+db.execute('CREATE TABLE procurement (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO procurement VALUES ('po-1',?)", (json.dumps({'status':'Ordered'}),))
+try:
+  db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Cancelled'}),))
+  raise AssertionError('direct PO cancellation must be rejected')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO supplier_ap_mutation_guard VALUES ('cancel-1','now')")
+db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Cancelled'}),))
+db.execute('DELETE FROM supplier_ap_mutation_guard')
+try:
+  db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Ordered'}),))
+  raise AssertionError('governed cancellation must be immutable')
+except sqlite3.IntegrityError: pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

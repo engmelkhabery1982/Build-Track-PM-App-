@@ -123,6 +123,11 @@ test('data quality detects missing or duplicate governed PO cash forecasts', () 
     { id: 'cf2', source_type: 'procurement_forecast', source_id: 'po1' },
   ] });
   assert.ok(duplicate.some((finding) => finding.title === 'Duplicate purchase-order cash forecast'));
+  const cancelled = quality.runDataQualityChecks({ ...common,
+    procurement: [{ id: 'po1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 10, status: 'Cancelled' }],
+    cashFlow: [{ id: 'cf1', source_type: 'procurement_forecast', source_id: 'po1' }],
+  });
+  assert.ok(cancelled.some((finding) => finding.title === 'Cancelled purchase order retains cash forecast'));
 });
 
 test('data quality exposes supplier AP over-billing and over-payment', () => {
