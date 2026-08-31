@@ -30,8 +30,14 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   }, [data]);
 
   const xScale = (i: number) => (i / Math.max(data.length - 1, 1)) * chartW;
-  const maximum = Math.max(...data.flatMap((point) => [point.planned, point.earned, point.actual, point.forecast || 0, Math.abs(point.cash || 0)]), 1);
-  const yScale = (v: number) => chartH - (Math.max(0, v) / maximum) * chartH;
+  // Cash can legitimately be negative. Keep zero inside the scale instead of
+  // clipping a deficit to the axis, otherwise the executive curve lies.
+  const values = data.flatMap((point) => [point.planned, point.earned, point.actual, point.forecast || 0, point.cash || 0]);
+  const maximum = Math.max(...values, 0, 1);
+  const minimum = Math.min(...values, 0);
+  const valueRange = Math.max(maximum - minimum, 1);
+  const yScale = (v: number) => chartH - ((v - minimum) / valueRange) * chartH;
+  const zeroY = yScale(0);
 
   const plannedPath = data
     .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.planned).toFixed(1)}`)
@@ -44,10 +50,10 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
     .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.earned).toFixed(1)}`)
     .join(' ');
   const forecastPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.forecast || 0).toFixed(1)}`).join(' ');
-  const cashPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(Math.max(0, d.cash || 0)).toFixed(1)}`).join(' ');
+  const cashPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.cash || 0).toFixed(1)}`).join(' ');
 
-  const plannedArea = `${plannedPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
-  const actualArea = `${actualPath} L ${xScale(data.length - 1).toFixed(1)} ${chartH} L 0 ${chartH} Z`;
+  const plannedArea = `${plannedPath} L ${xScale(data.length - 1).toFixed(1)} ${zeroY.toFixed(1)} L 0 ${zeroY.toFixed(1)} Z`;
+  const actualArea = `${actualPath} L ${xScale(data.length - 1).toFixed(1)} ${zeroY.toFixed(1)} L 0 ${zeroY.toFixed(1)} Z`;
 
   const gridLines = [0, 0.25, 0.5, 0.75, 1];
 
@@ -75,7 +81,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
                 strokeDasharray={g === 0 ? '0' : '4 4'}
               />
               <text x={-8} y={chartH - g * chartH + 4} textAnchor="end" className="fill-neutral-400" style={{ fontSize: 10 }}>
-                {compactValue(maximum * g)}
+                {compactValue(minimum + valueRange * g)}
               </text>
             </g>
           ))}
@@ -119,6 +125,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
 
           {/* X-axis line */}
           <line x1={0} y1={chartH} x2={chartW} y2={chartH} stroke="#d4d4d4" strokeWidth={1.5} />
+          {minimum < 0 && <line x1={0} y1={zeroY} x2={chartW} y2={zeroY} stroke="#a3a3a3" strokeWidth={1} strokeDasharray="3 3" />}
         </g>
       </svg>
     </div>

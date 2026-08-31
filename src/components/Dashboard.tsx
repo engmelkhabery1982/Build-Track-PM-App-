@@ -1144,6 +1144,8 @@ export function Dashboard({
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-violet-500" /><span className="text-neutral-600">EV</span></span>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-success-500" /><span className="text-neutral-600">AC</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-orange-500" /><span className="text-neutral-600">Forecast</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-teal-500" /><span className="text-neutral-600">Cash</span></span>
                   </div>
                 </div>
                 <SCurveChart data={sCurve} />
