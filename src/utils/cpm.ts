@@ -16,6 +16,9 @@ export type NetworkActivity = {
   actual_start_date?: string | null;
   actual_finish_date?: string | null;
   remaining_duration_days?: number | null;
+  constraint_type?: string | null;
+  constraint_date?: string | null;
+  is_milestone?: boolean | null;
 };
 
 export type CpmResult = {
@@ -217,6 +220,22 @@ export function calculateCpmStatusForecast(
       }
       forecastStart = constrainedStart;
       forecastFinish = addWorkingDays(forecastStart, duration(activity), calendar);
+    }
+    const constraintType = String(activity.constraint_type || 'None');
+    const constraintDate = String(activity.constraint_date || '');
+    if (constraintDate && constraintType === 'Start No Earlier Than') {
+      forecastStart = laterDate(forecastStart, constraintDate);
+      forecastFinish = addWorkingDays(forecastStart, status === 'In Progress' ? Math.max(0, Number(activity.remaining_duration_days) || 0) : duration(activity), calendar);
+    } else if (constraintDate && constraintType === 'Mandatory Start') {
+      forecastStart = constraintDate;
+      forecastFinish = addWorkingDays(forecastStart, status === 'In Progress' ? Math.max(0, Number(activity.remaining_duration_days) || 0) : duration(activity), calendar);
+      warning = warning || 'Mandatory start constraint applied.';
+    } else if (constraintDate && constraintType === 'Mandatory Finish') {
+      forecastFinish = constraintDate;
+      forecastStart = subtractWorkingDays(forecastFinish, status === 'In Progress' ? Math.max(0, Number(activity.remaining_duration_days) || 0) : duration(activity), calendar);
+      warning = warning || 'Mandatory finish constraint applied.';
+    } else if (constraintDate && constraintType === 'Finish No Later Than' && forecastFinish && forecastFinish > constraintDate) {
+      warning = warning || `Finish no later than constraint breached (${constraintDate}).`;
     }
     result.set(activity.id, { ...original, forecastStart, forecastFinish, dataDate: dataDate || null, statusWarning: warning });
   }

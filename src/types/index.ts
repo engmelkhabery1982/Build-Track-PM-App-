@@ -331,6 +331,9 @@ export interface Schedule {
   actual_finish_date?: string | null;
   remaining_duration_days?: number;
   status_data_date?: string | null;
+  constraint_type?: 'None' | 'Start No Earlier Than' | 'Finish No Later Than' | 'Mandatory Start' | 'Mandatory Finish' | string;
+  constraint_date?: string | null;
+  is_milestone?: boolean;
   planned_labor_hours?: number;
   planned_equipment_hours?: number;
   budget: number;

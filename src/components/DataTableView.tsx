@@ -986,7 +986,11 @@ export function DataTableView({
       const start = String(out.start_date || '');
       const end = String(out.end_date || '');
       const duration = Number(out.duration_days) || 0;
-      if (start && end) {
+      if (out.is_milestone === true) {
+        out.duration_days = 0;
+        if (start && !end) out.end_date = start;
+        if (end && !start) out.start_date = end;
+      } else if (start && end) {
         const days = workingDaysBetween(start, end, out);
         if (Number.isFinite(days) && days >= 0) out.duration_days = Math.max(1, days);
       } else if (start && duration > 0) {
@@ -1445,6 +1449,7 @@ export function DataTableView({
     if (tableName === 'schedules') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
       const isExecutableActivity = Boolean(String(record.activity || '').trim());
+      const isMilestone = record.is_milestone === true;
       const plannedQuantity = Number(record.planned_quantity) || 0;
       if (record.is_non_boq_activity === true) {
         if (!isExecutableActivity) throw new Error('A non-BOQ Primavera activity requires a name.');
@@ -1452,7 +1457,7 @@ export function DataTableView({
         return;
       }
       if (!item) throw new Error('Select a valid main BOQ item for the activity.');
-      if (isExecutableActivity && plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
+      if (isExecutableActivity && !isMilestone && plannedQuantity <= 0) throw new Error('Planned quantity must be greater than zero.');
       // A blank activity is the BOQ Total row, not an executable activity.
       // It is derived from children and must not consume BOQ quantity.
       const otherActivities = data.filter((activity) =>
@@ -1461,7 +1466,7 @@ export function DataTableView({
         activity.is_summary_row !== true &&
         String(activity.activity || '').trim(),
       );
-      const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + (isExecutableActivity ? plannedQuantity : 0);
+      const total = otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0) + (isExecutableActivity && !isMilestone ? plannedQuantity : 0);
       const allowed = Number(item.quantity) || 0;
       if (total > allowed + 0.000001) {
         throw new Error(`Planned quantity exceeds BOQ quantity: existing activities ${otherActivities.reduce((sum, activity) => sum + (Number(activity.planned_quantity) || 0), 0).toLocaleString()} + new ${plannedQuantity.toLocaleString()} = ${total.toLocaleString()}, while BOQ allows ${allowed.toLocaleString()}.`);
@@ -1483,6 +1488,8 @@ export function DataTableView({
       const actualFinish = String(record.actual_finish_date || '');
       const statusDate = String(record.status_data_date || '');
       const remaining = Number(record.remaining_duration_days);
+      const constraintType = String(record.constraint_type || 'None');
+      const constraintDate = String(record.constraint_date || '');
       if (!['Not Started', 'In Progress', 'Completed'].includes(updateStatus)) throw new Error('Select a valid activity update status.');
       if (updateStatus === 'In Progress' && !actualStart) throw new Error('An in-progress activity requires an actual start date.');
       if (updateStatus === 'Completed' && (!actualStart || !actualFinish)) throw new Error('A completed activity requires actual start and actual finish dates.');
@@ -1491,6 +1498,9 @@ export function DataTableView({
       if (actualStart && actualFinish && actualFinish < actualStart) throw new Error('Actual finish cannot be earlier than actual start.');
       if (actualStart && statusDate && statusDate < actualStart) throw new Error('Status Data Date cannot be earlier than actual start.');
       if (Number.isFinite(remaining) && remaining < 0) throw new Error('Remaining duration cannot be negative.');
+      if (!['None', 'Start No Earlier Than', 'Finish No Later Than', 'Mandatory Start', 'Mandatory Finish'].includes(constraintType)) throw new Error('Select a valid schedule constraint type.');
+      if (constraintType !== 'None' && !constraintDate) throw new Error('A schedule constraint requires a constraint date.');
+      if (record.is_milestone === true && Number(record.duration_days || 0) > 0) throw new Error('A milestone must have zero duration.');
     }
     if (tableName === 'schedule_distributions') {
       if (!record.schedule_id || !selectedSchedule) throw new Error('Select a valid schedule activity for the time-phased distribution.');

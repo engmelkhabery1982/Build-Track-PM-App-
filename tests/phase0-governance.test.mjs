@@ -281,6 +281,16 @@ test('CPM status forecast honors Data Date, actuals, remaining duration, and ret
   assert.equal(statusForecast.get('C').forecastFinish, '2026-01-17');
 });
 
+test('CPM status forecast applies governed constraints and reports breached finish limit', () => {
+  const forecast = cpm.calculateCpmStatusForecast([
+    { id: 'A', duration_days: 2, calendar_name: 'Calendar Days', constraint_type: 'Start No Earlier Than', constraint_date: '2026-02-05' },
+    { id: 'B', duration_days: 3, calendar_name: 'Calendar Days', constraint_type: 'Finish No Later Than', constraint_date: '2026-02-03' },
+  ], '2026-02-01', '2026-02-01');
+  assert.equal(forecast.get('A').forecastStart, '2026-02-05');
+  assert.equal(forecast.get('A').forecastFinish, '2026-02-07');
+  assert.match(forecast.get('B').statusWarning || '', /breached/);
+});
+
 test('data quality identifies inconsistent schedule status updates', () => {
   const source = {
     projects: [{ id: 'project-1' }],

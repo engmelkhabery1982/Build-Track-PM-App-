@@ -154,6 +154,14 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
       || (Number.isFinite(remaining) && remaining < 0);
   });
   pushIf(findings, invalidScheduleStatus.length > 0, { severity: 'Error', title: 'Schedule status update is invalid', detail: `${invalidScheduleStatus.length} activity update(s) have inconsistent actual dates, Data Date, status, or remaining duration.`, view: 'schedule' });
+  const invalidScheduleConstraints = data.schedules.filter((row) => {
+    const type = String(row.constraint_type || 'None');
+    const date = String(row.constraint_date || '');
+    return !['None', 'Start No Earlier Than', 'Finish No Later Than', 'Mandatory Start', 'Mandatory Finish'].includes(type)
+      || (type !== 'None' && !date)
+      || (row.is_milestone === true && Number(row.duration_days || 0) > 0);
+  });
+  pushIf(findings, invalidScheduleConstraints.length > 0, { severity: 'Error', title: 'Schedule constraint or milestone is invalid', detail: `${invalidScheduleConstraints.length} activity row(s) need a valid constraint date/type, and milestones must have zero duration.`, view: 'schedule' });
   const lateOrEarlyActualActivities = data.schedules.filter((row) => {
     if (!String(row.activity || '').trim()) return false;
     const actualStart = String(row.actual_start_date || '');

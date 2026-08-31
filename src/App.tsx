@@ -398,6 +398,9 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
+  { key: 'is_milestone', label: 'Milestone', type: 'boolean', editable: true },
+  { key: 'constraint_type', label: 'Constraint Type', type: 'select', editable: true, options: ['None', 'Start No Earlier Than', 'Finish No Later Than', 'Mandatory Start', 'Mandatory Finish'] },
+  { key: 'constraint_date', label: 'Constraint Date', type: 'date', editable: true },
   { key: 'activity_status', label: 'Update Status', type: 'status', editable: true, options: ['Not Started', 'In Progress', 'Completed'] },
   { key: 'status_data_date', label: 'Status Data Date', type: 'date', editable: true },
   { key: 'actual_start_date', label: 'Actual Start', type: 'date', editable: true },
@@ -3448,6 +3451,9 @@ export default function App() {
                 actual_start_date: row.actual_start_date,
                 actual_finish_date: row.actual_finish_date,
                 remaining_duration_days: row.remaining_duration_days,
+                constraint_type: row.constraint_type,
+                constraint_date: row.constraint_date,
+                is_milestone: row.is_milestone,
               })), anchor, dataDate);
               for (const row of rows) {
                 const result = forecast.get(row.id);
