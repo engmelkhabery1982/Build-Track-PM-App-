@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, compareBaselineRevisions, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -3667,6 +3667,13 @@ export default function App() {
               return;
             }
             const exceptions = details.filter((detail) => detail.status !== 'Unchanged');
+            const prior = data.baselines
+              .filter((baseline: any) => baseline.contract_id === row.contract_id && baseline.id !== row.id && Number(baseline.revision_number || 0) < Number(row.revision_number || 0) && Array.isArray(baseline.activity_snapshot) && baseline.activity_snapshot.length)
+              .sort((left: any, right: any) => Number(right.revision_number || 0) - Number(left.revision_number || 0))[0] as any;
+            const revisionDifference = prior ? compareBaselineRevisions(prior.activity_snapshot, row.activity_snapshot) : null;
+            const revisionSummary = revisionDifference
+              ? `\nRevision comparison — ${prior.baseline_number || `Rev ${prior.revision_number}`} → ${row.baseline_number || `Rev ${row.revision_number}`}\n${revisionDifference.addedActivityCount} added | ${revisionDifference.removedActivityCount} removed | ${revisionDifference.changedActivityCount} changed | Critical-path Δ ${revisionDifference.criticalPathVariance >= 0 ? '+' : ''}${revisionDifference.criticalPathVariance}\n`
+              : '\nRevision comparison — no earlier frozen revision is available for this contract.\n';
             const lines = (exceptions.length ? exceptions : details).map((detail) => {
               const changes = detail.status === 'Changed' ? detail.changedFields.join(', ') : detail.status;
               const variance = [
@@ -3677,7 +3684,7 @@ export default function App() {
               ].filter(Boolean).join(' | ');
               return `${detail.activityCode} — ${detail.activity}\n${changes || 'No change'}${variance ? `\n${variance}` : ''}`;
             });
-            window.alert(`Baseline variance register — ${row.baseline_number || row.id}\n${exceptions.length} exception(s) across ${details.length} activity/activities.\n\n${lines.join('\n\n')}`);
+            window.alert(`Baseline variance register — ${row.baseline_number || row.id}${revisionSummary}\nLive-plan variance: ${exceptions.length} exception(s) across ${details.length} activity/activities.\n\n${lines.join('\n\n')}`);
           },
         } : tableName === 'resource_masters' ? {
           label: 'Load & Level',

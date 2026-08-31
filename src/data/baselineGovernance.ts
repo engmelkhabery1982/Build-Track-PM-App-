@@ -177,6 +177,16 @@ export function compareBaselineActivities(
   };
 }
 
+/** Compares two frozen revisions without treating either revision as the live
+ * schedule. This preserves historical baselines while exposing a formal
+ * re-baseline's scope, date, quantity, budget and logic changes. */
+export function compareBaselineRevisions(
+  earlierSnapshot: BaselineActivitySnapshot[] | unknown,
+  laterSnapshot: BaselineActivitySnapshot[] | unknown,
+): BaselineActivityComparison {
+  return compareBaselineActivities(earlierSnapshot, Array.isArray(laterSnapshot) ? laterSnapshot as Record<string, any>[] : []);
+}
+
 /** Returns an immutable, audit-friendly copy of the executable schedule. */
 export function createBaselineActivitySnapshot(activities: Record<string, any>[]): BaselineActivitySnapshot[] {
   return activities
