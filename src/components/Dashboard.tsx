@@ -85,9 +85,10 @@ export function Dashboard({
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const pid = selectedProjectId;
-  const reportDate = new Date().toISOString().slice(0, 10);
+  const reportDate = asOfDate;
   const datedThroughToday = (value: unknown) => {
     const date = String(value || '').slice(0, 10);
     return Boolean(date && date <= reportDate);
@@ -216,11 +217,11 @@ export function Dashboard({
     const totalOutflow = actualCashFlow.reduce((s, c) => s + (c.outflow || 0), 0);
     const netCashFlow = totalInflow - totalOutflow;
     const forecastNetCashFlow = forecastCashFlow.reduce((s, c) => s + (c.inflow || 0) - (c.outflow || 0), 0);
-    const today = new Date();
+    const cutOffDate = new Date(`${reportDate}T00:00:00`);
     const forecastAt = (days: number) => forecastCashFlow
       .filter((c: any) => {
         const date = c.date ? new Date(`${c.date}T00:00:00`) : null;
-        return date && date >= today && date <= new Date(today.getTime() + days * 86400000);
+        return date && date >= cutOffDate && date <= new Date(cutOffDate.getTime() + days * 86400000);
       })
       .reduce((s, c) => s + (c.inflow || 0) - (c.outflow || 0), 0);
     const forecast30 = forecastAt(30);
@@ -473,7 +474,7 @@ export function Dashboard({
     {
       label: 'Planned Value (PV)',
       value: fmtMoney(stats.totalPlannedWork),
-      sub: `As of today · BAC ${fmtMoney(evm.BAC)}`,
+      sub: `As of ${reportDate} · BAC ${fmtMoney(evm.BAC)}`,
       icon: CheckCircle2,
       color: 'from-primary-500 to-primary-600',
       trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
@@ -583,6 +584,11 @@ export function Dashboard({
             <button onClick={() => window.print()} className="no-print flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-xl bg-white shadow-sm hover:border-primary-300 transition-colors">
               <Printer size={15} /> Print
             </button>
+            <label className="no-print flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-xl bg-white shadow-sm hover:border-primary-300 transition-colors" title="All dashboard values are calculated through this date">
+              <CalendarClock size={15} className="text-neutral-400" />
+              <span className="hidden xl:inline">As of</span>
+              <input aria-label="Dashboard as of date" type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} className="border-0 bg-transparent p-0 text-sm outline-none" />
+            </label>
             <div className="relative">
               <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <select
