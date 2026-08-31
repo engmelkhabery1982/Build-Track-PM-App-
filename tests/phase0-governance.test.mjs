@@ -539,6 +539,15 @@ test('resource calendar controls planned resource dates and shift hours override
   assert.deepEqual(loads.map((load) => load.capacityHours), [9, 9]);
 });
 
+test('recorded site hours remain visible and become an exception on a resource non-working day', () => {
+  const loads = resourceLoading.calculateResourceLoads(
+    [{ id: 'r1', daily_capacity_hours: 8, calendar_id: 'cal-5' }],
+    [{ resource_id: 'r1', date: '2026-03-07', total_hours: 4 }], [],
+    [{ id: 'cal-5', calendar_name: 'Crew Week', working_pattern: '5-Day Week', hours_per_day: 8 }],
+  );
+  assert.deepEqual(loads, [{ resourceId: 'r1', date: '2026-03-07', allocatedHours: 4, capacityHours: 0, overAllocatedHours: 4 }]);
+});
+
 test('resource leveling recommendations identify affected activities without changing the plan', () => {
   const assignments = [
     { id: 'ra-1', schedule_id: 'a-1', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 6 },

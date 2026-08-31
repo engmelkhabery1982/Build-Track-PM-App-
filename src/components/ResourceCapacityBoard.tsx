@@ -20,7 +20,7 @@ export function ResourceCapacityBoard({
 }) {
   const [resourceId, setResourceId] = useState('all');
   const planned = useMemo(() => calculatePlannedResourceLoads(resources, assignments, schedules, workCalendars), [resources, assignments, schedules, workCalendars]);
-  const actual = useMemo(() => calculateResourceLoads(resources, laborDuty, equipment), [resources, laborDuty, equipment]);
+  const actual = useMemo(() => calculateResourceLoads(resources, laborDuty, equipment, workCalendars), [resources, laborDuty, equipment, workCalendars]);
   const recommendations = useMemo(() => suggestResourceLeveling(resources, assignments, schedules, workCalendars), [resources, assignments, schedules, workCalendars]);
   const visiblePlanned = resourceId === 'all' ? planned : planned.filter((row) => row.resourceId === resourceId);
   const visibleActual = resourceId === 'all' ? actual : actual.filter((row) => row.resourceId === resourceId);

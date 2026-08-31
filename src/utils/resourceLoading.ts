@@ -75,6 +75,16 @@ function plannedResourceCapacity(
   return Math.max(0, Number(resource.daily_capacity_hours) || 0);
 }
 
+function resourceCapacityOnDate(
+  resource: Record<string, any>,
+  date: string,
+  calendars: Map<string, Record<string, any>>,
+): number {
+  const calendar = resourcePlanningCalendar(resource, undefined, calendars);
+  if (calendar && workingDatesBetween(date, date, calendar).length === 0) return 0;
+  return plannedResourceCapacity(resource, calendars);
+}
+
 /** Time-phases the resource plan independently of settled cash.  This is a
  * forward cost exposure used for EVM/forecast review, not a payment posting. */
 export function timePhasedPlannedResourceCost(
@@ -208,8 +218,11 @@ export function calculateResourceLoads(
   resources: Array<Record<string, any>>,
   laborDuty: ResourceLoadInput[],
   equipment: ResourceLoadInput[],
+  workCalendars: Array<Record<string, any>> = [],
 ): ResourceLoad[] {
-  const capacityByResource = new Map(resources.map((resource) => [String(resource.id), Math.max(0, Number(resource.daily_capacity_hours) || 0)]));
+  const resourceById = new Map(resources.map((resource) => [String(resource.id), resource]));
+  const calendarById = new Map(workCalendars.map((calendar) => [String(calendar.id), calendar]));
+  const capacityByResource = new Map(resources.map((resource) => [String(resource.id), plannedResourceCapacity(resource, calendarById)]));
   const totals = new Map<string, number>();
   for (const row of [...laborDuty, ...equipment]) {
     const resourceId = String(row.resource_id || '');
@@ -224,7 +237,8 @@ export function calculateResourceLoads(
   }
   return [...totals.entries()].map(([key, allocatedHours]) => {
     const [resourceId, date] = key.split('|');
-    const capacityHours = capacityByResource.get(resourceId) || 0;
+    const resource = resourceById.get(resourceId);
+    const capacityHours = resource ? resourceCapacityOnDate(resource, date, calendarById) : (capacityByResource.get(resourceId) || 0);
     const roundedAllocated = Math.round(allocatedHours * 100) / 100;
     return { resourceId, date, allocatedHours: roundedAllocated, capacityHours, overAllocatedHours: Math.max(0, Math.round((roundedAllocated - capacityHours) * 100) / 100) };
   }).sort((left, right) => left.date.localeCompare(right.date) || left.resourceId.localeCompare(right.resourceId));

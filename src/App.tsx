@@ -2621,7 +2621,7 @@ export default function App() {
     });
     const viewData = activeView === 'resourceMaster'
       ? (() => {
-        const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[]);
+        const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[], data.workCalendars as Record<string, any>[]);
         const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[], data.workCalendars as Record<string, any>[]);
         return rawViewData.map((resource: any) => {
           const resourceLoads = loads.filter((load) => load.resourceId === resource.id);
@@ -3683,7 +3683,7 @@ export default function App() {
           label: 'Load & Level',
           title: 'Review capacity and safe, non-automatic resource-leveling recommendations.',
           onClick: (row) => {
-            const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
+            const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[], data.workCalendars as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
             const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[], data.workCalendars as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);

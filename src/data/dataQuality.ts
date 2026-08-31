@@ -142,7 +142,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return !resource || resource.status === 'Inactive' || (laborDuty.includes(row) ? resource.resource_type !== 'Labor' : resource.resource_type !== 'Equipment');
   });
   pushIf(findings, invalidResourceAssignments.length > 0, { severity: 'Error', title: 'Resource assignment is invalid', detail: `${invalidResourceAssignments.length} labor/equipment record(s) use a missing, inactive, or wrong-type resource.`, view: 'resourceMaster' });
-  const overloadedResources = calculateResourceLoads(resourceMasters, laborDuty, equipment).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
+  const overloadedResources = calculateResourceLoads(resourceMasters, laborDuty, equipment, workCalendars).filter((load) => load.overAllocatedHours > 0.000001);
   pushIf(findings, overloadedResources.length > 0, { severity: 'Warning', title: 'Resource is over-allocated', detail: `${overloadedResources.length} resource/day allocation(s) exceed the daily capacity held in Resource Master. Re-level or adjust the affected schedule assignments.`, view: 'resourceMaster' });
   const invalidPlannedResourceAssignments = scheduleResourceAssignments.filter((row) => {
     const activity = scheduleById.get(row.schedule_id);
