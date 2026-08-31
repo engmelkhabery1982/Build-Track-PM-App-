@@ -424,6 +424,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'network_warning', label: 'Network Check', type: 'text', editable: false },
   { key: 'forecast_start_date', label: 'CPM Forecast Start', type: 'date', editable: false },
   { key: 'forecast_end_date', label: 'CPM Forecast Finish', type: 'date', editable: false },
+  { key: 'forecast_data_date', label: 'Forecast Data Date', type: 'date', editable: false },
   { key: 'calendar_id', label: 'Work Calendar', type: 'select', editable: true },
   { key: 'calendar_name', label: 'Calendar Pattern', type: 'status', editable: false, options: [...WORK_CALENDARS] },
   { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: false },
@@ -3187,7 +3188,7 @@ export default function App() {
 
     const tailoredFormKeys: Record<string, string[]> = {
       boq_items: ['contract_id', 'boq_header_id', 'item_name', 'description', 'category', 'unit', 'quantity', 'unit_rate', 'planned_start_date', 'planned_end_date', 'notes'],
-      schedules: ['contract_id', 'boq_item_id', 'activity', 'predecessor_item', 'relationship_type', 'lag_days', 'start_date', 'end_date', 'duration_days', 'planned_quantity', 'calendar_name', 'critical_path', 'responsible', 'status', 'notes'],
+      schedules: ['contract_id', 'boq_item_id', 'activity', 'predecessor_item', 'relationship_type', 'lag_days', 'start_date', 'end_date', 'duration_days', 'activity_status', 'status_data_date', 'actual_start_date', 'actual_finish_date', 'remaining_duration_days', 'planned_quantity', 'calendar_name', 'critical_path', 'responsible', 'status', 'notes'],
       wir_entries: ['contract_id', 'boq_item_id', 'inspection_date', 'area', 'work_type', 'quantity', 'inspector', 'result', 'remarks', 'status'],
       cost_entries: ['contract_id', 'boq_item_id', 'date', 'cost_type', 'invoice_number', 'payment_order_number', 'amount'],
     };

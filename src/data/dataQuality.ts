@@ -140,6 +140,14 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
       || (Number.isFinite(remaining) && remaining < 0);
   });
   pushIf(findings, invalidScheduleStatus.length > 0, { severity: 'Error', title: 'Schedule status update is invalid', detail: `${invalidScheduleStatus.length} activity update(s) have inconsistent actual dates, Data Date, status, or remaining duration.`, view: 'schedule' });
+  const lateOrEarlyActualActivities = data.schedules.filter((row) => {
+    if (!String(row.activity || '').trim()) return false;
+    const actualStart = String(row.actual_start_date || '');
+    const actualFinish = String(row.actual_finish_date || '');
+    return (actualStart && row.start_date && actualStart < String(row.start_date))
+      || (actualFinish && row.end_date && actualFinish > String(row.end_date));
+  });
+  pushIf(lateOrEarlyActualActivities.length > 0, { severity: 'Warning', title: 'Actual activity dates differ from current plan', detail: `${lateOrEarlyActualActivities.length} activity update(s) start earlier or finish later than the controlled current plan. Record and approve the schedule variance; do not overwrite baseline dates.`, view: 'schedule' });
   const excessivePlans = data.boqItems.filter((item) => data.schedules.filter((row) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, excessivePlans.length > 0, { severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
   const invalidDistributionScope = scheduleDistributions.filter((row) => {
