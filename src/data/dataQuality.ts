@@ -2,6 +2,7 @@ import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts'
 import { compareBaselineActivities } from './baselineGovernance.ts';
 import { calculateCertificateBalances, calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
 import { calculateCpm } from '../utils/cpm.ts';
+import { calculateResourceLoads } from '../utils/resourceLoading.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -41,6 +42,7 @@ export interface DataQualitySource {
   dailyReports?: Record<string, any>[];
   laborDuty?: Record<string, any>[];
   equipment?: Record<string, any>[];
+  resourceMasters?: Record<string, any>[];
 }
 
 function pushIf(findings: DataQualityFinding[], condition: boolean, finding: DataQualityFinding): void {
@@ -92,6 +94,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const workCalendars = data.workCalendars || [];
   const laborDuty = data.laborDuty || [];
   const equipment = data.equipment || [];
+  const resourceMasters = data.resourceMasters || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -114,6 +117,17 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, invalidCalendarMasters.length > 0, { severity: 'Error', title: 'Work calendar master is incomplete', detail: `${invalidCalendarMasters.length} calendar(s) need a unique code, name and valid working pattern before use.`, view: 'workCalendars' });
   const invalidScheduleCalendars = data.schedules.filter((row) => row.calendar_id && (!calendarById.has(row.calendar_id) || calendarById.get(row.calendar_id)?.status === 'Inactive'));
   pushIf(findings, invalidScheduleCalendars.length > 0, { severity: 'Error', title: 'Activity references an inactive or missing work calendar', detail: `${invalidScheduleCalendars.length} activity row(s) must be reassigned to an active calendar.`, view: 'schedule' });
+  const resourceById = new Map(resourceMasters.map((resource) => [resource.id, resource]));
+  const invalidResourceMasters = resourceMasters.filter((resource) => !String(resource.resource_code || '').trim() || !String(resource.resource_name || '').trim() || !['Labor', 'Equipment'].includes(String(resource.resource_type || '')) || Number(resource.daily_capacity_hours) < 0);
+  pushIf(findings, invalidResourceMasters.length > 0, { severity: 'Error', title: 'Resource master is incomplete', detail: `${invalidResourceMasters.length} resource(s) need a code, name, valid type, and non-negative daily capacity.`, view: 'resourceMaster' });
+  const invalidResourceAssignments = [...laborDuty, ...equipment].filter((row) => {
+    if (!row.resource_id) return false; // legacy rows remain visible for controlled migration.
+    const resource = resourceById.get(row.resource_id);
+    return !resource || resource.status === 'Inactive' || (laborDuty.includes(row) ? resource.resource_type !== 'Labor' : resource.resource_type !== 'Equipment');
+  });
+  pushIf(findings, invalidResourceAssignments.length > 0, { severity: 'Error', title: 'Resource assignment is invalid', detail: `${invalidResourceAssignments.length} labor/equipment record(s) use a missing, inactive, or wrong-type resource.`, view: 'resourceMaster' });
+  const overloadedResources = calculateResourceLoads(resourceMasters, laborDuty, equipment).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
+  pushIf(findings, overloadedResources.length > 0, { severity: 'Warning', title: 'Resource is over-allocated', detail: `${overloadedResources.length} resource/day allocation(s) exceed the daily capacity held in Resource Master. Re-level or adjust the affected schedule assignments.`, view: 'resourceMaster' });
   const invalidScheduleLinks = data.schedules.filter((row) => predecessorIds(row).some((id) => {
     const predecessor = scheduleById.get(id);
     return !predecessor || predecessor.id === row.id || predecessor.project_id !== row.project_id || predecessor.contract_id !== row.contract_id;

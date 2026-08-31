@@ -11,6 +11,7 @@ const quality = await import('../src/data/dataQuality.ts');
 const primavera = await import('../src/data/primaveraImport.ts');
 const baselines = await import('../src/data/baselineGovernance.ts');
 const productivity = await import('../src/utils/resourceProductivity.ts');
+const resourceLoading = await import('../src/utils/resourceLoading.ts');
 const cashForecast = await import('../src/utils/cashForecast.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
@@ -149,6 +150,21 @@ test('resource productivity is traceable only from linked quantity and labour ho
   assert.deepEqual(productivity.calculateProductivityMetrics({ plannedQuantity: 100, plannedLaborHours: 0, actualQuantity: 72, actualLaborHours: 0 }), {
     plannedProductivity: null, actualProductivity: null, variancePct: null,
   });
+});
+
+test('resource loading spreads assignments and flags daily over-allocation', () => {
+  const loads = resourceLoading.calculateResourceLoads(
+    [{ id: 'labor-1', daily_capacity_hours: 8 }],
+    [{ resource_id: 'labor-1', date: '2026-02-01', total_hours: 12, days: 1 }],
+    [],
+  );
+  assert.deepEqual(loads, [{ resourceId: 'labor-1', date: '2026-02-01', allocatedHours: 12, capacityHours: 8, overAllocatedHours: 4 }]);
+  const source = {
+    projects: [], contracts: [], boqHeaders: [], boqItems: [], schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    resourceMasters: [{ id: 'labor-1', resource_code: 'LAB-01', resource_name: 'Mason Crew', resource_type: 'Labor', daily_capacity_hours: 8, status: 'Active' }],
+    laborDuty: [{ id: 'duty-1', resource_id: 'labor-1', date: '2026-02-01', total_hours: 12, days: 1 }], equipment: [],
+  };
+  assert.ok(quality.runDataQualityChecks(source).some((finding) => finding.title === 'Resource is over-allocated'));
 });
 
 test('data quality rejects resource records outside their linked activity scope', () => {
