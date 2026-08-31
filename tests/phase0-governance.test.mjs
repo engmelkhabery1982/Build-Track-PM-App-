@@ -119,6 +119,17 @@ test('resource productivity is traceable only from linked quantity and labour ho
   });
 });
 
+test('data quality rejects resource records outside their linked activity scope', () => {
+  const activity = { id: 'activity-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', activity: 'Install', start_date: '2026-01-10', end_date: '2026-01-20', planned_quantity: 10 };
+  const source = {
+    projects: [{ id: 'project-1' }], contracts: [{ id: 'contract-1', project_id: 'project-1' }], boqHeaders: [{ id: 'header-1', project_id: 'project-1', contract_id: 'contract-1' }],
+    boqItems: [{ id: 'item-1', project_id: 'project-1', contract_id: 'contract-1', boq_header_id: 'header-1', quantity: 10 }], schedules: [activity],
+    scheduleDistributions: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    laborDuty: [{ id: 'labour-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', schedule_id: 'activity-1', date: '2026-01-09' }],
+  };
+  assert.ok(quality.runDataQualityChecks(source).some((finding) => finding.title === 'Resource allocation is outside activity scope'));
+});
+
 test('new governed commercial and field records receive scoped codes', () => {
   const costChange = codes.prepareCodeControlledInsert('cost_changes', { contract_id: 'contract-1', title: 'Forecast correction' }, [{ id: 'old', contract_id: 'contract-1', cost_change_number: 'CC-004' }]);
   assert.equal(costChange.cost_change_number, 'CC-005');

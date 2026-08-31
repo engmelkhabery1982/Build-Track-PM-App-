@@ -1475,6 +1475,24 @@ export function DataTableView({
         data.filter((row) => row.schedule_id === record.schedule_id),
       );
     }
+    if ((tableName === 'labor_duty' || tableName === 'equipment') && record.schedule_id) {
+      if (!selectedSchedule) throw new Error('Select a valid activity before allocating a resource record.');
+      const resourceDate = String(record.date || '');
+      const activityStart = String(selectedSchedule.data?.start_date || '');
+      const activityEnd = String(selectedSchedule.data?.end_date || '');
+      if (resourceDate && ((activityStart && resourceDate < activityStart) || (activityEnd && resourceDate > activityEnd))) {
+        throw new Error(`Resource date must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
+      }
+    }
+    if ((tableName === 'labor_duty' || tableName === 'equipment') && record.schedule_id) {
+      if (!selectedSchedule) throw new Error('Select a valid activity before allocating a resource record.');
+      const resourceDate = String(record.date || '');
+      const activityStart = String(selectedSchedule.data?.start_date || '');
+      const activityEnd = String(selectedSchedule.data?.end_date || '');
+      if (resourceDate && ((activityStart && resourceDate < activityStart) || (activityEnd && resourceDate > activityEnd))) {
+        throw new Error(`Resource date must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
+      }
+    }
     if (tableName === 'wir_entries') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
       if (!item) throw new Error('Select a valid BOQ item before saving the inspection request.');

@@ -36,6 +36,8 @@ export interface DataQualitySource {
   submittals?: Record<string, any>[];
   quality?: Record<string, any>[];
   dailyReports?: Record<string, any>[];
+  laborDuty?: Record<string, any>[];
+  equipment?: Record<string, any>[];
 }
 
 function pushIf(findings: DataQualityFinding[], condition: boolean, finding: DataQualityFinding): void {
@@ -73,6 +75,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const supplierInvoicePayments = data.supplierInvoicePayments || [];
   const cashFlow = data.cashFlow || [];
   const scheduleDistributions = data.scheduleDistributions || [];
+  const laborDuty = data.laborDuty || [];
+  const equipment = data.equipment || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -114,6 +118,14 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return qty > plannedQty + 0.000001 || value > plannedValue + 0.01 || Math.abs(qty - plannedQty) > 0.000001 || Math.abs(value - plannedValue) > 0.01;
   });
   pushIf(findings, unreconciledDistributions.length > 0, { severity: 'Warning', title: 'Time-phased plan does not reconcile to activity', detail: `${unreconciledDistributions.length} activity plan(s) have partial or over-allocated time-phased quantities/values; complete or correct the profile before relying on PV/cash forecast.`, view: 'scheduleDistributions' });
+  const invalidResourceActivityAllocation = [...laborDuty, ...equipment].filter((row) => {
+    if (!row.schedule_id) return false;
+    const activity = scheduleById.get(row.schedule_id);
+    const date = String(row.date || '');
+    return !activity || activity.project_id !== row.project_id || activity.contract_id !== row.contract_id || activity.boq_item_id !== row.boq_item_id
+      || Boolean(date && ((activity.start_date && date < activity.start_date) || (activity.end_date && date > activity.end_date)));
+  });
+  pushIf(findings, invalidResourceActivityAllocation.length > 0, { severity: 'Error', title: 'Resource allocation is outside activity scope', detail: `${invalidResourceActivityAllocation.length} labour/equipment record(s) do not match the linked activity scope or dates.`, view: 'laborDuty' });
 
   const invalidWirs = data.wirEntries.filter((row) => !contractById.has(row.contract_id) || !itemById.has(row.boq_item_id));
   pushIf(findings, invalidWirs.length > 0, { severity: 'Error', title: 'Inspection request missing scope', detail: `${invalidWirs.length} WIR record(s) are missing a valid contract or BOQ item.`, view: 'wir' });
