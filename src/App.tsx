@@ -3645,11 +3645,24 @@ export default function App() {
           onClick: (row) => {
             const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
-            if (!loads.length) {
-              window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no recorded labor or equipment allocation.`);
+            const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[])
+              .filter((load) => load.resourceId === row.id);
+            if (!loads.length && !plannedLoads.length) {
+              window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no planned or recorded allocation.`);
               return;
             }
-            const lines = loads.map((load) => `${load.date}: ${load.allocatedHours.toLocaleString()}h allocated / ${load.capacityHours.toLocaleString()}h capacity${load.overAllocatedHours > 0 ? ` — OVER by ${load.overAllocatedHours.toLocaleString()}h` : ''}`);
+            const byDate = new Map<string, { capacity: number; planned: number; actual: number }>();
+            for (const load of plannedLoads) byDate.set(load.date, { capacity: load.capacityHours, planned: load.allocatedHours, actual: 0 });
+            for (const load of loads) {
+              const current = byDate.get(load.date) || { capacity: load.capacityHours, planned: 0, actual: 0 };
+              current.actual += load.allocatedHours;
+              byDate.set(load.date, current);
+            }
+            const lines = [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, load]) => {
+              const plannedOver = Math.max(0, load.planned - load.capacity);
+              const actualOver = Math.max(0, load.actual - load.capacity);
+              return `${date}: plan ${load.planned.toLocaleString()}h · actual ${load.actual.toLocaleString()}h / ${load.capacity.toLocaleString()}h capacity${plannedOver || actualOver ? ` — OVER plan ${plannedOver.toLocaleString()}h, actual ${actualOver.toLocaleString()}h` : ''}`;
+            });
             window.alert(`Resource load profile — ${row.resource_code || row.resource_name}\n\n${lines.join('\n')}`);
           },
         } : undefined}
