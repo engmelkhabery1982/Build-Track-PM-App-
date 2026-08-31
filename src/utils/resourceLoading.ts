@@ -31,6 +31,40 @@ export interface ResourceLevelingRecommendation {
   scheduleIds: string[];
 }
 
+export interface PlannedResourceCostPoint {
+  date: string;
+  cost: number;
+}
+
+/** Time-phases the resource plan independently of settled cash.  This is a
+ * forward cost exposure used for EVM/forecast review, not a payment posting. */
+export function timePhasedPlannedResourceCost(
+  resources: Array<Record<string, any>>,
+  assignments: Array<Record<string, any>>,
+  schedules: Array<Record<string, any>> = [],
+): PlannedResourceCostPoint[] {
+  const resourceById = new Map(resources.map((resource) => [String(resource.id), resource]));
+  const scheduleById = new Map(schedules.map((schedule) => [String(schedule.id), schedule]));
+  const totals = new Map<string, number>();
+  for (const assignment of assignments) {
+    const resource = resourceById.get(String(assignment.resource_id || ''));
+    const start = String(assignment.assignment_start || '');
+    const end = String(assignment.assignment_end || start);
+    if (!resource || !start || !end || end < start) continue;
+    const dates = workingDatesBetween(start, end, scheduleById.get(String(assignment.schedule_id || '')) || assignment);
+    const hours = Math.max(0, Number(assignment.planned_hours) || 0);
+    const directCost = Math.max(0, Number(assignment.planned_cost) || 0);
+    const cost = directCost || hours * Math.max(0, Number(resource.standard_rate) || 0);
+    if (!cost || !dates.length) continue;
+    for (const date of dates) totals.set(date, (totals.get(date) || 0) + cost / dates.length);
+  }
+  return [...totals.entries()].map(([date, cost]) => ({ date, cost: Math.round(cost * 100) / 100 })).sort((left, right) => left.date.localeCompare(right.date));
+}
+
+export function plannedResourceCostAt(points: PlannedResourceCostPoint[], reportDate: string): number {
+  return Math.round(points.filter((point) => point.date <= reportDate).reduce((sum, point) => sum + point.cost, 0) * 100) / 100;
+}
+
 /**
  * Identifies exactly which planned assignments need a planner's attention on
  * an overloaded day.  It deliberately does not choose a new date: a valid

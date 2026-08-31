@@ -4,6 +4,7 @@ import { SCurveChart } from './SCurveChart';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
+import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/resourceLoading';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -35,6 +36,8 @@ interface DashboardProps {
   rfis: RFIEntry[];
   submittals: SubmittalEntry[];
   quality: QualityEntry[];
+  resourceMasters: Record<string, any>[];
+  scheduleResourceAssignments: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -79,7 +82,7 @@ type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety'
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -103,6 +106,8 @@ export function Dashboard({
     return { ...project, end_date: addCalendarDays(project.end_date, approvedExtensionDays) || project.end_date };
   }), [projects, contracts, variations]);
   const fProjects = pid === 'all' ? effectiveProjects : effectiveProjects.filter((p) => p.id === pid);
+  const fResourceAssignments = pid === 'all' ? scheduleResourceAssignments : scheduleResourceAssignments.filter((assignment) => assignment.project_id === pid);
+  const resourceForecast = useMemo(() => timePhasedPlannedResourceCost(resourceMasters, fResourceAssignments, schedules), [resourceMasters, fResourceAssignments, schedules]);
   const fTasks = pid === 'all' ? tasks : tasks.filter((t) => t.project_id === pid);
   const fCosts = pid === 'all' ? costs : costs.filter((c) => c.project_id === pid);
   const fCostEntries = pid === 'all' ? costEntries : costEntries.filter((entry) => entry.project_id === pid);
@@ -416,7 +421,7 @@ export function Dashboard({
     const actualAtDataDate = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= reportDate).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
     const cpiAtDataDate = actualAtDataDate > 0 ? earnedAtDataDate / actualAtDataDate : 0;
     const estimateAtCompletion = cpiAtDataDate > 0 ? totalBudget / cpiAtDataDate : totalBudget;
-    const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; date: string }[] = [];
+    const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; resourceForecast: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
     for (let i = 0; i <= numPoints; i++) {
       const dayOffset = (i / numPoints) * totalDays;
@@ -436,10 +441,10 @@ export function Dashboard({
           const elapsedForecastDays = Math.max(0, Math.ceil((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
           return Math.min(estimateAtCompletion, actualAtDataDate + Math.max(0, estimateAtCompletion - actualAtDataDate) * Math.min(1, elapsedForecastDays / forecastDays));
         })();
-      points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, date: dateStr });
+      points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, resourceForecast: plannedResourceCostAt(resourceForecast, dateStr), date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, fBaselines, reportDate]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
@@ -1166,7 +1171,7 @@ export function Dashboard({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-primary-600" />
-                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV, AC, EAC &amp; Cash</h3>
+                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV, AC, EAC, Cash &amp; Resource Forecast</h3>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
@@ -1175,6 +1180,7 @@ export function Dashboard({
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-red-600" /><span className="text-neutral-600">EAC Forecast</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-orange-500" /><span className="text-neutral-600">Cash Forecast</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-teal-500" /><span className="text-neutral-600">Actual Cash</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-amber-700" /><span className="text-neutral-600">Planned Resource Cost</span></span>
                   </div>
                 </div>
                 <SCurveChart data={sCurve} />

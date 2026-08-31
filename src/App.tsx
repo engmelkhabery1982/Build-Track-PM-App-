@@ -2218,6 +2218,8 @@ export default function App() {
           rfis={data.rfis}
           submittals={data.submittals}
           quality={data.quality}
+          resourceMasters={data.resourceMasters as Record<string, any>[]}
+          scheduleResourceAssignments={data.scheduleResourceAssignments as Record<string, any>[]}
           onNavigate={setActiveView}
         />
       );

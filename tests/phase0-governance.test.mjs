@@ -528,6 +528,16 @@ test('resource leveling recommendations identify affected activities without cha
   assert.equal(assignments[0].assignment_start, '2026-03-01');
 });
 
+test('planned resource cost forecast is time-phased by the activity calendar and remains separate from cash', () => {
+  const points = resourceLoading.timePhasedPlannedResourceCost(
+    [{ id: 'r1', standard_rate: 20 }],
+    [{ resource_id: 'r1', schedule_id: 'a1', assignment_start: '2026-03-06', assignment_end: '2026-03-09', planned_hours: 16 }],
+    [{ id: 'a1', calendar_name: '5-Day Week' }],
+  );
+  assert.deepEqual(points, [{ date: '2026-03-06', cost: 160 }, { date: '2026-03-09', cost: 160 }]);
+  assert.equal(resourceLoading.plannedResourceCostAt(points, '2026-03-06'), 160);
+});
+
 test('approved baseline freezes the time-phased PV profile instead of using later live edits', () => {
   const activity = { id: 'a1', contract_id: 'c1', activity_code: 'A-01', activity: 'Install', start_date: '2026-01-01', end_date: '2026-01-10', planned_quantity: 10, unit_rate: 100, budget: 1000 };
   const frozen = baselines.createBaselineDistributionSnapshot([{ schedule_id: 'a1', period_start: '2026-01-01', period_end: '2026-01-05', planned_quantity: 10, unit_rate: 100 }], [activity]);
