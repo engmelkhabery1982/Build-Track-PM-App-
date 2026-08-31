@@ -16,6 +16,7 @@ import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPa
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm } from '@/utils/cpm';
+import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
@@ -396,6 +397,9 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'planned_equipment_hours', label: 'Planned Equipment-hours', type: 'number', editable: true },
   { key: 'linked_equipment_records', label: 'Equipment Assignments', type: 'number', editable: false },
   { key: 'planned_productivity', label: 'Planned Qty / MH', type: 'number', editable: false },
+  { key: 'actual_work_quantity', label: 'Actual Qty (linked WIR)', type: 'number', editable: false },
+  { key: 'actual_productivity', label: 'Actual Qty / MH', type: 'number', editable: false },
+  { key: 'productivity_variance_pct', label: 'Productivity Variance %', type: 'number', editable: false },
   { key: 'remaining_duration_days', label: 'Remaining Duration', type: 'number', editable: false },
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
   { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
@@ -719,6 +723,7 @@ const WIR_COLUMNS: ColumnDef[] = [
   { key: 'company_name', label: 'Contractor', type: 'select', editable: true },
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: false },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
   { key: 'item_name', label: 'Item Name', type: 'text' },
   { key: 'item_description', label: 'Description', type: 'text' },
   { key: 'wir_number', label: 'WIR #', type: 'text', editable: true },
@@ -2718,6 +2723,12 @@ export default function App() {
               .filter((entry: any) => entry.schedule_id === schedule.id)
               .reduce((sum: number, entry: any) => sum + (Number(entry.total_hours) || ((Number(entry.no_of_workers) || 0) * (Number(entry.hours_per_day) || 0) * (Number(entry.days) || 0))), 0);
             const linkedEquipmentRecords = data.equipment.filter((entry: any) => entry.schedule_id === schedule.id).length;
+            // A WIR can now be assigned to one activity. This creates a
+            // traceable actual-quantity denominator for productivity instead
+            // of allocating physical production across activities by value.
+            const directWirQuantity = derivedWirs
+              .filter((wir: any) => wir.schedule_id === schedule.id)
+              .reduce((sum: number, wir: any) => sum + (Number(wir.quantity) || 0), 0);
             const earned = Math.round(earnedWorkValue * allocation * 100) / 100;
             const actualCost = Math.round((Number(costControl?.actual) || 0) * allocation * 100) / 100;
             const budget = isSummaryRow && childActivities.length > 0
@@ -2758,6 +2769,16 @@ export default function App() {
                 : '';
             const cpi = actualCost > 0 ? earned / actualCost : null;
             const spi = plannedValue > 0 ? earned / plannedValue : null;
+            const summaryLaborHours = isSummaryRow
+              ? childActivities.reduce((sum: number, activity: any) => sum + (Number(activity.planned_labor_hours) || 0), 0)
+              : Number(schedule.planned_labor_hours) || 0;
+            const summaryActualLaborHours = isSummaryRow
+              ? childActivities.reduce((sum: number, activity: any) => sum + data.laborDuty.filter((entry: any) => entry.schedule_id === activity.id).reduce((hours: number, entry: any) => hours + (Number(entry.total_hours) || ((Number(entry.no_of_workers) || 0) * (Number(entry.hours_per_day) || 0) * (Number(entry.days) || 0))), 0), 0)
+              : actualLaborHours;
+            const summaryActualQuantity = isSummaryRow
+              ? childActivities.reduce((sum: number, activity: any) => sum + derivedWirs.filter((wir: any) => wir.schedule_id === activity.id).reduce((quantity: number, wir: any) => quantity + (Number(wir.quantity) || 0), 0), 0)
+              : directWirQuantity;
+            const productivity = calculateProductivityMetrics({ plannedQuantity: summaryQuantity, plannedLaborHours: summaryLaborHours, actualQuantity: summaryActualQuantity, actualLaborHours: summaryActualLaborHours });
             const network = cpmByActivity.get(schedule.id);
             const remainingDuration = budget > 0
               ? Math.max(0, Math.round(summaryDuration * (1 - Math.min(1, earned / budget))))
@@ -2771,9 +2792,12 @@ export default function App() {
               start_date: summaryStart,
               end_date: summaryEnd,
               duration_days: summaryDuration,
-              actual_labor_hours: isSummaryRow ? childActivities.reduce((sum: number, activity: any) => sum + data.laborDuty.filter((entry: any) => entry.schedule_id === activity.id).reduce((hours: number, entry: any) => hours + (Number(entry.total_hours) || 0), 0), 0) : actualLaborHours,
+              actual_labor_hours: summaryActualLaborHours,
               linked_equipment_records: isSummaryRow ? childActivities.reduce((sum: number, activity: any) => sum + data.equipment.filter((entry: any) => entry.schedule_id === activity.id).length, 0) : linkedEquipmentRecords,
-              planned_productivity: Number(schedule.planned_labor_hours) > 0 ? Math.round((plannedQuantity / Number(schedule.planned_labor_hours)) * 10000) / 10000 : null,
+              planned_productivity: productivity.plannedProductivity,
+              actual_work_quantity: summaryActualQuantity,
+              actual_productivity: productivity.actualProductivity,
+              productivity_variance_pct: productivity.variancePct,
               remaining_duration_days: remainingDuration,
               unit_rate: Number(mainItem?.unit_rate) || Number(schedule.unit_rate) || 0,
               budget,

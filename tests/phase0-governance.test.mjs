@@ -10,6 +10,7 @@ const periods = await import('../src/data/reportingPeriodGovernance.ts');
 const quality = await import('../src/data/dataQuality.ts');
 const primavera = await import('../src/data/primaveraImport.ts');
 const baselines = await import('../src/data/baselineGovernance.ts');
+const productivity = await import('../src/utils/resourceProductivity.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
@@ -107,6 +108,15 @@ test('data quality flags approved legacy baselines without an activity snapshot'
     baselines: [{ id: 'legacy-baseline', status: 'Approved', contract_id: 'contract-1' }],
   });
   assert.ok(findings.some((finding) => finding.title === 'Approved baseline missing activity snapshot'));
+});
+
+test('resource productivity is traceable only from linked quantity and labour hours', () => {
+  assert.deepEqual(productivity.calculateProductivityMetrics({ plannedQuantity: 100, plannedLaborHours: 20, actualQuantity: 72, actualLaborHours: 18 }), {
+    plannedProductivity: 5, actualProductivity: 4, variancePct: -20,
+  });
+  assert.deepEqual(productivity.calculateProductivityMetrics({ plannedQuantity: 100, plannedLaborHours: 0, actualQuantity: 72, actualLaborHours: 0 }), {
+    plannedProductivity: null, actualProductivity: null, variancePct: null,
+  });
 });
 
 test('new governed commercial and field records receive scoped codes', () => {

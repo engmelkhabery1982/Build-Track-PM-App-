@@ -51,6 +51,7 @@ export interface Cost {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  schedule_id?: string | null;
   main_contract_id: string | null;
   project_code: string;
   item_code: string;
@@ -742,6 +743,8 @@ export interface WIREntry {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Optional direct activity assignment for productivity and field traceability. */
+  schedule_id?: string | null;
   main_contract_id: string | null;
   project_code: string;
   boq_code: string;
