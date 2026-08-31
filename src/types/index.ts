@@ -743,6 +743,8 @@ export interface ProjectBaseline {
   planned_end_date: string | null;
   /** Frozen activity-level schedule captured exactly when this baseline is approved. */
   activity_snapshot?: Array<Record<string, unknown>>;
+  /** Frozen period profile used to calculate baseline PV after approval. */
+  distribution_snapshot?: Array<Record<string, unknown>>;
   baseline_activity_count?: number;
   baseline_critical_activity_count?: number;
   notes: string;

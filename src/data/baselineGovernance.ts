@@ -22,6 +22,17 @@ export type BaselineScheduleSummary = {
   planned_budget: number;
 };
 
+/** Frozen, time-phased PV profile captured with an approved baseline. */
+export type BaselineDistributionSnapshot = {
+  schedule_id: string;
+  activity_code: string;
+  period_start: string | null;
+  period_end: string | null;
+  planned_quantity: number;
+  unit_rate: number;
+  planned_value: number;
+};
+
 export interface BaselineActivityComparison {
   baselineActivityCount: number;
   currentActivityCount: number;
@@ -186,6 +197,51 @@ export function createBaselineActivitySnapshot(activities: Record<string, any>[]
       predecessor_links: activity.predecessor_links || null,
     }))
     .sort((left, right) => `${left.activity_code}:${left.schedule_id}`.localeCompare(`${right.activity_code}:${right.schedule_id}`));
+}
+
+/** Captures only the portions of the distribution that define the approved
+ * time-phased plan. IDs and free-text notes are intentionally excluded. */
+export function createBaselineDistributionSnapshot(
+  distributions: Record<string, any>[],
+  activities: Record<string, any>[],
+): BaselineDistributionSnapshot[] {
+  const activityById = new Map(activities.map((activity) => [String(activity.id), activity]));
+  return distributions
+    .filter((distribution) => activityById.has(String(distribution.schedule_id || '')))
+    .map((distribution) => {
+      const activity = activityById.get(String(distribution.schedule_id));
+      const quantity = Number(distribution.planned_quantity) || 0;
+      const rate = Number(distribution.unit_rate) || 0;
+      return {
+        schedule_id: String(distribution.schedule_id), activity_code: String(activity?.activity_code || ''),
+        period_start: distribution.period_start || null, period_end: distribution.period_end || null,
+        planned_quantity: quantity, unit_rate: rate,
+        planned_value: Number(distribution.planned_value) || Math.round(quantity * rate * 100) / 100,
+      };
+    })
+    .sort((left, right) => `${left.schedule_id}:${left.period_start || ''}:${left.period_end || ''}`.localeCompare(`${right.schedule_id}:${right.period_start || ''}:${right.period_end || ''}`));
+}
+
+/** Selects the currently approved frozen plan for an activity. Legacy
+ * baselines without a distribution snapshot fall back to the live profile
+ * until a governed baseline revision is approved. */
+export function approvedBaselinePlanForActivity(
+  activity: Record<string, any>,
+  liveDistributions: Record<string, any>[],
+  baselines: Record<string, any>[],
+): { activity: Record<string, any>; distributions: Record<string, any>[]; usesApprovedBaseline: boolean } {
+  const baseline = baselines
+    .filter((row) => row.status === 'Approved' && row.contract_id === activity.contract_id)
+    .sort((left, right) => Number(right.revision_number || 0) - Number(left.revision_number || 0) || String(right.baseline_date || '').localeCompare(String(left.baseline_date || '')))[0];
+  if (!baseline) return { activity, distributions: liveDistributions, usesApprovedBaseline: false };
+  const snapshot = Array.isArray(baseline.activity_snapshot) ? baseline.activity_snapshot as Record<string, any>[] : [];
+  const frozenActivity = snapshot.find((row) => String(row.schedule_id || row.id || '') === String(activity.id || ''));
+  const distributionSnapshot = Array.isArray(baseline.distribution_snapshot) ? baseline.distribution_snapshot as Record<string, any>[] : null;
+  return {
+    activity: frozenActivity ? { ...activity, ...frozenActivity, id: activity.id } : activity,
+    distributions: distributionSnapshot ? distributionSnapshot.filter((row) => String(row.schedule_id || '') === String(activity.id || '')) : liveDistributions,
+    usesApprovedBaseline: Boolean(frozenActivity || distributionSnapshot),
+  };
 }
 
 export function summarizeBaselineSchedule(snapshot: BaselineActivitySnapshot[] | unknown): BaselineScheduleSummary {

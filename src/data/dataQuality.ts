@@ -409,6 +409,10 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, duplicateApprovedBaselines > 0, { severity: 'Warning', title: 'Multiple approved baselines', detail: `${duplicateApprovedBaselines} contract(s) have more than one approved baseline; confirm the current baseline.`, view: 'baselines' });
   const approvedBaselinesWithoutSnapshots = data.baselines.filter((row) => row.status === 'Approved' && (!Array.isArray(row.activity_snapshot) || row.activity_snapshot.length === 0));
   pushIf(findings, approvedBaselinesWithoutSnapshots.length > 0, { severity: 'Warning', title: 'Approved baseline missing activity snapshot', detail: `${approvedBaselinesWithoutSnapshots.length} approved baseline(s) predate activity-level freezing and cannot provide an auditable schedule comparison. Create a governed revision.`, view: 'baselines' });
+  const approvedBaselinesWithoutDistributionSnapshot = data.baselines.filter((baseline) => baseline.status === 'Approved'
+    && scheduleDistributions.some((distribution) => distribution.contract_id === baseline.contract_id)
+    && (!Array.isArray(baseline.distribution_snapshot)));
+  pushIf(findings, approvedBaselinesWithoutDistributionSnapshot.length > 0, { severity: 'Warning', title: 'Approved baseline missing time-phased snapshot', detail: `${approvedBaselinesWithoutDistributionSnapshot.length} approved baseline(s) have live PV distributions but no frozen period profile. Approve a governed baseline revision before relying on historical PV.`, view: 'baselines' });
   const changedApprovedBaselines = data.baselines.filter((baseline) => {
     if (baseline.status !== 'Approved' || !Array.isArray(baseline.activity_snapshot) || baseline.activity_snapshot.length === 0) return false;
     const comparison = compareBaselineActivities(baseline.activity_snapshot, data.schedules.filter((activity) => activity.contract_id === baseline.contract_id));

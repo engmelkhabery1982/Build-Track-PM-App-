@@ -1,4 +1,5 @@
 import { distributedPlannedValueToDate, scheduleBudget } from './schedulePlanning.ts';
+import { approvedBaselinePlanForActivity } from '../data/baselineGovernance.ts';
 
 /** Rebuilds an auditable PMO position from dated source records. */
 export function calculatePmoSnapshot(input: {
@@ -9,12 +10,19 @@ export function calculatePmoSnapshot(input: {
   wirEntries: Record<string, any>[];
   boqItems: Record<string, any>[];
   costEntries: Record<string, any>[];
+  baselines?: Record<string, any>[];
 }) {
   const dataDate = String(input.dataDate || '').slice(0, 10);
   if (!dataDate) throw new Error('A PMO Snapshot requires a governed Data Date.');
   const activities = input.schedules.filter((row) => row.contract_id === input.contract.id && String(row.activity || '').trim());
-  const plannedValue = activities.reduce((sum, activity) => sum + distributedPlannedValueToDate(activity, input.scheduleDistributions, dataDate), 0);
-  const budgetAtCompletion = activities.reduce((sum, activity) => sum + scheduleBudget(activity), 0);
+  const plannedValue = activities.reduce((sum, activity) => {
+    const plan = approvedBaselinePlanForActivity(activity, input.scheduleDistributions, input.baselines || []);
+    return sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dataDate);
+  }, 0);
+  const budgetAtCompletion = activities.reduce((sum, activity) => {
+    const plan = approvedBaselinePlanForActivity(activity, input.scheduleDistributions, input.baselines || []);
+    return sum + scheduleBudget(plan.activity);
+  }, 0);
   const earnedValue = input.wirEntries
     .filter((wir) => wir.project_id === input.contract.project_id && wir.contract_id === input.contract.id && String(wir.inspection_date || '').slice(0, 10) <= dataDate && (wir.status === 'Approved' || wir.result === 'Pass' || wir.result === 'Conditional Pass'))
     .reduce((sum, wir) => {

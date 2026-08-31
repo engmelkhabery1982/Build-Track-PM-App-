@@ -495,3 +495,11 @@ test('planned resource load profile detects capacity overload before site actual
   assert.equal(loads[0].allocatedHours, 10);
   assert.equal(loads[0].overAllocatedHours, 2);
 });
+
+test('approved baseline freezes the time-phased PV profile instead of using later live edits', () => {
+  const activity = { id: 'a1', contract_id: 'c1', activity_code: 'A-01', activity: 'Install', start_date: '2026-01-01', end_date: '2026-01-10', planned_quantity: 10, unit_rate: 100, budget: 1000 };
+  const frozen = baselines.createBaselineDistributionSnapshot([{ schedule_id: 'a1', period_start: '2026-01-01', period_end: '2026-01-05', planned_quantity: 10, unit_rate: 100 }], [activity]);
+  const plan = baselines.approvedBaselinePlanForActivity(activity, [{ schedule_id: 'a1', period_start: '2026-01-06', period_end: '2026-01-10', planned_quantity: 10, unit_rate: 100, planned_value: 1000 }], [{ contract_id: 'c1', status: 'Approved', revision_number: 1, activity_snapshot: [activity], distribution_snapshot: frozen }]);
+  assert.equal(plan.usesApprovedBaseline, true);
+  assert.equal(schedule.distributedPlannedValueToDate(plan.activity, plan.distributions, '2026-01-05'), 1000);
+});

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -3688,6 +3688,7 @@ export default function App() {
             assertBaselineApproval({ baselineDate: baselineDraft.baseline_date, revisionReason: baselineDraft.revision_reason, activities, hasPriorApprovedBaseline: approvedPredecessors.length > 0 });
           }
           const snapshot = status === 'Approved' ? createBaselineActivitySnapshot(activities) : [];
+          const distributionSnapshot = status === 'Approved' ? createBaselineDistributionSnapshot(data.scheduleDistributions as Record<string, any>[], activities) : [];
           const snapshotSummary = summarizeBaselineSchedule(snapshot);
           const inserted = await dataRepository.insert<Record<string, any>>('project_baselines', {
             ...baselineDraft, project_id: contract.project_id, status: baselineDraft.status || 'Draft',
@@ -3698,6 +3699,7 @@ export default function App() {
             planned_start_date: snapshotSummary.planned_start_date || starts[0] || contract.start_date || null,
             planned_end_date: snapshotSummary.planned_end_date || ends[ends.length - 1] || contract.end_date || null,
             activity_snapshot: snapshot,
+            distribution_snapshot: distributionSnapshot,
             baseline_activity_count: snapshotSummary.activity_count,
             baseline_critical_activity_count: snapshotSummary.critical_activity_count,
           });
@@ -3710,7 +3712,7 @@ export default function App() {
           const dataDate = String(snapshotDraft.data_date || '').slice(0, 10);
           const contract = data.contracts.find((row: any) => row.id === snapshotDraft.contract_id) as any;
           if (!contract || contract.parent_main_contract_id) throw new Error('Select a valid main contract for the PMO Snapshot.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries });
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries });
           return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
             ...snapshotDraft, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost,
             cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion,
@@ -3833,10 +3835,12 @@ export default function App() {
             const approvedPredecessors = data.baselines.filter((baseline: any) => baseline.contract_id === existing?.contract_id && baseline.id !== id && baseline.status === 'Approved');
             assertBaselineApproval({ baselineDate: baselinePatch.baseline_date || existing?.baseline_date, revisionReason: baselinePatch.revision_reason || existing?.revision_reason, activities, hasPriorApprovedBaseline: approvedPredecessors.length > 0 });
             const snapshot = createBaselineActivitySnapshot(activities);
+            const distributionSnapshot = createBaselineDistributionSnapshot(data.scheduleDistributions as Record<string, any>[], activities);
             const summary = summarizeBaselineSchedule(snapshot);
             const approvedPatch = {
               ...baselinePatch,
               activity_snapshot: snapshot,
+              distribution_snapshot: distributionSnapshot,
               baseline_activity_count: summary.activity_count,
               baseline_critical_activity_count: summary.critical_activity_count,
               planned_budget: summary.planned_budget,

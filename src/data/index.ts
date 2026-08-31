@@ -10,7 +10,7 @@ export { selectPrimaryContracts } from "./contractRules";
 export { getMainContractId } from "./contractScope";
 export { assertValidHierarchyChange, deriveHierarchyLevel, applyDerivedHierarchyLevel } from "./hierarchyRules";
 export { assertRecordGovernance } from "./governanceRules";
-export { assertBaselineApproval, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, summarizeBaselineSchedule } from "./baselineGovernance";
+export { approvedBaselinePlanForActivity, assertBaselineApproval, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, summarizeBaselineSchedule } from "./baselineGovernance";
 export {
   assertRecordPeriodIsOpen,
   assertReportingPeriodDefinition,

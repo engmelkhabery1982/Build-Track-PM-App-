@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
-import { selectPrimaryContracts } from '@/data';
+import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
 import type {
@@ -174,7 +174,10 @@ export function Dashboard({
     const totalPlannedWork = fSchedules
       .filter((schedule) => !(!String(schedule.activity || '').trim() && fSchedules
         .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim())))
-      .reduce((s, schedule) => s + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, reportDate), 0);
+      .reduce((s, schedule) => {
+        const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
+        return s + distributedPlannedValueToDate(plan.activity, plan.distributions, reportDate);
+      }, 0);
     const totalEarnedWork = fWirs
       .filter((wir) => datedThroughToday(wir.inspection_date) && (wir.status === 'Approved' || wir.result === 'Pass' || wir.result === 'Conditional Pass'))
       .reduce((sum, wir) => {
@@ -405,7 +408,10 @@ export function Dashboard({
       const mainItem = item?.main_boq_item_id ? boqItems.find((candidate) => candidate.id === item.main_boq_item_id) : item;
       return Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
     };
-    const totalBudget = datedSchedules.reduce((sum, schedule) => sum + scheduleBudget(schedule as Record<string, any>), 0);
+    const totalBudget = datedSchedules.reduce((sum, schedule) => {
+      const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
+      return sum + scheduleBudget(plan.activity);
+    }, 0);
     const earnedAtDataDate = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= reportDate).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
     const actualAtDataDate = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= reportDate).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
     const cpiAtDataDate = actualAtDataDate > 0 ? earnedAtDataDate / actualAtDataDate : 0;
@@ -416,7 +422,10 @@ export function Dashboard({
       const dayOffset = (i / numPoints) * totalDays;
       const currentDate = new Date(startMs + dayOffset * 86400000);
       const dateStr = currentDate.toISOString().slice(0, 10);
-      const planned = datedSchedules.reduce((sum, schedule) => sum + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, dateStr), 0);
+      const planned = datedSchedules.reduce((sum, schedule) => {
+        const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
+        return sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dateStr);
+      }, 0);
       const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
       const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
       const cashPosition = cashForecastAt(fCashFlow as Record<string, any>[], dateStr);
@@ -430,7 +439,7 @@ export function Dashboard({
       points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, reportDate]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, fBaselines, reportDate]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
