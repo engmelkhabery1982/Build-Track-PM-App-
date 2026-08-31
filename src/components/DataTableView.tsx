@@ -987,12 +987,12 @@ export function DataTableView({
       const end = String(out.end_date || '');
       const duration = Number(out.duration_days) || 0;
       if (start && end) {
-        const days = workingDaysBetween(start, end, out.calendar_name);
+        const days = workingDaysBetween(start, end, out);
         if (Number.isFinite(days) && days >= 0) out.duration_days = Math.max(1, days);
       } else if (start && duration > 0) {
-        out.end_date = addWorkingDays(start, Math.ceil(duration), out.calendar_name);
+        out.end_date = addWorkingDays(start, Math.ceil(duration), out);
       } else if (end && duration > 0) {
-        out.start_date = subtractWorkingDays(end, Math.ceil(duration), out.calendar_name);
+        out.start_date = subtractWorkingDays(end, Math.ceil(duration), out);
       }
       const quantity = Number(out.planned_quantity) || 0;
       const rate = Number(item?.unit_rate ?? out.unit_rate) || 0;
@@ -2308,12 +2308,12 @@ export function DataTableView({
           patch.planned_value = Math.round((Number(merged.planned_quantity) || 0) * rate * 100) / 100;
           patch.budget = patch.planned_value;
         }
-        if ((key === 'start_date' || key === 'end_date') && merged.start_date && merged.end_date) {
-          const days = workingDaysBetween(merged.start_date, merged.end_date, merged.calendar_name);
+        if ((key === 'start_date' || key === 'end_date' || key === 'calendar_name' || key === 'calendar_exceptions') && merged.start_date && merged.end_date) {
+          const days = workingDaysBetween(merged.start_date, merged.end_date, merged);
           if (Number.isFinite(days) && days >= 0) patch.duration_days = Math.max(1, days);
         }
         if (key === 'duration_days' && merged.start_date && Number(val) > 0) {
-          patch.end_date = addWorkingDays(merged.start_date, Math.ceil(Number(val)), merged.calendar_name);
+          patch.end_date = addWorkingDays(merged.start_date, Math.ceil(Number(val)), merged);
         }
       }
       assertCodeUpdateAllowed(tableName, data.find((row) => row.id === id), patch);
