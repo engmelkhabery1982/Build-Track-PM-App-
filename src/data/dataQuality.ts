@@ -1,6 +1,7 @@
 import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts';
 import { compareBaselineActivities } from './baselineGovernance.ts';
 import { calculateCertificateBalances, calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
+import { calculateCpm } from '../utils/cpm.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -51,6 +52,17 @@ function duplicateCount(rows: Record<string, any>[], keyFor: (row: Record<string
   return [...counts.values()].filter((count) => count > 1).length;
 }
 
+function predecessorIds(row: Record<string, any>): string[] {
+  let links: Record<string, any>[] = [];
+  if (Array.isArray(row.predecessor_links)) links = row.predecessor_links;
+  else if (typeof row.predecessor_links === 'string' && row.predecessor_links.trim()) {
+    try { const parsed = JSON.parse(row.predecessor_links); if (Array.isArray(parsed)) links = parsed; } catch { /* legacy fields below */ }
+  }
+  if (links.length) return links.map((link) => String(link.predecessor_id || link.id || '').trim()).filter(Boolean);
+  const list = Array.isArray(row.predecessor_items) ? row.predecessor_items : String(row.predecessor_items || '').split(',');
+  return [...new Set([row.predecessor_item, ...list].map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
 /** Read-only acceptance checks. They intentionally never repair data. */
 export function runDataQualityChecks(data: DataQualitySource): DataQualityFinding[] {
   const findings: DataQualityFinding[] = [];
@@ -95,6 +107,16 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
 
   const invalidSchedules = data.schedules.filter((row) => { const item = itemById.get(row.boq_item_id); const contract = contractById.get(row.contract_id); return !item || !contract || item.project_id !== row.project_id || contract.project_id !== row.project_id; });
   pushIf(findings, invalidSchedules.length > 0, { severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
+  const invalidScheduleLinks = data.schedules.filter((row) => predecessorIds(row).some((id) => {
+    const predecessor = scheduleById.get(id);
+    return !predecessor || predecessor.id === row.id || predecessor.project_id !== row.project_id || predecessor.contract_id !== row.contract_id;
+  }));
+  pushIf(findings, invalidScheduleLinks.length > 0, { severity: 'Error', title: 'Schedule dependency relationship mismatch', detail: `${invalidScheduleLinks.length} activity row(s) have a missing, self-referencing, cross-project or cross-contract predecessor.`, view: 'schedule' });
+  const cyclicScheduleContracts = [...new Set(data.schedules.filter((row) => String(row.activity || '').trim()).map((row) => row.contract_id).filter(Boolean))].filter((contractId) => {
+    const rows = data.schedules.filter((row) => row.contract_id === contractId && String(row.activity || '').trim());
+    return [...calculateCpm(rows as any[]).values()].some((result) => result.cycle);
+  });
+  pushIf(findings, cyclicScheduleContracts.length > 0, { severity: 'Error', title: 'Schedule network contains a dependency cycle', detail: `${cyclicScheduleContracts.length} contract schedule(s) contain a CPM dependency cycle; correct the links before relying on forecast dates or float.`, view: 'schedule' });
   const excessivePlans = data.boqItems.filter((item) => data.schedules.filter((row) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, excessivePlans.length > 0, { severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
   const invalidDistributionScope = scheduleDistributions.filter((row) => {

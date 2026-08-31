@@ -1306,6 +1306,12 @@ export function DataTableView({
     if (predecessor?.data?.project_id && record.project_id && predecessor.data.project_id !== record.project_id) {
       throw new Error('The predecessor activity belongs to a different project.');
     }
+    if (predecessor?.data?.contract_id && record.contract_id && predecessor.data.contract_id !== record.contract_id) {
+      throw new Error('The predecessor activity belongs to a different contract.');
+    }
+    if (predecessor?.data?.contract_id && record.contract_id && predecessor.data.contract_id !== record.contract_id) {
+      throw new Error('The predecessor activity belongs to a different contract.');
+    }
     if (tableName === 'schedules' && record.predecessor_item && record.predecessor_item === record.id) {
       throw new Error('An activity cannot be its own predecessor.');
     }
