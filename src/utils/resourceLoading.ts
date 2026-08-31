@@ -16,6 +16,49 @@ export interface ResourceLoad {
   overAllocatedHours: number;
 }
 
+/** A non-mutating, date-specific recommendation.  The planner remains in
+ * control: BuildTrack never shifts an activity or changes an approved plan
+ * simply because a calculated capacity limit was exceeded. */
+export interface ResourceLevelingRecommendation {
+  resourceId: string;
+  date: string;
+  capacityHours: number;
+  plannedHours: number;
+  hoursToRelevel: number;
+  assignmentIds: string[];
+  scheduleIds: string[];
+}
+
+/**
+ * Identifies exactly which planned assignments need a planner's attention on
+ * an overloaded day.  It deliberately does not choose a new date: a valid
+ * shift depends on CPM logic, calendars and constraints, which must remain
+ * governed by the planner rather than silently changed by a load report.
+ */
+export function suggestResourceLeveling(
+  resources: Array<Record<string, any>>,
+  assignments: Array<Record<string, any>>,
+): ResourceLevelingRecommendation[] {
+  const loads = calculatePlannedResourceLoads(resources, assignments)
+    .filter((load) => load.overAllocatedHours > 0);
+  return loads.map((load) => {
+    const affected = assignments.filter((assignment) => {
+      const start = String(assignment.assignment_start || '');
+      const end = String(assignment.assignment_end || start);
+      return String(assignment.resource_id || '') === load.resourceId && start <= load.date && load.date <= end;
+    });
+    return {
+      resourceId: load.resourceId,
+      date: load.date,
+      capacityHours: load.capacityHours,
+      plannedHours: load.allocatedHours,
+      hoursToRelevel: load.overAllocatedHours,
+      assignmentIds: affected.map((assignment) => String(assignment.id)).filter(Boolean),
+      scheduleIds: [...new Set(affected.map((assignment) => String(assignment.schedule_id)).filter(Boolean))],
+    };
+  });
+}
+
 /** Spreads planned assignment hours across the assignment period. This stays
  * separate from actual Labor Duty/Equipment usage so planning never rewrites
  * recorded site facts. */

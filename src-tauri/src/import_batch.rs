@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::{sqlite::SqliteConnectOptions, Sqlite, SqlitePool, Transaction};
-use std::{collections::HashSet, path::Path};
+use std::{collections::{HashMap, HashSet}, path::Path};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,6 +200,13 @@ async fn validate_updates(tx: &mut Transaction<'_, Sqlite>, request: &ImportComm
 async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
     let mut wbs_codes = HashSet::new();
     let mut calendar_codes = HashSet::new();
+    let staged_resource_types: HashMap<String, String> = request.auxiliary_rows.iter()
+        .filter(|auxiliary| auxiliary.table == "resource_masters")
+        .filter_map(|auxiliary| auxiliary.row.as_object().map(|row| (string_value(row, "id"), string_value(row, "resource_type"))))
+        .collect();
+    let staged_schedule_ids: HashSet<String> = request.rows.iter()
+        .filter_map(|row| row.as_object().map(|row| string_value(row, "id")))
+        .collect();
     for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
         if !matches!(auxiliary.table.as_str(), "wbs_nodes" | "work_calendars" | "resource_masters" | "schedule_resource_assignments") { return Err("Unsupported supporting import table.".into()); }
         let label = match auxiliary.table.as_str() { "wbs_nodes" => "WBS", "work_calendars" => "Work calendar", "resource_masters" => "Resource master", _ => "Resource assignment" };
@@ -241,6 +248,17 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
             if exists.is_some() { return Err(format!("Resource master row {}: resource code already exists.", index + 1)); }
         } else {
             if string_value(row, "schedule_id").is_empty() || string_value(row, "resource_id").is_empty() || !matches!(string_value(row, "resource_type").as_str(), "Labor" | "Equipment") { return Err(format!("Resource assignment row {}: activity, resource and governed type are required.", index + 1)); }
+            let schedule_id = string_value(row, "schedule_id");
+            let resource_id = string_value(row, "resource_id");
+            let resource_type = string_value(row, "resource_type");
+            let schedule_exists = staged_schedule_ids.contains(&schedule_id) || sqlx::query_scalar::<_, String>("SELECT id FROM schedules WHERE id=? AND project_id=? AND contract_id=?")
+                .bind(&schedule_id).bind(&request.project_id).bind(&request.contract_id).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?.is_some();
+            if !schedule_exists { return Err(format!("Resource assignment row {}: activity does not exist in the selected project/contract or this import batch.", index + 1)); }
+            let master_type = if let Some(kind) = staged_resource_types.get(&resource_id) { Some(kind.clone()) } else {
+                sqlx::query_scalar::<_, String>("SELECT json_extract(payload, '$.resource_type') FROM resource_masters WHERE id=?")
+                    .bind(&resource_id).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?
+            };
+            if master_type.as_deref() != Some(resource_type.as_str()) { return Err(format!("Resource assignment row {}: selected resource is missing or its type does not match the assignment.", index + 1)); }
         }
     }
     Ok(())

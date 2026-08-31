@@ -2327,7 +2327,7 @@ export function DataTableView({
           const existing = data.find((row) => row.id === update.id);
           if (existing) onMutated({ type: 'update', row: { ...existing, ...update.patch } });
         });
-        for (const table of ['wbs_nodes', 'work_calendars'] as const) {
+        for (const table of ['wbs_nodes', 'work_calendars', 'resource_masters', 'schedule_resource_assignments'] as const) {
           const rows = importPreview.auxiliaryRows.filter((entry) => entry.table === table).map((entry) => entry.row as Record<string, any>);
           if (rows.length) onRelatedMutation?.(table, { type: 'insertMany', rows });
         }
@@ -2359,8 +2359,8 @@ export function DataTableView({
     const importedPredecessors: { activityCode: string; predecessorCode: string }[] = [];
     const insertedAuxiliaryRows: GovernedImportAuxiliaryRow[] = [];
     if (tableName === 'schedules' && importPreview.auxiliaryRows.length) {
-      setImportResult({ success: 0, failed: importPreview.rows.length, errors: ['This Primavera import needs new WBS nodes or work calendars. Use the BuildTrack desktop app so supporting masters and activities can be committed atomically.'] });
-      setOperationNotice({ kind: 'error', text: 'No rows were saved. Missing WBS nodes or work calendars require a governed desktop import.' });
+      setImportResult({ success: 0, failed: importPreview.rows.length, errors: ['This Primavera import needs controlled supporting records (WBS, calendars, resources or assignments). Use the BuildTrack desktop app so they and the activities can be committed atomically.'] });
+      setOperationNotice({ kind: 'error', text: 'No rows were saved. Supporting Primavera records require a governed desktop import.' });
       setImporting(false);
       return;
     }
@@ -3633,7 +3633,7 @@ export function DataTableView({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.{tableName === 'schedules' ? ` ${importPreview.rows.filter((row) => row._planning_refresh).length} existing activity planning refresh(es); ${importPreview.rows.filter((row) => !row._planning_refresh).length} new activity(s).` : ''}{importPreview.auxiliaryRows.length ? ` ${importPreview.auxiliaryRows.filter((row) => row.table === 'wbs_nodes').length} WBS node(s) and ${importPreview.auxiliaryRows.filter((row) => row.table === 'work_calendars').length} work calendar(s) will be created in the same governed transaction.` : ''}</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.{tableName === 'schedules' ? ` ${importPreview.rows.filter((row) => row._planning_refresh).length} existing activity planning refresh(es); ${importPreview.rows.filter((row) => !row._planning_refresh).length} new activity(s).` : ''}{importPreview.auxiliaryRows.length ? ` ${importPreview.auxiliaryRows.filter((row) => row.table === 'wbs_nodes').length} WBS node(s), ${importPreview.auxiliaryRows.filter((row) => row.table === 'work_calendars').length} work calendar(s), ${importPreview.auxiliaryRows.filter((row) => row.table === 'resource_masters').length} resource master(s), and ${importPreview.auxiliaryRows.filter((row) => row.table === 'schedule_resource_assignments').length} planned resource assignment(s) will be created in the same governed transaction.` : ''}</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
             <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900"><span className="font-semibold">Final step:</span> click <span className="font-semibold">Save rows to table</span> below to write these records. Closing this window does not save anything.</div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
             <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>

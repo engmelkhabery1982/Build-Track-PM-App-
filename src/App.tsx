@@ -18,7 +18,7 @@ import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, schedul
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
-import { calculatePlannedResourceLoads, calculateResourceLoads } from '@/utils/resourceLoading';
+import { calculatePlannedResourceLoads, calculateResourceLoads, suggestResourceLeveling } from '@/utils/resourceLoading';
 import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
@@ -823,6 +823,7 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'planned_hours_total', label: 'Planned Hours', type: 'number', editable: false },
   { key: 'planned_cost_total', label: 'Planned Cost', type: 'money', editable: false },
   { key: 'planned_peak_load_hours', label: 'Peak Planned Load (hrs)', type: 'number', editable: false },
+  { key: 'planned_peak_overallocation_hours', label: 'Planned Over-allocation (hrs)', type: 'number', editable: false },
   { key: 'load_status', label: 'Load Status', type: 'status', editable: false, options: ['No Recorded Load', 'Within Capacity', 'Over-allocated'] },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
@@ -2607,6 +2608,7 @@ export default function App() {
           const peak = resourceLoads.reduce((current: any, load) => !current || load.allocatedHours > current.allocatedHours ? load : current, null);
           const peakOver = resourceLoads.reduce((current: any, load) => !current || load.overAllocatedHours > current.overAllocatedHours ? load : current, null);
           const plannedPeak = resourcePlannedLoads.reduce((current: any, load) => !current || load.allocatedHours > current.allocatedHours ? load : current, null);
+          const plannedPeakOver = resourcePlannedLoads.reduce((current: any, load) => !current || load.overAllocatedHours > current.overAllocatedHours ? load : current, null);
           return {
             ...resource,
             peak_load_date: peak?.date || null,
@@ -2615,7 +2617,8 @@ export default function App() {
             planned_hours_total: data.scheduleResourceAssignments.filter((assignment: any) => assignment.resource_id === resource.id).reduce((sum: number, assignment: any) => sum + (Number(assignment.planned_hours) || 0), 0),
             planned_cost_total: data.scheduleResourceAssignments.filter((assignment: any) => assignment.resource_id === resource.id).reduce((sum: number, assignment: any) => sum + (Number(assignment.planned_cost) || 0), 0),
             planned_peak_load_hours: plannedPeak?.allocatedHours || 0,
-            load_status: !resourceLoads.length ? 'No Recorded Load' : (peakOver?.overAllocatedHours || 0) > 0 ? 'Over-allocated' : 'Within Capacity',
+            planned_peak_overallocation_hours: plannedPeakOver?.overAllocatedHours || 0,
+            load_status: !resourceLoads.length && !resourcePlannedLoads.length ? 'No Recorded Load' : (peakOver?.overAllocatedHours || 0) > 0 || (plannedPeakOver?.overAllocatedHours || 0) > 0 ? 'Over-allocated' : 'Within Capacity',
           };
         });
       })()
@@ -3640,13 +3643,15 @@ export default function App() {
             window.alert(`Baseline variance register — ${row.baseline_number || row.id}\n${exceptions.length} exception(s) across ${details.length} activity/activities.\n\n${lines.join('\n\n')}`);
           },
         } : tableName === 'resource_masters' ? {
-          label: 'Load Profile',
-          title: 'Review this resource’s date-by-date recorded allocation and capacity.',
+          label: 'Load & Level',
+          title: 'Review capacity and safe, non-automatic resource-leveling recommendations.',
           onClick: (row) => {
             const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
             const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
+            const recommendations = suggestResourceLeveling(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[])
+              .filter((recommendation) => recommendation.resourceId === row.id);
             if (!loads.length && !plannedLoads.length) {
               window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no planned or recorded allocation.`);
               return;
@@ -3663,7 +3668,10 @@ export default function App() {
               const actualOver = Math.max(0, load.actual - load.capacity);
               return `${date}: plan ${load.planned.toLocaleString()}h · actual ${load.actual.toLocaleString()}h / ${load.capacity.toLocaleString()}h capacity${plannedOver || actualOver ? ` — OVER plan ${plannedOver.toLocaleString()}h, actual ${actualOver.toLocaleString()}h` : ''}`;
             });
-            window.alert(`Resource load profile — ${row.resource_code || row.resource_name}\n\n${lines.join('\n')}`);
+            const leveling = recommendations.length
+              ? `\n\nLEVELING REVIEW — no dates were changed automatically\n${recommendations.map((recommendation) => `${recommendation.date}: re-level at least ${recommendation.hoursToRelevel.toLocaleString()}h across activity ${recommendation.scheduleIds.join(', ') || 'assignment(s) ' + recommendation.assignmentIds.join(', ')}.`).join('\n')}\n\nReview CPM predecessors, activity constraints and the work calendar before moving planned hours or dates.`
+              : '\n\nLEVELING REVIEW — planned load is within the defined daily capacity.';
+            window.alert(`Resource load profile — ${row.resource_code || row.resource_name}\n\n${lines.join('\n')}${leveling}`);
           },
         } : undefined}
         formColumns={tailoredFormColumns || (['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}

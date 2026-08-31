@@ -505,6 +505,18 @@ test('planned resource load profile detects capacity overload before site actual
   assert.equal(loads[0].overAllocatedHours, 2);
 });
 
+test('resource leveling recommendations identify affected activities without changing the plan', () => {
+  const assignments = [
+    { id: 'ra-1', schedule_id: 'a-1', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 6 },
+    { id: 'ra-2', schedule_id: 'a-2', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 5 },
+  ];
+  const recommendations = resourceLoading.suggestResourceLeveling([{ id: 'r1', daily_capacity_hours: 8 }], assignments);
+  assert.equal(recommendations.length, 1);
+  assert.equal(recommendations[0].hoursToRelevel, 3);
+  assert.deepEqual(recommendations[0].scheduleIds, ['a-1', 'a-2']);
+  assert.equal(assignments[0].assignment_start, '2026-03-01');
+});
+
 test('approved baseline freezes the time-phased PV profile instead of using later live edits', () => {
   const activity = { id: 'a1', contract_id: 'c1', activity_code: 'A-01', activity: 'Install', start_date: '2026-01-01', end_date: '2026-01-10', planned_quantity: 10, unit_rate: 100, budget: 1000 };
   const frozen = baselines.createBaselineDistributionSnapshot([{ schedule_id: 'a1', period_start: '2026-01-01', period_end: '2026-01-05', planned_quantity: 10, unit_rate: 100 }], [activity]);
