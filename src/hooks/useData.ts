@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
-  InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange, WorkCalendar,
+  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange, WorkCalendar,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -27,6 +27,7 @@ export function useData() {
   const [progress, setProgress] = useState<ProgressEntry[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [scheduleDistributions, setScheduleDistributions] = useState<ScheduleDistribution[]>([]);
+  const [scheduleResourceAssignments, setScheduleResourceAssignments] = useState<ScheduleResourceAssignment[]>([]);
   const [workCalendars, setWorkCalendars] = useState<WorkCalendar[]>([]);
   const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
   const [reportingPeriods, setReportingPeriods] = useState<ReportingPeriod[]>([]);
@@ -81,7 +82,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -96,6 +97,7 @@ export function useData() {
         dataRepository.list<ProgressEntry>('progress_entries'),
         dataRepository.list<Schedule>('schedules'),
         listOptional<ScheduleDistribution>('schedule_distributions'),
+        listOptional<ScheduleResourceAssignment>('schedule_resource_assignments'),
         listOptional<WorkCalendar>('work_calendars'),
         listOptional<ProjectBaseline>('project_baselines'),
         listOptional<ReportingPeriod>('reporting_periods'),
@@ -140,6 +142,7 @@ export function useData() {
       setProgress(pg);
       setSchedules(sc);
       setScheduleDistributions(sd);
+      setScheduleResourceAssignments(sra);
       setWorkCalendars(wc);
       setBaselines(bl);
       setReportingPeriods(rp);
@@ -212,6 +215,7 @@ export function useData() {
       case 'progress_entries': apply(setProgress); break;
       case 'schedules': apply(setSchedules); break;
       case 'schedule_distributions': apply(setScheduleDistributions); break;
+      case 'schedule_resource_assignments': apply(setScheduleResourceAssignments); break;
       case 'work_calendars': apply(setWorkCalendars); break;
       case 'project_baselines': apply(setBaselines); break;
       case 'reporting_periods': apply(setReportingPeriods); break;
@@ -259,7 +263,7 @@ export function useData() {
   }, [listOptional]);
 
   return {
-    projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, workCalendars, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
+    projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, scheduleResourceAssignments, workCalendars, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,

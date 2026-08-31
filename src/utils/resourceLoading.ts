@@ -16,6 +16,37 @@ export interface ResourceLoad {
   overAllocatedHours: number;
 }
 
+/** Spreads planned assignment hours across the assignment period. This stays
+ * separate from actual Labor Duty/Equipment usage so planning never rewrites
+ * recorded site facts. */
+export function calculatePlannedResourceLoads(
+  resources: Array<Record<string, any>>,
+  assignments: Array<Record<string, any>>,
+): ResourceLoad[] {
+  const capacityByResource = new Map(resources.map((resource) => [String(resource.id), Math.max(0, Number(resource.daily_capacity_hours) || 0)]));
+  const totals = new Map<string, number>();
+  for (const row of assignments) {
+    const resourceId = String(row.resource_id || '');
+    const start = String(row.assignment_start || '');
+    const end = String(row.assignment_end || start);
+    const capacity = capacityByResource.get(resourceId);
+    if (!resourceId || !start || !end || end < start || capacity === undefined) continue;
+    const days = Math.max(1, Math.ceil((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${start}T00:00:00Z`).getTime()) / 86400000) + 1);
+    const hours = Math.max(0, Number(row.planned_hours) || 0);
+    if (!hours) continue;
+    for (let index = 0; index < days; index += 1) {
+      const key = `${resourceId}|${isoPlusDays(start, index)}`;
+      totals.set(key, (totals.get(key) || 0) + hours / days);
+    }
+  }
+  return [...totals.entries()].map(([key, allocatedHours]) => {
+    const [resourceId, date] = key.split('|');
+    const capacityHours = capacityByResource.get(resourceId) || 0;
+    const roundedAllocated = Math.round(allocatedHours * 100) / 100;
+    return { resourceId, date, allocatedHours: roundedAllocated, capacityHours, overAllocatedHours: Math.max(0, Math.round((roundedAllocated - capacityHours) * 100) / 100) };
+  }).sort((left, right) => left.date.localeCompare(right.date) || left.resourceId.localeCompare(right.resourceId));
+}
+
 function isoPlusDays(start: string, offset: number): string {
   const date = new Date(`${start}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + offset);

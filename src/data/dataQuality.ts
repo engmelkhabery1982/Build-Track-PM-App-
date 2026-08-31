@@ -2,7 +2,7 @@ import { assertReportingPeriodDefinition } from './reportingPeriodGovernance.ts'
 import { compareBaselineActivities } from './baselineGovernance.ts';
 import { calculateCertificateBalances, calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
 import { calculateCpm } from '../utils/cpm.ts';
-import { calculateResourceLoads } from '../utils/resourceLoading.ts';
+import { calculatePlannedResourceLoads, calculateResourceLoads } from '../utils/resourceLoading.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -43,6 +43,7 @@ export interface DataQualitySource {
   laborDuty?: Record<string, any>[];
   equipment?: Record<string, any>[];
   resourceMasters?: Record<string, any>[];
+  scheduleResourceAssignments?: Record<string, any>[];
   wbsNodes?: Record<string, any>[];
 }
 
@@ -96,6 +97,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const laborDuty = data.laborDuty || [];
   const equipment = data.equipment || [];
   const resourceMasters = data.resourceMasters || [];
+  const scheduleResourceAssignments = data.scheduleResourceAssignments || [];
   const wbsNodes = data.wbsNodes || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
@@ -141,6 +143,21 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, invalidResourceAssignments.length > 0, { severity: 'Error', title: 'Resource assignment is invalid', detail: `${invalidResourceAssignments.length} labor/equipment record(s) use a missing, inactive, or wrong-type resource.`, view: 'resourceMaster' });
   const overloadedResources = calculateResourceLoads(resourceMasters, laborDuty, equipment).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
   pushIf(findings, overloadedResources.length > 0, { severity: 'Warning', title: 'Resource is over-allocated', detail: `${overloadedResources.length} resource/day allocation(s) exceed the daily capacity held in Resource Master. Re-level or adjust the affected schedule assignments.`, view: 'resourceMaster' });
+  const invalidPlannedResourceAssignments = scheduleResourceAssignments.filter((row) => {
+    const activity = scheduleById.get(row.schedule_id);
+    const resource = resourceById.get(row.resource_id);
+    const start = String(row.assignment_start || '');
+    const end = String(row.assignment_end || '');
+    return !activity || !resource || resource.status === 'Inactive'
+      || activity.project_id !== row.project_id || activity.contract_id !== row.contract_id || activity.boq_item_id !== row.boq_item_id
+      || String(resource.resource_type) !== String(row.resource_type)
+      || !start || !end || end < start
+      || (activity.start_date && start < activity.start_date) || (activity.end_date && end > activity.end_date)
+      || Number(row.planned_hours) < 0 || Number(row.planned_cost) < 0;
+  });
+  pushIf(findings, invalidPlannedResourceAssignments.length > 0, { severity: 'Error', title: 'Planned resource assignment is invalid', detail: `${invalidPlannedResourceAssignments.length} planned assignment(s) use an invalid resource, activity scope, date range, type or planned value.`, view: 'resourceAssignments' });
+  const plannedOverloads = calculatePlannedResourceLoads(resourceMasters, scheduleResourceAssignments).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
+  pushIf(findings, plannedOverloads.length > 0, { severity: 'Warning', title: 'Planned resource demand exceeds capacity', detail: `${plannedOverloads.length} resource/day planned load(s) exceed Resource Master capacity. Re-level the activity assignments before approving the forecast.`, view: 'resourceAssignments' });
   const invalidScheduleLinks = data.schedules.filter((row) => predecessorIds(row).some((id) => {
     const predecessor = scheduleById.get(id);
     return !predecessor || predecessor.id === row.id || predecessor.project_id !== row.project_id || predecessor.contract_id !== row.contract_id;

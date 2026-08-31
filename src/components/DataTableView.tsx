@@ -983,6 +983,12 @@ export function DataTableView({
       const rate = Number(out.unit_rate) || 0;
       out.planned_value = Math.round(quantity * rate * 100) / 100;
     }
+    if (tableName === 'schedule_resource_assignments') {
+      const hours = Math.max(0, Number(out.planned_hours) || 0);
+      const quantity = Math.max(0, Number(out.planned_quantity) || 0);
+      const rate = Math.max(0, Number(out.standard_rate) || 0);
+      out.planned_cost = Math.round((hours || quantity) * rate * 100) / 100;
+    }
     if (tableName === 'schedules') {
       const item = boqItems?.find((candidate) => candidate.id === out.boq_item_id);
       const start = String(out.start_date || '');
@@ -1520,6 +1526,22 @@ export function DataTableView({
         record,
         data.filter((row) => row.schedule_id === record.schedule_id),
       );
+    }
+    if (tableName === 'schedule_resource_assignments') {
+      if (!record.schedule_id || !selectedSchedule) throw new Error('Select a valid schedule activity before assigning a planned resource.');
+      const resource = relationshipOptions?.resource_id?.find((option) => option.value === record.resource_id);
+      if (!resource) throw new Error('Select an active resource from Resource Master.');
+      if (String(resource.data?.resource_type || '') !== String(record.resource_type || '')) throw new Error('Planned resource type must match the selected Resource Master record.');
+      if (record.project_id !== selectedSchedule.data?.project_id || record.contract_id !== selectedSchedule.data?.contract_id || record.boq_item_id !== selectedSchedule.data?.boq_item_id) {
+        throw new Error('Planned resource assignment must use the same project, contract and BOQ item as its activity.');
+      }
+      const start = String(record.assignment_start || '');
+      const end = String(record.assignment_end || '');
+      const activityStart = String(selectedSchedule.data?.start_date || '');
+      const activityEnd = String(selectedSchedule.data?.end_date || '');
+      if (!start || !end || end < start) throw new Error('Planned resource assignment requires a valid start and finish date.');
+      if ((activityStart && start < activityStart) || (activityEnd && end > activityEnd)) throw new Error(`Planned resource dates must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
+      if ((Number(record.planned_hours) || 0) <= 0 && (Number(record.planned_quantity) || 0) <= 0) throw new Error('Enter planned hours or planned units for the resource assignment.');
     }
     if ((tableName === 'labor_duty' || tableName === 'equipment') && record.schedule_id) {
       if (!selectedSchedule) throw new Error('Select a valid activity before allocating a resource record.');

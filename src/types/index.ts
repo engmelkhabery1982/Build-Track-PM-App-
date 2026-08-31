@@ -613,6 +613,25 @@ export interface ResourceMaster {
   created_at: string;
 }
 
+/** Planned demand assigned to one executable schedule activity. Actual site
+ * records remain in Labor Duty / Equipment and are intentionally separate. */
+export interface ScheduleResourceAssignment {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string;
+  resource_id: string;
+  resource_type: 'Labor' | 'Equipment' | string;
+  assignment_start: string | null;
+  assignment_end: string | null;
+  planned_hours: number;
+  planned_quantity: number;
+  planned_cost: number;
+  notes: string;
+  created_at: string;
+}
+
 export interface TrackingSheet {
   id: string;
   project_id: string;
@@ -880,7 +899,7 @@ export interface ReportTemplate {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'workCalendars' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'resourceAssignments' | 'workCalendars' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'procurementReconciliation' | 'procurementReceipts' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'

@@ -18,7 +18,7 @@ import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, schedul
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
-import { calculateResourceLoads } from '@/utils/resourceLoading';
+import { calculatePlannedResourceLoads, calculateResourceLoads } from '@/utils/resourceLoading';
 import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
@@ -72,6 +72,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'procurementReconciliation', label: 'PO Reconciliation', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'procurementReceipts', label: 'Goods Receipts', icon: ClipboardCheck, group: 'Cost & Resources' },
   { key: 'resourceMaster', label: 'Resource Master', icon: Users, group: 'Cost & Resources' },
+  { key: 'resourceAssignments', label: 'Planned Resource Assignments', icon: Users, group: 'Planning & Controls' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
   { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Field & Governance' },
@@ -819,8 +820,25 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'peak_load_date', label: 'Peak Load Date', type: 'date', editable: false },
   { key: 'peak_allocated_hours', label: 'Peak Recorded Load (hrs)', type: 'number', editable: false },
   { key: 'peak_overallocation_hours', label: 'Peak Over-allocation (hrs)', type: 'number', editable: false },
+  { key: 'planned_hours_total', label: 'Planned Hours', type: 'number', editable: false },
+  { key: 'planned_cost_total', label: 'Planned Cost', type: 'money', editable: false },
+  { key: 'planned_peak_load_hours', label: 'Peak Planned Load (hrs)', type: 'number', editable: false },
   { key: 'load_status', label: 'Load Status', type: 'status', editable: false, options: ['No Recorded Load', 'Within Capacity', 'Over-allocated'] },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const RESOURCE_ASSIGNMENT_COLUMNS: ColumnDef[] = [
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
+  { key: 'resource_id', label: 'Resource', type: 'select', editable: true },
+  { key: 'resource_type', label: 'Resource Type', type: 'status', editable: false, options: ['Labor', 'Equipment'] },
+  { key: 'assignment_start', label: 'Assignment Start', type: 'date', editable: true },
+  { key: 'assignment_end', label: 'Assignment Finish', type: 'date', editable: true },
+  { key: 'planned_hours', label: 'Planned Hours', type: 'number', editable: true },
+  { key: 'planned_quantity', label: 'Planned Units', type: 'number', editable: true },
+  { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: false },
+  { key: 'planned_cost', label: 'Planned Cost', type: 'money', editable: false },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -866,6 +884,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   workCalendars: { columns: WORK_CALENDAR_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }, { key: 'working_pattern', label: 'Working Pattern', options: [...WORK_CALENDARS] }] },
   scheduleDistributions: { columns: SCHEDULE_DISTRIBUTION_COLUMNS, filters: [{ key: 'activity_name', label: 'Activity', options: [] }], showProjectFilter: true, dateRangeColumn: 'period_start' },
+  resourceAssignments: { columns: RESOURCE_ASSIGNMENT_COLUMNS, filters: [{ key: 'resource_type', label: 'Type', options: ['Labor', 'Equipment'] }], showProjectFilter: true, dateRangeColumn: 'assignment_start' },
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
@@ -890,6 +909,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 const TABLE_NAMES: Record<string, string> = {
   projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', costChanges: 'cost_changes', paymentCertificates: 'payment_certificates',
   procurement: 'procurement', procurementReceipts: 'procurement_receipts', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions', workCalendars: 'work_calendars',
+  resourceAssignments: 'schedule_resource_assignments',
   procurementReconciliation: 'procurement',
   supplierInvoices: 'supplier_invoices', supplierInvoiceLines: 'supplier_invoice_lines', supplierInvoicePayments: 'supplier_invoice_payments',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
@@ -903,6 +923,7 @@ const TABLE_NAMES: Record<string, string> = {
 const VIEW_TITLES: Record<string, string> = {
   projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', costChanges: 'Cost Changes', paymentCertificates: 'Payment Certificates',
   procurement: 'Procurement', procurementReceipts: 'Goods Receipts', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution', workCalendars: 'Work Calendar Master',
+  resourceAssignments: 'Planned Resource Assignments',
   procurementReconciliation: 'PO Reconciliation',
   supplierInvoices: 'Supplier Invoices / AP', supplierInvoiceLines: 'Supplier Invoice Match Lines', supplierInvoicePayments: 'Supplier Payments',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
@@ -2232,7 +2253,7 @@ export default function App() {
     if (activeView === 'dataQuality') {
       const checks = runDataQualityChecks({
         projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], workCalendars: data.workCalendars as Record<string, any>[], resourceMasters: data.resourceMasters as Record<string, any>[], wbsNodes: data.wbsNodes as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], laborDuty: data.laborDuty as Record<string, any>[], equipment: data.equipment as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], scheduleResourceAssignments: data.scheduleResourceAssignments as Record<string, any>[], workCalendars: data.workCalendars as Record<string, any>[], resourceMasters: data.resourceMasters as Record<string, any>[], wbsNodes: data.wbsNodes as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], laborDuty: data.laborDuty as Record<string, any>[], equipment: data.equipment as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
       });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
@@ -2496,6 +2517,8 @@ export default function App() {
           ? data.schedules
         : activeView === 'scheduleDistributions'
             ? data.scheduleDistributions
+            : activeView === 'resourceAssignments'
+              ? data.scheduleResourceAssignments
             : activeView === 'workCalendars'
               ? data.workCalendars
             : activeView === 'parties'
@@ -2577,15 +2600,21 @@ export default function App() {
     const viewData = activeView === 'resourceMaster'
       ? (() => {
         const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[]);
+        const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[]);
         return rawViewData.map((resource: any) => {
           const resourceLoads = loads.filter((load) => load.resourceId === resource.id);
+          const resourcePlannedLoads = plannedLoads.filter((load) => load.resourceId === resource.id);
           const peak = resourceLoads.reduce((current: any, load) => !current || load.allocatedHours > current.allocatedHours ? load : current, null);
           const peakOver = resourceLoads.reduce((current: any, load) => !current || load.overAllocatedHours > current.overAllocatedHours ? load : current, null);
+          const plannedPeak = resourcePlannedLoads.reduce((current: any, load) => !current || load.allocatedHours > current.allocatedHours ? load : current, null);
           return {
             ...resource,
             peak_load_date: peak?.date || null,
             peak_allocated_hours: peak?.allocatedHours || 0,
             peak_overallocation_hours: peakOver?.overAllocatedHours || 0,
+            planned_hours_total: data.scheduleResourceAssignments.filter((assignment: any) => assignment.resource_id === resource.id).reduce((sum: number, assignment: any) => sum + (Number(assignment.planned_hours) || 0), 0),
+            planned_cost_total: data.scheduleResourceAssignments.filter((assignment: any) => assignment.resource_id === resource.id).reduce((sum: number, assignment: any) => sum + (Number(assignment.planned_cost) || 0), 0),
+            planned_peak_load_hours: plannedPeak?.allocatedHours || 0,
             load_status: !resourceLoads.length ? 'No Recorded Load' : (peakOver?.overAllocatedHours || 0) > 0 ? 'Over-allocated' : 'Within Capacity',
           };
         });
@@ -3177,6 +3206,7 @@ export default function App() {
           role: resource.resource_type === 'Labor' ? resource.role_or_type : undefined,
           equipment_type: resource.resource_type === 'Equipment' ? resource.role_or_type : undefined,
           unit: resource.unit,
+          standard_rate: resource.standard_rate || 0,
           rate_per_hour: resource.resource_type === 'Labor' ? resource.standard_rate : undefined,
           unit_rate: resource.resource_type === 'Equipment' ? resource.standard_rate : undefined,
         },

@@ -470,3 +470,28 @@ test('field and document controls detect scope, coordinate, review and revision 
   assert.ok(findings.some((finding) => finding.title === 'Invalid document revision chain'));
   assert.ok(findings.some((finding) => finding.title === 'Incomplete site daily report'));
 });
+
+test('planned resource assignments are governed by activity scope, dates and resource type', () => {
+  const base = {
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }],
+    boqItems: [{ id: 'b1', project_id: 'p1', contract_id: 'c1', boq_header_id: 'h1', item_code: 'B-1', quantity: 10 }],
+    schedules: [{ id: 'a1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', activity: 'Install', start_date: '2026-03-01', end_date: '2026-03-10', planned_quantity: 10 }],
+    wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+    resourceMasters: [{ id: 'r1', resource_code: 'LAB-1', resource_name: 'Crew', resource_type: 'Labor', daily_capacity_hours: 8, status: 'Active' }],
+  };
+  const valid = quality.runDataQualityChecks({ ...base, scheduleResourceAssignments: [{ id: 'ra1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', schedule_id: 'a1', resource_id: 'r1', resource_type: 'Labor', assignment_start: '2026-03-01', assignment_end: '2026-03-10', planned_hours: 40, planned_cost: 800 }] });
+  assert.equal(valid.some((finding) => finding.title === 'Planned resource assignment is invalid'), false);
+  const invalid = quality.runDataQualityChecks({ ...base, scheduleResourceAssignments: [{ id: 'ra2', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', schedule_id: 'a1', resource_id: 'r1', resource_type: 'Equipment', assignment_start: '2026-02-28', assignment_end: '2026-03-10', planned_hours: 40, planned_cost: 800 }] });
+  assert.equal(invalid.some((finding) => finding.title === 'Planned resource assignment is invalid'), true);
+});
+
+test('planned resource load profile detects capacity overload before site actuals are posted', () => {
+  const loads = resourceLoading.calculatePlannedResourceLoads(
+    [{ id: 'r1', daily_capacity_hours: 8 }],
+    [{ resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-02', planned_hours: 20 }],
+  );
+  assert.equal(loads.length, 2);
+  assert.equal(loads[0].allocatedHours, 10);
+  assert.equal(loads[0].overAllocatedHours, 2);
+});
