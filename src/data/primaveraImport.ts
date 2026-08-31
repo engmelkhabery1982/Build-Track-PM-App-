@@ -22,10 +22,10 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     date.setUTCDate(date.getUTCDate() + Math.floor(serial));
     return date.toISOString().slice(0, 10);
   };
-  const calendarFor = (id: string, seen = new Set<string>()): { name: string; pattern: string; workingDays: number[]; exceptions: string[] } => {
+  const calendarFor = (id: string, seen = new Set<string>()): { name: string; pattern: string; workingDays: number[]; exceptions: string[]; dayHours: number } => {
     const row = calendarRows.get(id);
-    if (!row || seen.has(id)) return { name: id || '', pattern: '', workingDays: [], exceptions: [] };
-    const inherited = row.base_clndr_id ? calendarFor(row.base_clndr_id, new Set([...seen, id])) : { name: '', pattern: '', workingDays: [], exceptions: [] };
+    if (!row || seen.has(id)) return { name: id || '', pattern: '', workingDays: [], exceptions: [], dayHours: 8 };
+    const inherited = row.base_clndr_id ? calendarFor(row.base_clndr_id, new Set([...seen, id])) : { name: '', pattern: '', workingDays: [], exceptions: [], dayHours: 8 };
     const data = String(row.clndr_data || '');
     const workingDays = Array.from({ length: 7 }, (_, index) => index + 1)
       .filter((p6Day) => new RegExp(`\\|${p6Day}\\(\\)\\(\\(\\d+\\|\\|`).test(data))
@@ -36,7 +36,8 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       : effectiveDays.length === 5 && effectiveDays.join(',') === '1,2,3,4,5' ? '5-Day Week'
       : effectiveDays.length === 6 && !effectiveDays.includes(5) ? '6-Day Week'
       : effectiveDays.length ? 'Custom' : inherited.pattern;
-    return { name: row.clndr_name || inherited.name || id, pattern, workingDays: effectiveDays, exceptions: [...new Set([...inherited.exceptions, ...exceptions])] };
+    const declaredDayHours = Number(row.day_hr_cnt);
+    return { name: row.clndr_name || inherited.name || id, pattern, workingDays: effectiveDays, exceptions: [...new Set([...inherited.exceptions, ...exceptions])], dayHours: Number.isFinite(declaredDayHours) && declaredDayHours > 0 ? declaredDayHours : inherited.dayHours };
   };
   const wbsRows = tables.get('PROJWBS') || tables.get('WBS') || [];
   const wbsById = new Map(wbsRows.map((row) => [row.wbs_id, {
@@ -67,6 +68,7 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
   }[String(value || '').toUpperCase()] || 'None');
   for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
   return tasks.map((task) => {
+    const calendar = calendarFor(task.clndr_id || '');
     const wbs = wbsFor(task.wbs_id || '');
     const parentWbs = wbsFor(wbs.parentId);
     const links = predecessorsByTask.get(task.task_id) || [];
@@ -89,20 +91,20 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Constraint Date': String(task.cstr_date || task.primary_cstr_date || '').slice(0, 10),
       Milestone: /mile/i.test(String(task.task_type || task.activity_type || '')),
       'Planned Qty': '',
-      Calendar: calendarFor(task.clndr_id || '').name,
-      'Calendar Pattern': calendarFor(task.clndr_id || '').pattern,
-      'Calendar Working Days': JSON.stringify(calendarFor(task.clndr_id || '').workingDays),
-      'Calendar Exceptions': JSON.stringify(calendarFor(task.clndr_id || '').exceptions),
+      Calendar: calendar.name,
+      'Calendar Pattern': calendar.pattern,
+      'Calendar Working Days': JSON.stringify(calendar.workingDays),
+      'Calendar Exceptions': JSON.stringify(calendar.exceptions),
       Predecessors: predecessorCodes.join(', '),
       // P6 supports multiple independent links for one successor. Preserve
       // each relationship type and lag rather than collapsing to the first.
       'Predecessor Links': JSON.stringify(links.map((link) => ({
         predecessor_code: taskCodeById.get(link.pred_task_id) || '',
         relationship_type: String(link.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS',
-        lag_days: Number(link.lag_hr_cnt) ? Math.round((Number(link.lag_hr_cnt) / 8) * 100) / 100 : 0,
+        lag_days: Number(link.lag_hr_cnt) ? Math.round((Number(link.lag_hr_cnt) / calendar.dayHours) * 100) / 100 : 0,
       })).filter((link) => link.predecessor_code)),
       Relationship: relation,
-      'Lag (days)': lagHours ? Math.round((lagHours / 8) * 100) / 100 : 0,
+      'Lag (days)': lagHours ? Math.round((lagHours / calendar.dayHours) * 100) / 100 : 0,
       Critical: task.driving_path_flag === 'Y' || task.critical_path_flag === 'Y',
       Notes: task.task_descr || '',
     };
