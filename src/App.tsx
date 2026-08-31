@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -138,6 +138,10 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'baseline_critical_activity_count', label: 'Baseline Critical Activities', type: 'number', editable: false },
   { key: 'current_activity_count', label: 'Current Activities', type: 'number', editable: false },
   { key: 'activity_count_variance', label: 'Activity Count Variance', type: 'number', editable: false },
+  { key: 'added_activity_count', label: 'Added Activities', type: 'number', editable: false },
+  { key: 'removed_activity_count', label: 'Removed Activities', type: 'number', editable: false },
+  { key: 'changed_activity_count', label: 'Changed Activities', type: 'number', editable: false },
+  { key: 'critical_path_variance', label: 'Critical Path Variance', type: 'number', editable: false },
   { key: 'current_schedule_start', label: 'Current Forecast Start', type: 'date', editable: false },
   { key: 'current_schedule_finish', label: 'Current Forecast Finish', type: 'date', editable: false },
   { key: 'start_variance_days', label: 'Start Variance (days)', type: 'number', editable: false },
@@ -2532,6 +2536,7 @@ export default function App() {
       ? rawViewData.map((baseline: any) => {
         const activities = data.schedules.filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim());
         const snapshotSummary = summarizeBaselineSchedule(baseline.activity_snapshot);
+        const activityComparison = compareBaselineActivities(baseline.activity_snapshot, activities);
         const activityStarts = activities
           .map((activity: any) => String(activity.start_date || ''))
           .filter(Boolean)
@@ -2561,6 +2566,10 @@ export default function App() {
           baseline_critical_activity_count: baselineCriticalCount,
           current_activity_count: activities.length,
           activity_count_variance: activities.length - baselineActivityCount,
+          added_activity_count: activityComparison.addedActivityCount,
+          removed_activity_count: activityComparison.removedActivityCount,
+          changed_activity_count: activityComparison.changedActivityCount,
+          critical_path_variance: activityComparison.criticalPathVariance,
           current_schedule_start: currentStart,
           current_schedule_finish: currentFinish,
           start_variance_days: startVariance,

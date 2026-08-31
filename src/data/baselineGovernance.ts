@@ -22,6 +22,53 @@ export type BaselineScheduleSummary = {
   planned_budget: number;
 };
 
+export interface BaselineActivityComparison {
+  baselineActivityCount: number;
+  currentActivityCount: number;
+  addedActivityCount: number;
+  removedActivityCount: number;
+  changedActivityCount: number;
+  criticalPathVariance: number;
+}
+
+function activityIdentity(activity: Record<string, any>): string {
+  return String(activity.schedule_id || activity.id || activity.activity_code || '').trim();
+}
+
+/** Compares the current executable plan with a frozen approved snapshot.
+ * The result is deliberately count-based: it exposes a change for review
+ * without rewriting the historical baseline or silently approving variance. */
+export function compareBaselineActivities(
+  snapshot: BaselineActivitySnapshot[] | unknown,
+  currentActivities: Record<string, any>[],
+): BaselineActivityComparison {
+  const baselineRows = Array.isArray(snapshot) ? snapshot as BaselineActivitySnapshot[] : [];
+  const currentRows = currentActivities.filter((row) => String(row.activity || '').trim());
+  const baselineById = new Map(baselineRows.map((row) => [activityIdentity(row), row]));
+  const currentById = new Map(currentRows.map((row) => [activityIdentity(row), row]));
+  let changedActivityCount = 0;
+  baselineById.forEach((baseline, id) => {
+    const current = currentById.get(id);
+    if (!current) return;
+    const changed = String(baseline.start_date || '') !== String(current.start_date || '')
+      || String(baseline.end_date || '') !== String(current.end_date || '')
+      || Number(baseline.duration_days) !== (Number(current.duration_days) || 0)
+      || Number(baseline.planned_quantity) !== (Number(current.planned_quantity) || 0)
+      || Number(baseline.budget) !== (Number(current.budget) || Number(current.planned_value) || 0)
+      || String(baseline.calendar_name || '') !== String(current.calendar_name || 'Calendar Days')
+      || JSON.stringify(baseline.predecessor_links || null) !== JSON.stringify(current.predecessor_links || null);
+    if (changed) changedActivityCount += 1;
+  });
+  return {
+    baselineActivityCount: baselineRows.length,
+    currentActivityCount: currentRows.length,
+    addedActivityCount: [...currentById.keys()].filter((id) => !baselineById.has(id)).length,
+    removedActivityCount: [...baselineById.keys()].filter((id) => !currentById.has(id)).length,
+    changedActivityCount,
+    criticalPathVariance: currentRows.filter((row) => Boolean(row.critical_path)).length - baselineRows.filter((row) => Boolean(row.critical_path)).length,
+  };
+}
+
 /** Returns an immutable, audit-friendly copy of the executable schedule. */
 export function createBaselineActivitySnapshot(activities: Record<string, any>[]): BaselineActivitySnapshot[] {
   return activities
