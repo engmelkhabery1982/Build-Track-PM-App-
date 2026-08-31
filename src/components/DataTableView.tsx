@@ -1058,6 +1058,8 @@ export function DataTableView({
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
       'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id', 'procurement_id',
+      'wbs_id', 'wbs_code',
+      'wbs_id', 'wbs_code',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
       'main_boq_item_id', 'main_boq_item_code', 'main_unit_rate', 'main_boq_item_value',
       'baseline_start_date', 'baseline_end_date', 'planned_start_date', 'planned_end_date', 'variance_reason',
@@ -1192,6 +1194,7 @@ export function DataTableView({
     const selectedSupplierParty = relationshipOptions?.supplier_party_id?.find((option) => option.value === record.supplier_party_id);
     const selectedVariation = relationshipOptions?.variation_id?.find((option) => option.value === record.variation_id);
     const selectedCostCode = relationshipOptions?.cost_code_id?.find((option) => option.value === record.cost_code_id);
+    const selectedWbs = relationshipOptions?.wbs_id?.find((option) => option.value === record.wbs_id);
     const selectedSovLine = relationshipOptions?.contract_sov_line_id?.find((option) => option.value === record.contract_sov_line_id);
     const selectedParentCostCode = relationshipOptions?.parent_cost_code_id?.find((option) => option.value === record.parent_cost_code_id);
     const selectedParentWbs = relationshipOptions?.parent_wbs_id?.find((option) => option.value === record.parent_wbs_id);
@@ -1227,6 +1230,12 @@ export function DataTableView({
     }
     if (selectedCostCode?.data?.project_id && record.project_id && selectedCostCode.data.project_id !== record.project_id) {
       throw new Error('The selected cost code belongs to a different project.');
+    }
+    if (selectedWbs?.data?.project_id && record.project_id && selectedWbs.data.project_id !== record.project_id) {
+      throw new Error('The selected WBS node belongs to a different project.');
+    }
+    if (selectedWbs?.data?.contract_id && record.contract_id && selectedWbs.data.contract_id !== record.contract_id) {
+      throw new Error('The selected WBS node belongs to a different contract.');
     }
     if (selectedParentCostCode?.data?.project_id && record.project_id && selectedParentCostCode.data.project_id !== record.project_id) {
       throw new Error('The parent cost code belongs to a different project.');

@@ -141,6 +141,19 @@ test('data quality flags approved legacy baselines without an activity snapshot'
   assert.ok(findings.some((finding) => finding.title === 'Approved baseline missing activity snapshot'));
 });
 
+test('data quality rejects a schedule activity assigned to a cross-project WBS node', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }, { id: 'p2' }],
+    contracts: [{ id: 'c1', project_id: 'p1' }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }],
+    boqItems: [{ id: 'i1', project_id: 'p1', boq_header_id: 'h1' }],
+    schedules: [{ id: 'a1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'i1', wbs_id: 'w2', activity: 'Controlled activity', duration_days: 1 }],
+    wbsNodes: [{ id: 'w2', project_id: 'p2', contract_id: 'c2', status: 'Active' }],
+    wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Schedule WBS relationship mismatch'));
+});
+
 test('data quality rejects invalid and cyclic schedule dependencies', () => {
   const source = {
     projects: [{ id: 'project-1' }], contracts: [{ id: 'contract-1', project_id: 'project-1' }], boqHeaders: [{ id: 'header-1', project_id: 'project-1', contract_id: 'contract-1' }],
