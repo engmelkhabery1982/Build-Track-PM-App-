@@ -17,6 +17,7 @@ import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
+import { calculateResourceLoads } from '@/utils/resourceLoading';
 import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
@@ -814,6 +815,10 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
   { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
+  { key: 'peak_load_date', label: 'Peak Load Date', type: 'date', editable: false },
+  { key: 'peak_allocated_hours', label: 'Peak Recorded Load (hrs)', type: 'number', editable: false },
+  { key: 'peak_overallocation_hours', label: 'Peak Over-allocation (hrs)', type: 'number', editable: false },
+  { key: 'load_status', label: 'Load Status', type: 'status', editable: false, options: ['No Recorded Load', 'Within Capacity', 'Over-allocated'] },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
@@ -2568,7 +2573,23 @@ export default function App() {
         completion_pct: mainItemValue > 0 ? Math.round(itemAmount / mainItemValue * 10000) / 100 : 0,
       };
     });
-    const viewData = activeView === 'baselines'
+    const viewData = activeView === 'resourceMaster'
+      ? (() => {
+        const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[]);
+        return rawViewData.map((resource: any) => {
+          const resourceLoads = loads.filter((load) => load.resourceId === resource.id);
+          const peak = resourceLoads.reduce((current: any, load) => !current || load.allocatedHours > current.allocatedHours ? load : current, null);
+          const peakOver = resourceLoads.reduce((current: any, load) => !current || load.overAllocatedHours > current.overAllocatedHours ? load : current, null);
+          return {
+            ...resource,
+            peak_load_date: peak?.date || null,
+            peak_allocated_hours: peak?.allocatedHours || 0,
+            peak_overallocation_hours: peakOver?.overAllocatedHours || 0,
+            load_status: !resourceLoads.length ? 'No Recorded Load' : (peakOver?.overAllocatedHours || 0) > 0 ? 'Over-allocated' : 'Within Capacity',
+          };
+        });
+      })()
+      : activeView === 'baselines'
       ? rawViewData.map((baseline: any) => {
         const activities = data.schedules.filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim());
         const snapshotSummary = summarizeBaselineSchedule(baseline.activity_snapshot);
@@ -3583,6 +3604,19 @@ export default function App() {
               return `${detail.activityCode} — ${detail.activity}\n${changes || 'No change'}${variance ? `\n${variance}` : ''}`;
             });
             window.alert(`Baseline variance register — ${row.baseline_number || row.id}\n${exceptions.length} exception(s) across ${details.length} activity/activities.\n\n${lines.join('\n\n')}`);
+          },
+        } : tableName === 'resource_masters' ? {
+          label: 'Load Profile',
+          title: 'Review this resource’s date-by-date recorded allocation and capacity.',
+          onClick: (row) => {
+            const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
+              .filter((load) => load.resourceId === row.id);
+            if (!loads.length) {
+              window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no recorded labor or equipment allocation.`);
+              return;
+            }
+            const lines = loads.map((load) => `${load.date}: ${load.allocatedHours.toLocaleString()}h allocated / ${load.capacityHours.toLocaleString()}h capacity${load.overAllocatedHours > 0 ? ` — OVER by ${load.overAllocatedHours.toLocaleString()}h` : ''}`);
+            window.alert(`Resource load profile — ${row.resource_code || row.resource_name}\n\n${lines.join('\n')}`);
           },
         } : undefined}
         formColumns={tailoredFormColumns || (['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}
