@@ -3186,6 +3186,8 @@ export default function App() {
         value: calendar.id,
         label: `${calendar.calendar_code || 'CAL'} — ${calendar.calendar_name || calendar.working_pattern || 'Calendar'}`,
         data: {
+          calendar_code: calendar.calendar_code || '',
+          calendar_display_name: calendar.calendar_name || '',
           calendar_name: calendar.working_pattern || 'Calendar Days',
           calendar_exceptions: calendar.calendar_exceptions || '',
         },

@@ -1332,7 +1332,7 @@ export function DataTableView({
     if (tableName === 'schedules' && record.predecessor_item && record.predecessor_item === record.id) {
       throw new Error('An activity cannot be its own predecessor.');
     }
-    if (tableName === 'schedules' && record.calendar_id && !selectedCalendar) {
+    if (tableName === 'schedules' && record.calendar_id && !selectedCalendar && !record._pending_calendar_import) {
       throw new Error('Select a valid active work calendar for the activity.');
     }
 
@@ -2015,6 +2015,64 @@ export function DataTableView({
       // stage the missing nodes for the same atomic desktop transaction.
       const auxiliaryRows: GovernedImportAuxiliaryRow[] = [];
       if (tableName === 'schedules') {
+        // P6 stores a calendar reference by name/ID, while BuildTrack needs a
+        // governed work-calendar record. Only deterministic names are mapped;
+        // a custom P6 calendar is rejected rather than silently becoming a
+        // seven-day calendar and corrupting dates, PV, or critical path.
+        const normalizedCalendar = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const calendarPatternFor = (value: unknown): string | undefined => {
+          const name = normalizedCalendar(value);
+          if (['calendar days', 'calendar day', '7 day week', 'seven day week'].includes(name)) return 'Calendar Days';
+          if (['5 day week', 'five day week', '5 day calendar', 'five day calendar'].includes(name)) return '5-Day Week';
+          if (['6 day week', 'six day week', '6 day calendar', 'six day calendar'].includes(name)) return '6-Day Week';
+          if (['24 7', '24x7', '24 x 7'].includes(name)) return '24/7';
+          return undefined;
+        };
+        const existingCalendars = relationshipOptions?.calendar_id || [];
+        const stagedCalendarsBySource = new Map<string, GovernedImportAuxiliaryRow>();
+        const calendarCodeFor = (row: Record<string, any>, source: string) => {
+          const scope = String(row.contract_id || row.project_id || 'LOCAL').replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase() || 'LOCAL';
+          const label = normalizedCalendar(source).replace(/\s+/g, '-').toUpperCase().slice(0, 32) || 'CALENDAR';
+          return `P6-${scope}-${label}`;
+        };
+        for (const row of mapped) {
+          const sourceCalendar = String(row.calendar_name || '').trim();
+          if (!sourceCalendar) {
+            row.calendar_name = 'Calendar Days';
+            continue;
+          }
+          const sourceKey = normalizedCalendar(sourceCalendar);
+          const matching = existingCalendars.find((option) => {
+            const details = option.data || {};
+            return [details.calendar_display_name, details.calendar_code, details.calendar_name, option.label]
+              .some((candidate) => normalizedCalendar(candidate) === sourceKey);
+          });
+          if (matching) {
+            row.calendar_id = matching.value;
+            row.calendar_name = matching.data?.calendar_name || 'Calendar Days';
+            continue;
+          }
+          const pattern = calendarPatternFor(sourceCalendar);
+          if (!pattern) throw new Error(`Calendar "${sourceCalendar}" cannot be interpreted safely. Create or map its working pattern before importing; no dates were changed.`);
+          const stageKey = `${String(row.project_id || '')}:${String(row.contract_id || '')}:${sourceKey}`;
+          let staged = stagedCalendarsBySource.get(stageKey);
+          if (!staged) {
+            if (!row.project_id || !row.contract_id) throw new Error(`Calendar "${sourceCalendar}" cannot be created until the activity resolves to one project and main contract.`);
+            staged = {
+              table: 'work_calendars',
+              row: {
+                id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
+                calendar_code: calendarCodeFor(row, sourceCalendar), calendar_name: sourceCalendar, working_pattern: pattern,
+                calendar_exceptions: '', status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
+              },
+            };
+            stagedCalendarsBySource.set(stageKey, staged);
+            auxiliaryRows.push(staged);
+          }
+          row.calendar_id = staged.row.id;
+          row.calendar_name = pattern;
+          row._pending_calendar_import = true;
+        }
         const existingWbsByCode = new Map((relationshipOptions?.wbs_id || []).map((option) => [String(option.data?.wbs_code || '').trim().toLowerCase(), option]));
         const stagedWbsByCode = new Map<string, GovernedImportAuxiliaryRow>();
         const stageWbs = (row: Record<string, any>, wbsCode: string, name: string, parentCode: string): GovernedImportAuxiliaryRow | undefined => {
@@ -2122,7 +2180,7 @@ export function DataTableView({
         const createdAt = new Date().toISOString();
         const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
         const preparedRows = importPreview.rows.map((source) => {
-          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, _primavera_wbs_hierarchy, ...row } = source;
+          const { _imported_governed_dates, _pending_calendar_import, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, _primavera_wbs_hierarchy, ...row } = source;
           return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
         });
         if (tableName === 'schedules') {
@@ -2187,7 +2245,10 @@ export function DataTableView({
         }
         const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, derivedPatches, auxiliaryRows: importPreview.auxiliaryRows });
         onMutated({ type: 'insertMany', rows: preparedRows });
-        if (importPreview.auxiliaryRows.length) onRelatedMutation?.('wbs_nodes', { type: 'insertMany', rows: importPreview.auxiliaryRows.map((entry) => entry.row as Record<string, any>) });
+        for (const table of ['wbs_nodes', 'work_calendars'] as const) {
+          const rows = importPreview.auxiliaryRows.filter((entry) => entry.table === table).map((entry) => entry.row as Record<string, any>);
+          if (rows.length) onRelatedMutation?.(table, { type: 'insertMany', rows });
+        }
         derivedPatches.forEach((derived) => {
           const original = derivedRestores.find((restore) => restore.table === derived.table && restore.row.id === derived.id)?.row;
           if (original) onRelatedMutation?.(derived.table, { type: 'update', row: { ...original, ...derived.patch } });
@@ -2214,8 +2275,8 @@ export function DataTableView({
     const importedPredecessors: { activityCode: string; predecessorCode: string }[] = [];
     const insertedAuxiliaryRows: GovernedImportAuxiliaryRow[] = [];
     if (tableName === 'schedules' && importPreview.auxiliaryRows.length) {
-      setImportResult({ success: 0, failed: importPreview.rows.length, errors: ['This Primavera import needs new WBS nodes. Use the BuildTrack desktop app so the WBS and activities can be committed atomically.'] });
-      setOperationNotice({ kind: 'error', text: 'No rows were saved. Missing WBS nodes require a governed desktop import.' });
+      setImportResult({ success: 0, failed: importPreview.rows.length, errors: ['This Primavera import needs new WBS nodes or work calendars. Use the BuildTrack desktop app so supporting masters and activities can be committed atomically.'] });
+      setOperationNotice({ kind: 'error', text: 'No rows were saved. Missing WBS nodes or work calendars require a governed desktop import.' });
       setImporting(false);
       return;
     }
@@ -3484,7 +3545,7 @@ export function DataTableView({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.{importPreview.auxiliaryRows.length ? ` ${importPreview.auxiliaryRows.length} missing WBS node(s) will be created in the same governed transaction.` : ''}</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.{importPreview.auxiliaryRows.length ? ` ${importPreview.auxiliaryRows.filter((row) => row.table === 'wbs_nodes').length} WBS node(s) and ${importPreview.auxiliaryRows.filter((row) => row.table === 'work_calendars').length} work calendar(s) will be created in the same governed transaction.` : ''}</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
             <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900"><span className="font-semibold">Final step:</span> click <span className="font-semibold">Save rows to table</span> below to write these records. Closing this window does not save anything.</div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
             <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>

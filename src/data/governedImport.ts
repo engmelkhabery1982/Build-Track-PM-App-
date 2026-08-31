@@ -14,9 +14,10 @@ export interface GovernedImportDerivedPatch {
 }
 
 /** Supporting master rows created in the same transaction as the imported
- * target rows. At present Primavera schedule import may create WBS nodes. */
+ * target rows. Primavera schedule import may create WBS nodes and safely
+ * interpreted Work Calendar masters. */
 export interface GovernedImportAuxiliaryRow {
-  table: 'wbs_nodes';
+  table: 'wbs_nodes' | 'work_calendars';
   row: Record<string, unknown>;
 }
 

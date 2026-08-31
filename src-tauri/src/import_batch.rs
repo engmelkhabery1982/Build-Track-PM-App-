@@ -110,6 +110,18 @@ async fn validate_scope(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommit
             return Err(format!("Row {source_row}: WIR requires a BOQ item."));
         }
     }
+    if request.target_table == "schedules" {
+        let calendar_id = string_value(row, "calendar_id");
+        if !calendar_id.is_empty() {
+            let existing: Option<String> = sqlx::query_scalar("SELECT id FROM work_calendars WHERE id=? AND json_extract(payload, '$.status') != 'Inactive'")
+                .bind(&calendar_id).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+            let staged = request.auxiliary_rows.iter().any(|entry| entry.table == "work_calendars"
+                && entry.row.as_object().map(|candidate| string_value(candidate, "id") == calendar_id).unwrap_or(false));
+            if existing.is_none() && !staged {
+                return Err(format!("Row {source_row}: work calendar is missing, inactive, or outside this governed import."));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -156,25 +168,39 @@ async fn validate_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitR
 }
 
 async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
-    let mut codes = HashSet::new();
+    let mut wbs_codes = HashSet::new();
+    let mut calendar_codes = HashSet::new();
     for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
-        if auxiliary.table != "wbs_nodes" { return Err("Only WBS nodes may be created as supporting import rows.".into()); }
-        let row = auxiliary.row.as_object().ok_or_else(|| format!("WBS row {}: import data is not an object.", index + 1))?;
-        if string_value(row, "id").is_empty() || string_value(row, "wbs_code").is_empty() {
-            return Err(format!("WBS row {}: a controlled identifier and WBS code are required.", index + 1));
+        if !matches!(auxiliary.table.as_str(), "wbs_nodes" | "work_calendars") { return Err("Only WBS nodes and work calendars may be created as supporting import rows.".into()); }
+        let label = if auxiliary.table == "wbs_nodes" { "WBS" } else { "Work calendar" };
+        let row = auxiliary.row.as_object().ok_or_else(|| format!("{label} row {}: import data is not an object.", index + 1))?;
+        let code_field = if auxiliary.table == "wbs_nodes" { "wbs_code" } else { "calendar_code" };
+        if string_value(row, "id").is_empty() || string_value(row, code_field).is_empty() {
+            return Err(format!("{label} row {}: a controlled identifier and {code_field} are required.", index + 1));
         }
         if string_value(row, "project_id") != request.project_id {
-            return Err(format!("WBS row {}: project scope does not match the selected project.", index + 1));
+            return Err(format!("{label} row {}: project scope does not match the selected project.", index + 1));
         }
         let contract_id = string_value(row, "contract_id");
         if !contract_id.is_empty() && contract_id != request.contract_id {
-            return Err(format!("WBS row {}: contract scope does not match the selected contract.", index + 1));
+            return Err(format!("{label} row {}: contract scope does not match the selected contract.", index + 1));
         }
-        let code = string_value(row, "wbs_code").to_lowercase();
-        if !codes.insert(code.clone()) { return Err(format!("WBS row {}: duplicate WBS code in this import batch.", index + 1)); }
-        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM wbs_nodes WHERE project_id=? AND lower(json_extract(payload, '$.wbs_code'))=?")
-            .bind(&request.project_id).bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
-        if exists.is_some() { return Err(format!("WBS row {}: WBS code already exists in the selected project.", index + 1)); }
+        let code = string_value(row, code_field).to_lowercase();
+        if auxiliary.table == "wbs_nodes" {
+            if !wbs_codes.insert(code.clone()) { return Err(format!("WBS row {}: duplicate WBS code in this import batch.", index + 1)); }
+            let exists: Option<String> = sqlx::query_scalar("SELECT id FROM wbs_nodes WHERE project_id=? AND lower(json_extract(payload, '$.wbs_code'))=?")
+                .bind(&request.project_id).bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+            if exists.is_some() { return Err(format!("WBS row {}: WBS code already exists in the selected project.", index + 1)); }
+        } else {
+            let pattern = string_value(row, "working_pattern");
+            if !matches!(pattern.as_str(), "Calendar Days" | "5-Day Week" | "6-Day Week" | "24/7") {
+                return Err(format!("Work calendar row {}: working pattern is not governed.", index + 1));
+            }
+            if !calendar_codes.insert(code.clone()) { return Err(format!("Work calendar row {}: duplicate calendar code in this import batch.", index + 1)); }
+            let exists: Option<String> = sqlx::query_scalar("SELECT id FROM work_calendars WHERE lower(json_extract(payload, '$.calendar_code'))=?")
+                .bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+            if exists.is_some() { return Err(format!("Work calendar row {}: calendar code already exists.", index + 1)); }
+        }
     }
     Ok(())
 }
@@ -201,8 +227,8 @@ async fn insert_target(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<
 }
 
 async fn insert_auxiliary(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<String, Value>) -> Result<(), String> {
-    if table != "wbs_nodes" { return Err("Unsupported supporting import table.".into()); }
-    sqlx::query("INSERT INTO wbs_nodes (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)")
+    if !matches!(table, "wbs_nodes" | "work_calendars") { return Err("Unsupported supporting import table.".into()); }
+    sqlx::query(&format!("INSERT INTO {table} (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)"))
         .bind(string_value(row,"id")).bind(string_value(row,"created_at")).bind(string_value(row,"project_id")).bind(string_value(row,"contract_id"))
         .bind(string_value(row,"boq_header_id")).bind(string_value(row,"boq_item_id")).bind(string_value(row,"parent_main_project_id")).bind(string_value(row,"parent_main_contract_id"))
         .bind(Value::Object(row.clone()).to_string()).execute(&mut **tx).await.map_err(|error| error.to_string())?;
@@ -237,10 +263,10 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
         validate_auxiliary_rows(&mut tx, &request).await?;
         validate_rows(&mut tx, &request).await?;
         for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
-            let row = auxiliary.row.as_object().ok_or_else(|| format!("WBS row {}: invalid mapped payload.", index + 1))?;
+            let row = auxiliary.row.as_object().ok_or_else(|| format!("Supporting row {}: invalid mapped payload.", index + 1))?;
             insert_auxiliary(&mut tx, &auxiliary.table, row).await?;
             let record_id = string_value(row, "id");
-            let audit_id = format!("{}-aux-wbs-{}", request.batch_id, index + 1);
+            let audit_id = format!("{}-aux-{}-{}", request.batch_id, auxiliary.table, index + 1);
             let audit_payload = json!({
                 "id": audit_id, "created_at": started, "project_id": request.project_id,
                 "contract_id": request.contract_id, "entity_type": auxiliary.table,
@@ -253,7 +279,7 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
                 .bind("").bind("").bind("").bind("").bind(audit_payload.to_string())
                 .execute(&mut *tx).await.map_err(|error| error.to_string())?;
             sqlx::query("INSERT INTO import_batch_rows (id,batch_id,source_row_number,target_table,target_record_id,status,source_json,mapped_json) VALUES (?,?,?,?,?,?,?,?)")
-                .bind(format!("{}-aux-wbs-{}", request.batch_id, index + 1)).bind(&request.batch_id).bind(0_i64).bind(&auxiliary.table).bind(&record_id).bind("Committed").bind(auxiliary.row.to_string()).bind(auxiliary.row.to_string()).execute(&mut *tx).await.map_err(|error| error.to_string())?;
+                .bind(format!("{}-aux-{}-{}", request.batch_id, auxiliary.table, index + 1)).bind(&request.batch_id).bind(0_i64).bind(&auxiliary.table).bind(&record_id).bind("Committed").bind(auxiliary.row.to_string()).bind(auxiliary.row.to_string()).execute(&mut *tx).await.map_err(|error| error.to_string())?;
         }
         for (index, value) in request.rows.iter().enumerate() {
             let row = value.as_object().ok_or_else(|| format!("Row {}: invalid mapped payload.", index + 2))?;
@@ -324,6 +350,7 @@ mod tests {
             "CREATE TABLE boq_items (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, boq_header_id TEXT, payload TEXT)",
             "CREATE TABLE schedules (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE wbs_nodes (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
+            "CREATE TABLE work_calendars (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
             "CREATE TABLE wir_entries (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE import_batches (id TEXT PRIMARY KEY, created_at TEXT, committed_at TEXT, source TEXT, file_name TEXT, target_table TEXT, project_id TEXT, contract_id TEXT, status TEXT, row_count INTEGER, committed_count INTEGER, rejected_count INTEGER, summary_json TEXT)",
@@ -376,26 +403,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn schedule_import_commits_and_reverses_its_supporting_wbs_nodes() {
+    async fn schedule_import_commits_and_reverses_its_supporting_masters() {
         let path = std::env::temp_dir().join(format!("buildtrack-import-wbs-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         setup(&path).await;
         let request = ImportCommitRequest {
             batch_id: "batch-wbs".into(), source: "Primavera".into(), file_name: "schedule.xer".into(), target_table: "schedules".into(), project_id: "p1".into(), contract_id: "c1".into(),
-            rows: vec![json!({"id":"a1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","wbs_id":"w1"})],
+            rows: vec![json!({"id":"a1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","wbs_id":"w1","calendar_id":"cal-6d"})],
             derived_patches: vec![],
-            auxiliary_rows: vec![ImportAuxiliaryRow { table: "wbs_nodes".into(), row: json!({"id":"w1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","wbs_code":"BLD.10","name":"Structure"}) }],
+            auxiliary_rows: vec![
+                ImportAuxiliaryRow { table: "wbs_nodes".into(), row: json!({"id":"w1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","wbs_code":"BLD.10","name":"Structure"}) },
+                ImportAuxiliaryRow { table: "work_calendars".into(), row: json!({"id":"cal-6d","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","calendar_code":"P6-P1-SIX-DAY","calendar_name":"Six Day Calendar","working_pattern":"6-Day Week","status":"Active"}) },
+            ],
         };
         commit_governed_import(&path, request).await.unwrap();
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedules").fetch_one(&pool).await.unwrap(), 1);
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wbs_nodes").fetch_one(&pool).await.unwrap(), 1);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_calendars").fetch_one(&pool).await.unwrap(), 1);
         pool.close().await;
         let reversed = reverse_governed_import(&path, ImportReverseRequest { batch_id: "batch-wbs".into(), reason: "acceptance test".into() }).await.unwrap();
         assert_eq!(reversed.status, "Reversed");
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedules").fetch_one(&pool).await.unwrap(), 0);
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wbs_nodes").fetch_one(&pool).await.unwrap(), 0);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_calendars").fetch_one(&pool).await.unwrap(), 0);
         pool.close().await;
         let _ = std::fs::remove_file(&path);
     }
