@@ -122,6 +122,7 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Calendar Pattern': calendar.pattern,
       'Calendar Working Days': JSON.stringify(calendar.workingDays),
       'Calendar Exceptions': JSON.stringify(calendar.exceptions),
+      'Calendar Hours Per Day': calendar.dayHours,
       Predecessors: predecessorCodes.join(', '),
       // P6 supports multiple independent links for one successor. Preserve
       // each relationship type and lag rather than collapsing to the first.

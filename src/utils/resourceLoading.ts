@@ -1,3 +1,5 @@
+import { workingDatesBetween } from './schedulePlanning.ts';
+
 export interface ResourceLoadInput {
   id?: string;
   resource_id?: string | null;
@@ -38,8 +40,9 @@ export interface ResourceLevelingRecommendation {
 export function suggestResourceLeveling(
   resources: Array<Record<string, any>>,
   assignments: Array<Record<string, any>>,
+  schedules: Array<Record<string, any>> = [],
 ): ResourceLevelingRecommendation[] {
-  const loads = calculatePlannedResourceLoads(resources, assignments)
+  const loads = calculatePlannedResourceLoads(resources, assignments, schedules)
     .filter((load) => load.overAllocatedHours > 0);
   return loads.map((load) => {
     const affected = assignments.filter((assignment) => {
@@ -65,8 +68,10 @@ export function suggestResourceLeveling(
 export function calculatePlannedResourceLoads(
   resources: Array<Record<string, any>>,
   assignments: Array<Record<string, any>>,
+  schedules: Array<Record<string, any>> = [],
 ): ResourceLoad[] {
   const capacityByResource = new Map(resources.map((resource) => [String(resource.id), Math.max(0, Number(resource.daily_capacity_hours) || 0)]));
+  const scheduleById = new Map(schedules.map((schedule) => [String(schedule.id), schedule]));
   const totals = new Map<string, number>();
   for (const row of assignments) {
     const resourceId = String(row.resource_id || '');
@@ -74,12 +79,13 @@ export function calculatePlannedResourceLoads(
     const end = String(row.assignment_end || start);
     const capacity = capacityByResource.get(resourceId);
     if (!resourceId || !start || !end || end < start || capacity === undefined) continue;
-    const days = Math.max(1, Math.ceil((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${start}T00:00:00Z`).getTime()) / 86400000) + 1);
+    const dates = workingDatesBetween(start, end, scheduleById.get(String(row.schedule_id || '')) || row);
     const hours = Math.max(0, Number(row.planned_hours) || 0);
     if (!hours) continue;
-    for (let index = 0; index < days; index += 1) {
-      const key = `${resourceId}|${isoPlusDays(start, index)}`;
-      totals.set(key, (totals.get(key) || 0) + hours / days);
+    if (!dates.length) continue;
+    for (const date of dates) {
+      const key = `${resourceId}|${date}`;
+      totals.set(key, (totals.get(key) || 0) + hours / dates.length);
     }
   }
   return [...totals.entries()].map(([key, allocatedHours]) => {

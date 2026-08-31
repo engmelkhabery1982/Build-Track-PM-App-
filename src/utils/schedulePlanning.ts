@@ -17,6 +17,8 @@ export type CalendarInput = string | null | undefined | {
   calendar_name?: string | null;
   calendar_exceptions?: string[] | string | null;
   calendar_working_days?: number[] | string | null;
+  calendar_hours_per_day?: number | string | null;
+  hours_per_day?: number | string | null;
 };
 
 function calendarDetails(input?: CalendarInput): { name: string; exceptions: Set<string>; workingDays: Set<number> } {
@@ -46,6 +48,29 @@ function isWorkingDay(date: Date, calendar?: CalendarInput): boolean {
   if (name === '5-Day Week') return day >= 1 && day <= 5;
   if (name === '6-Day Week') return day !== 5; // Friday is the weekly non-working day.
   return true;
+}
+
+/** Retain P6 calendar day-hours for resource and lag calculations instead of
+ * silently treating every calendar as an eight-hour shift. */
+export function calendarHoursPerDay(calendar?: CalendarInput): number {
+  if (typeof calendar === 'string' || !calendar) return 8;
+  const value = Number(calendar.calendar_hours_per_day ?? calendar.hours_per_day);
+  return Number.isFinite(value) && value > 0 && value <= 24 ? value : 8;
+}
+
+/** Inclusive dates for resource assignments: unlike duration arithmetic, an
+ * assignment on its start date consumes that day's capacity. */
+export function workingDatesBetween(start: string, end: string, calendar?: CalendarInput): string[] {
+  const first = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime()) || last < first) return [];
+  const dates: string[] = [];
+  const cursor = new Date(first);
+  while (cursor <= last) {
+    if (isWorkingDay(cursor, calendar)) dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 /** Returns the duration in the selected calendar between ISO start/end dates. */

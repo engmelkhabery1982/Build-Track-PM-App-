@@ -236,6 +236,10 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
             if pattern == "Custom" && string_value(row, "calendar_working_days").is_empty() {
                 return Err(format!("Work calendar row {}: custom pattern requires explicit working days.", index + 1));
             }
+            let hours_per_day = row.get("hours_per_day").and_then(Value::as_f64).unwrap_or(8.0);
+            if !(hours_per_day > 0.0 && hours_per_day <= 24.0) {
+                return Err(format!("Work calendar row {}: hours per working day must be between 0 and 24.", index + 1));
+            }
             if !calendar_codes.insert(code.clone()) { return Err(format!("Work calendar row {}: duplicate calendar code in this import batch.", index + 1)); }
             let exists: Option<String> = sqlx::query_scalar("SELECT id FROM work_calendars WHERE lower(json_extract(payload, '$.calendar_code'))=?")
                 .bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;

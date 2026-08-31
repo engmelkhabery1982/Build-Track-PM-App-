@@ -1790,7 +1790,7 @@ export function DataTableView({
           'actual finish': 'actual_finish_date', 'actual finish date': 'actual_finish_date',
           'activity status': 'activity_status', 'status date': 'status_data_date', 'data date': 'status_data_date',
           'resource names': 'responsible', 'calendar name': 'calendar_name',
-          'calendar': 'calendar_name', 'calendar pattern': '_primavera_calendar_pattern', 'calendar working days': 'calendar_working_days', 'calendar exceptions': 'calendar_exceptions', 'primary constraint': 'constraint_type', 'primary constraint date': 'constraint_date',
+          'calendar': 'calendar_name', 'calendar pattern': '_primavera_calendar_pattern', 'calendar working days': 'calendar_working_days', 'calendar exceptions': 'calendar_exceptions', 'calendar hours per day': 'calendar_hours_per_day', 'primary constraint': 'constraint_type', 'primary constraint date': 'constraint_date',
           'constraint type': 'constraint_type', 'constraint date': 'constraint_date', 'milestone': 'is_milestone', 'predecessors': 'predecessors',
           'predecessor links': 'predecessor_links',
           'relationship': 'relationship_type', 'relationship type': 'relationship_type', 'lag': 'lag_days', 'lag days': 'lag_days',
@@ -2075,6 +2075,7 @@ export function DataTableView({
           if (matching) {
             row.calendar_id = matching.value;
             row.calendar_name = matching.data?.calendar_name || 'Calendar Days';
+            row.calendar_hours_per_day = matching.data?.calendar_hours_per_day || row.calendar_hours_per_day || 8;
             continue;
           }
           const pattern = String(row._primavera_calendar_pattern || '') || calendarPatternFor(sourceCalendar);
@@ -2094,7 +2095,7 @@ export function DataTableView({
               row: {
                 id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
                 calendar_code: calendarCodeFor(row, sourceCalendar), calendar_name: sourceCalendar, working_pattern: pattern,
-                calendar_working_days: JSON.stringify(workingDays), calendar_exceptions: JSON.stringify(exceptions), status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
+                calendar_working_days: JSON.stringify(workingDays), calendar_exceptions: JSON.stringify(exceptions), hours_per_day: Math.max(1, Math.min(24, Number(row.calendar_hours_per_day) || 8)), status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
               },
             };
             stagedCalendarsBySource.set(stageKey, staged);
@@ -2104,6 +2105,7 @@ export function DataTableView({
           row.calendar_name = pattern;
           row.calendar_working_days = staged.row.calendar_working_days;
           row.calendar_exceptions = staged.row.calendar_exceptions;
+          row.calendar_hours_per_day = staged.row.hours_per_day;
           row._pending_calendar_import = true;
         }
         const existingWbsByCode = new Map((relationshipOptions?.wbs_id || []).map((option) => [String(option.data?.wbs_code || '').trim().toLowerCase(), option]));
@@ -2257,7 +2259,7 @@ export function DataTableView({
           return { ...row, id: _planning_refresh ? row.id : crypto.randomUUID(), created_at: _planning_refresh ? row.created_at : createdAt, _planning_refresh } as Record<string, any>;
         });
         const preparedRows = preparedCandidates.filter((row) => !row._planning_refresh).map(({ _planning_refresh, ...row }) => row);
-        const refreshFields = ['activity', 'source_activity_code', 'start_date', 'end_date', 'duration_days', 'calendar_id', 'calendar_name', 'calendar_exceptions', 'wbs_id', 'wbs_code', 'predecessor_links', 'predecessor_items', 'predecessor_item', 'predecessors', 'relationship_type', 'lag_days', 'constraint_type', 'constraint_date', 'critical_path', 'responsible', 'notes', 'is_non_boq_activity'];
+        const refreshFields = ['activity', 'source_activity_code', 'start_date', 'end_date', 'duration_days', 'calendar_id', 'calendar_name', 'calendar_exceptions', 'calendar_working_days', 'calendar_hours_per_day', 'wbs_id', 'wbs_code', 'predecessor_links', 'predecessor_items', 'predecessor_item', 'predecessors', 'relationship_type', 'lag_days', 'constraint_type', 'constraint_date', 'critical_path', 'responsible', 'notes', 'is_non_boq_activity'];
         let refreshUpdates: GovernedImportUpdate[] = [];
         if (tableName === 'schedules') {
           const activitiesByCode = new Map([...data, ...preparedCandidates].map((activity) => [String(activity.activity_code || ''), activity]));

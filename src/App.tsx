@@ -448,6 +448,7 @@ const WORK_CALENDAR_COLUMNS: ColumnDef[] = [
   { key: 'calendar_code', label: 'Calendar Code', type: 'text', editable: true },
   { key: 'calendar_name', label: 'Calendar Name', type: 'text', editable: true },
   { key: 'working_pattern', label: 'Working Pattern', type: 'status', editable: true, options: [...WORK_CALENDARS] },
+  { key: 'hours_per_day', label: 'Hours per Working Day', type: 'number', editable: true },
   { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
@@ -2601,7 +2602,7 @@ export default function App() {
     const viewData = activeView === 'resourceMaster'
       ? (() => {
         const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[]);
-        const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[]);
+        const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[]);
         return rawViewData.map((resource: any) => {
           const resourceLoads = loads.filter((load) => load.resourceId === resource.id);
           const resourcePlannedLoads = plannedLoads.filter((load) => load.resourceId === resource.id);
@@ -3225,6 +3226,7 @@ export default function App() {
           calendar_name: calendar.working_pattern || 'Calendar Days',
           calendar_exceptions: calendar.calendar_exceptions || '',
           calendar_working_days: calendar.calendar_working_days || '',
+          calendar_hours_per_day: calendar.hours_per_day || 8,
         },
       }));
     relationshipOptions.supersedes_document_id = data.documents
@@ -3648,9 +3650,9 @@ export default function App() {
           onClick: (row) => {
             const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
-            const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[])
+            const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
-            const recommendations = suggestResourceLeveling(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[])
+            const recommendations = suggestResourceLeveling(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[])
               .filter((recommendation) => recommendation.resourceId === row.id);
             if (!loads.length && !plannedLoads.length) {
               window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no planned or recorded allocation.`);

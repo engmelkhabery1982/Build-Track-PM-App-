@@ -118,6 +118,17 @@ test('Primavera XER converts lag hours using the activity calendar day-hours', (
 `;
   const rows = primavera.parsePrimaveraXerTasks(xer);
   assert.equal(rows[1]['Lag (days)'], 1.5);
+  assert.equal(rows[0]['Calendar Hours Per Day'], 10);
+});
+
+test('planned resource loading uses the governed activity work days, not weekends', () => {
+  const loads = resourceLoading.calculatePlannedResourceLoads(
+    [{ id: 'r1', daily_capacity_hours: 8 }],
+    [{ resource_id: 'r1', schedule_id: 'a1', assignment_start: '2026-03-06', assignment_end: '2026-03-09', planned_hours: 16 }],
+    [{ id: 'a1', calendar_name: '5-Day Week' }],
+  );
+  assert.deepEqual(loads.map((load) => load.date), ['2026-03-06', '2026-03-09']);
+  assert.deepEqual(loads.map((load) => load.allocatedHours), [8, 8]);
 });
 
 test('Primavera import preserves every predecessor relationship and CPM applies each link', () => {

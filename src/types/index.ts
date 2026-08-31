@@ -353,6 +353,7 @@ export interface Schedule {
   calendar_exceptions?: string[] | string | null;
   /** JS weekday values (0 Sunday through 6 Saturday) for a Custom calendar. */
   calendar_working_days?: number[] | string | null;
+  calendar_hours_per_day?: number | null;
   critical_path: boolean;
   is_critical_item: boolean;
   responsible: string;
@@ -369,6 +370,7 @@ export interface WorkCalendar {
   working_pattern: 'Calendar Days' | '5-Day Week' | '6-Day Week' | '24/7' | 'Custom' | string;
   calendar_exceptions?: string[] | string | null;
   calendar_working_days?: number[] | string | null;
+  hours_per_day?: number | null;
   status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
