@@ -24,6 +24,10 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
   };
   const taskCodeById = new Map(tasks.map((task) => [task.task_id, uniqueTaskCode(task)]));
   const predecessorsByTask = new Map<string, Record<string, string>[]>();
+  const constraintName = (value: string) => ({
+    CS_SNET: 'Start No Earlier Than', CS_FNLT: 'Finish No Later Than',
+    CS_MSO: 'Mandatory Start', CS_MFO: 'Mandatory Finish',
+  }[String(value || '').toUpperCase()] || 'None');
   for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
   return tasks.map((task) => {
     const links = predecessorsByTask.get(task.task_id) || [];
@@ -39,6 +43,9 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
       Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
       'Original Duration': task.target_drtn || task.remain_drtn || '',
+      'Constraint Type': constraintName(task.cstr_type || task.primary_cstr_type || ''),
+      'Constraint Date': String(task.cstr_date || task.primary_cstr_date || '').slice(0, 10),
+      Milestone: /mile/i.test(String(task.task_type || task.activity_type || '')),
       'Planned Qty': '',
       Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
       Predecessors: predecessorCodes.join(', '),

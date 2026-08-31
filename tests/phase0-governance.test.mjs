@@ -89,6 +89,17 @@ test('Primavera import preserves every predecessor relationship and CPM applies 
   assert.equal(network.get('C').earlyStart, 4);
 });
 
+test('Primavera XER import retains supported constraints and milestones', () => {
+  const xer = `%T\tTASK
+%F\ttask_id\ttask_code\ttask_name\ttarget_drtn\tcstr_type\tcstr_date\ttask_type
+%R\t1\tM-01\tContract Milestone\t0\tCS_MFO\t2026-03-31 17:00\tTT_Mile
+`;
+  const [row] = primavera.parsePrimaveraXerTasks(xer);
+  assert.equal(row['Constraint Type'], 'Mandatory Finish');
+  assert.equal(row['Constraint Date'], '2026-03-31');
+  assert.equal(row.Milestone, true);
+});
+
 test('approved baselines freeze activity-level schedule scope and require a governed revision', () => {
   const activities = [
     { id: 'a-2', activity_code: 'B', activity: 'Concrete', start_date: '2026-01-08', end_date: '2026-01-12', duration_days: 4, planned_quantity: 50, budget: 2000, calendar_name: '6-Day Week', critical_path: true },
