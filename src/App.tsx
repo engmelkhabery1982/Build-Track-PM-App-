@@ -13,6 +13,7 @@ import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
 import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
+import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
@@ -72,6 +73,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'procurementReconciliation', label: 'PO Reconciliation', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'procurementReceipts', label: 'Goods Receipts', icon: ClipboardCheck, group: 'Cost & Resources' },
   { key: 'resourceMaster', label: 'Resource Master', icon: Users, group: 'Cost & Resources' },
+  { key: 'resourceCapacity', label: 'Resource Capacity Board', icon: Users, group: 'Planning & Controls' },
   { key: 'resourceAssignments', label: 'Planned Resource Assignments', icon: Users, group: 'Planning & Controls' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
@@ -2223,6 +2225,16 @@ export default function App() {
           onNavigate={setActiveView}
         />
       );
+    }
+    if (activeView === 'resourceCapacity') {
+      return <ResourceCapacityBoard
+        resources={data.resourceMasters as Record<string, any>[]}
+        assignments={data.scheduleResourceAssignments as Record<string, any>[]}
+        schedules={data.schedules as Record<string, any>[]}
+        laborDuty={data.laborDuty as Record<string, any>[]}
+        equipment={data.equipment as Record<string, any>[]}
+        onNavigate={setActiveView}
+      />;
     }
 
     if (activeView === 'alerts') {

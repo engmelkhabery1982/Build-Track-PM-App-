@@ -903,7 +903,7 @@ export interface ReportTemplate {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'resourceAssignments' | 'workCalendars' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'resourceAssignments' | 'resourceCapacity' | 'workCalendars' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'procurementReconciliation' | 'procurementReceipts' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
