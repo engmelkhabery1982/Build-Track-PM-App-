@@ -1179,6 +1179,7 @@ export function DataTableView({
     const selectedHeader = relationshipOptions?.boq_header_id?.find((option) => option.value === record.boq_header_id);
     const selectedItem = relationshipOptions?.boq_item_id?.find((option) => option.value === record.boq_item_id);
     const selectedSchedule = relationshipOptions?.schedule_id?.find((option) => option.value === record.schedule_id);
+    const selectedCalendar = relationshipOptions?.calendar_id?.find((option) => option.value === record.calendar_id);
     const selectedParty = relationshipOptions?.party_id?.find((option) => option.value === record.party_id);
     const selectedClientParty = relationshipOptions?.client_party_id?.find((option) => option.value === record.client_party_id);
     const selectedContractorParty = relationshipOptions?.contractor_party_id?.find((option) => option.value === record.contractor_party_id);
@@ -1314,6 +1315,9 @@ export function DataTableView({
     }
     if (tableName === 'schedules' && record.predecessor_item && record.predecessor_item === record.id) {
       throw new Error('An activity cannot be its own predecessor.');
+    }
+    if (tableName === 'schedules' && record.calendar_id && !selectedCalendar) {
+      throw new Error('Select a valid active work calendar for the activity.');
     }
 
     const selectedContractRow = contracts?.find((contract) => contract.id === record.contract_id);

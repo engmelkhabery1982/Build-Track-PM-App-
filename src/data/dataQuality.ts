@@ -18,6 +18,7 @@ export interface DataQualitySource {
   boqItems: Record<string, any>[];
   schedules: Record<string, any>[];
   scheduleDistributions?: Record<string, any>[];
+  workCalendars?: Record<string, any>[];
   wirEntries: Record<string, any>[];
   costEntries: Record<string, any>[];
   reportingPeriods: Record<string, any>[];
@@ -88,6 +89,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const supplierInvoicePayments = data.supplierInvoicePayments || [];
   const cashFlow = data.cashFlow || [];
   const scheduleDistributions = data.scheduleDistributions || [];
+  const workCalendars = data.workCalendars || [];
   const laborDuty = data.laborDuty || [];
   const equipment = data.equipment || [];
 
@@ -107,6 +109,11 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
 
   const invalidSchedules = data.schedules.filter((row) => { const item = itemById.get(row.boq_item_id); const contract = contractById.get(row.contract_id); return !item || !contract || item.project_id !== row.project_id || contract.project_id !== row.project_id; });
   pushIf(findings, invalidSchedules.length > 0, { severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
+  const calendarById = new Map(workCalendars.map((calendar) => [calendar.id, calendar]));
+  const invalidCalendarMasters = workCalendars.filter((calendar) => !String(calendar.calendar_code || '').trim() || !String(calendar.calendar_name || '').trim() || !['Calendar Days', '5-Day Week', '6-Day Week', '24/7'].includes(String(calendar.working_pattern || '')));
+  pushIf(findings, invalidCalendarMasters.length > 0, { severity: 'Error', title: 'Work calendar master is incomplete', detail: `${invalidCalendarMasters.length} calendar(s) need a unique code, name and valid working pattern before use.`, view: 'workCalendars' });
+  const invalidScheduleCalendars = data.schedules.filter((row) => row.calendar_id && (!calendarById.has(row.calendar_id) || calendarById.get(row.calendar_id)?.status === 'Inactive'));
+  pushIf(findings, invalidScheduleCalendars.length > 0, { severity: 'Error', title: 'Activity references an inactive or missing work calendar', detail: `${invalidScheduleCalendars.length} activity row(s) must be reassigned to an active calendar.`, view: 'schedule' });
   const invalidScheduleLinks = data.schedules.filter((row) => predecessorIds(row).some((id) => {
     const predecessor = scheduleById.get(id);
     return !predecessor || predecessor.id === row.id || predecessor.project_id !== row.project_id || predecessor.contract_id !== row.contract_id;

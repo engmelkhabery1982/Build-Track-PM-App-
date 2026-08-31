@@ -131,6 +131,17 @@ test('data quality rejects invalid and cyclic schedule dependencies', () => {
   assert.ok(findings.some((finding) => finding.title === 'Schedule network contains a dependency cycle'));
 });
 
+test('data quality rejects an activity using an inactive work calendar', () => {
+  const source = {
+    projects: [{ id: 'project-1' }], contracts: [{ id: 'contract-1', project_id: 'project-1' }], boqHeaders: [{ id: 'header-1', project_id: 'project-1', contract_id: 'contract-1' }],
+    boqItems: [{ id: 'item-1', project_id: 'project-1', contract_id: 'contract-1', boq_header_id: 'header-1', quantity: 1 }],
+    schedules: [{ id: 'activity-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', activity: 'Install', calendar_id: 'cal-old' }],
+    workCalendars: [{ id: 'cal-old', calendar_code: 'CAL-OLD', calendar_name: 'Retired', working_pattern: '6-Day Week', status: 'Inactive' }],
+    wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+  };
+  assert.ok(quality.runDataQualityChecks(source).some((finding) => finding.title === 'Activity references an inactive or missing work calendar'));
+});
+
 test('resource productivity is traceable only from linked quantity and labour hours', () => {
   assert.deepEqual(productivity.calculateProductivityMetrics({ plannedQuantity: 100, plannedLaborHours: 20, actualQuantity: 72, actualLaborHours: 18 }), {
     plannedProductivity: 5, actualProductivity: 4, variancePct: -20,
