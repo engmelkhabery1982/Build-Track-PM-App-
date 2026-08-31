@@ -11,30 +11,38 @@ export function scheduleBudget(activity: Record<string, any>): number {
   return Math.round(value * 100) / 100;
 }
 
-export const WORK_CALENDARS = ['Calendar Days', '5-Day Week', '6-Day Week', '24/7'] as const;
+export const WORK_CALENDARS = ['Calendar Days', '5-Day Week', '6-Day Week', '24/7', 'Custom'] as const;
 
 export type CalendarInput = string | null | undefined | {
   calendar_name?: string | null;
   calendar_exceptions?: string[] | string | null;
+  calendar_working_days?: number[] | string | null;
 };
 
-function calendarDetails(input?: CalendarInput): { name: string; exceptions: Set<string> } {
-  if (typeof input === 'string' || !input) return { name: input || 'Calendar Days', exceptions: new Set() };
+function calendarDetails(input?: CalendarInput): { name: string; exceptions: Set<string>; workingDays: Set<number> } {
+  if (typeof input === 'string' || !input) return { name: input || 'Calendar Days', exceptions: new Set(), workingDays: new Set() };
   const raw = input.calendar_exceptions;
   let values: unknown[] = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
   if (typeof raw === 'string' && raw.trim().startsWith('[')) {
     try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) values = parsed; } catch { /* comma-separated remains valid */ }
   }
+  const rawDays = input.calendar_working_days;
+  let dayValues: unknown[] = Array.isArray(rawDays) ? rawDays : String(rawDays || '').split(/[,;\s]+/);
+  if (typeof rawDays === 'string' && rawDays.trim().startsWith('[')) {
+    try { const parsed = JSON.parse(rawDays); if (Array.isArray(parsed)) dayValues = parsed; } catch { /* delimited values remain valid */ }
+  }
   return {
     name: String(input.calendar_name || 'Calendar Days'),
     exceptions: new Set(values.map((value) => String(value || '').trim().slice(0, 10)).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))),
+    workingDays: new Set(dayValues.map((value) => String(value ?? '').trim()).filter(Boolean).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)),
   };
 }
 
 function isWorkingDay(date: Date, calendar?: CalendarInput): boolean {
-  const { name, exceptions } = calendarDetails(calendar);
+  const { name, exceptions, workingDays } = calendarDetails(calendar);
   if (exceptions.has(date.toISOString().slice(0, 10))) return false;
   const day = date.getUTCDay();
+  if (workingDays.size) return workingDays.has(day);
   if (name === '5-Day Week') return day >= 1 && day <= 5;
   if (name === '6-Day Week') return day !== 5; // Friday is the weekly non-working day.
   return true;

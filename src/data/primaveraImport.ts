@@ -14,7 +14,30 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     if (cells[0] === '%F') { fields = cells.slice(1); continue; }
     if (cells[0] === '%R' && table && fields.length) tables.get(table)?.push(Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? ''])));
   }
-  const calendars = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row.clndr_name || row.clndr_id]));
+  const calendarRows = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row]));
+  const excelDate = (value: string) => {
+    const serial = Number(value);
+    if (!Number.isFinite(serial)) return '';
+    const date = new Date(Date.UTC(1899, 11, 30));
+    date.setUTCDate(date.getUTCDate() + Math.floor(serial));
+    return date.toISOString().slice(0, 10);
+  };
+  const calendarFor = (id: string, seen = new Set<string>()): { name: string; pattern: string; workingDays: number[]; exceptions: string[] } => {
+    const row = calendarRows.get(id);
+    if (!row || seen.has(id)) return { name: id || '', pattern: '', workingDays: [], exceptions: [] };
+    const inherited = row.base_clndr_id ? calendarFor(row.base_clndr_id, new Set([...seen, id])) : { name: '', pattern: '', workingDays: [], exceptions: [] };
+    const data = String(row.clndr_data || '');
+    const workingDays = Array.from({ length: 7 }, (_, index) => index + 1)
+      .filter((p6Day) => new RegExp(`\\|${p6Day}\\(\\)\\(\\(\\d+\\|\\|`).test(data))
+      .map((p6Day) => p6Day % 7);
+    const exceptions = [...data.matchAll(/\(d\|(\d+)\)/g)].map((match) => excelDate(match[1])).filter(Boolean);
+    const effectiveDays = workingDays.length ? workingDays : inherited.workingDays;
+    const pattern = effectiveDays.length === 7 ? 'Calendar Days'
+      : effectiveDays.length === 5 && effectiveDays.join(',') === '1,2,3,4,5' ? '5-Day Week'
+      : effectiveDays.length === 6 && !effectiveDays.includes(5) ? '6-Day Week'
+      : effectiveDays.length ? 'Custom' : inherited.pattern;
+    return { name: row.clndr_name || inherited.name || id, pattern, workingDays: effectiveDays, exceptions: [...new Set([...inherited.exceptions, ...exceptions])] };
+  };
   const wbsRows = tables.get('PROJWBS') || tables.get('WBS') || [];
   const wbsById = new Map(wbsRows.map((row) => [row.wbs_id, {
     code: row.wbs_short_name || row.wbs_code || row.wbs_id || '',
@@ -66,7 +89,10 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Constraint Date': String(task.cstr_date || task.primary_cstr_date || '').slice(0, 10),
       Milestone: /mile/i.test(String(task.task_type || task.activity_type || '')),
       'Planned Qty': '',
-      Calendar: calendars.get(task.clndr_id) || task.clndr_id || '',
+      Calendar: calendarFor(task.clndr_id || '').name,
+      'Calendar Pattern': calendarFor(task.clndr_id || '').pattern,
+      'Calendar Working Days': JSON.stringify(calendarFor(task.clndr_id || '').workingDays),
+      'Calendar Exceptions': JSON.stringify(calendarFor(task.clndr_id || '').exceptions),
       Predecessors: predecessorCodes.join(', '),
       // P6 supports multiple independent links for one successor. Preserve
       // each relationship type and lag rather than collapsing to the first.

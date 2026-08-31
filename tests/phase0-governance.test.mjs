@@ -65,6 +65,21 @@ test('Primavera XER import preserves calendar, logic, dates and duplicate activi
   assert.equal(rows[0].Critical, true);
 });
 
+test('Primavera XER calendar data preserves custom working days and exceptions', () => {
+  const xer = `%T\tCALENDAR
+%F\tclndr_id\tclndr_name\tclndr_data
+%R\t1\tShift Calendar\t(0||CalendarData()((0||DaysOfWeek()((0||1()((0||0(s|08:00|f|16:00)())))(0||2()())(0||3()((0||0(s|08:00|f|16:00)())))(0||4()())(0||5()((0||0(s|08:00|f|16:00)())))(0||6()())(0||7()())))(0||Exceptions()((0||0(d|46024)())))))
+%T\tTASK
+%F\ttask_id\ttask_code\ttask_name\tclndr_id\ttarget_start_date\ttarget_end_date
+%R\t10\tACT-1\tShift work\t1\t2026-01-01\t2026-01-10
+`;
+  const [row] = primavera.parsePrimaveraXerTasks(xer);
+  assert.equal(row['Calendar Pattern'], 'Custom');
+  assert.deepEqual(JSON.parse(row['Calendar Working Days']), [1, 3, 5]);
+  assert.deepEqual(JSON.parse(row['Calendar Exceptions']), ['2026-01-02']);
+  assert.equal(schedule.workingDaysBetween('2026-01-01', '2026-01-07', { calendar_name: 'Custom', calendar_working_days: row['Calendar Working Days'], calendar_exceptions: row['Calendar Exceptions'] }), 2);
+});
+
 test('Primavera import preserves every predecessor relationship and CPM applies each link', () => {
   const xer = `%T\tTASK
 %F\ttask_id\ttask_code\ttask_name\ttarget_drtn

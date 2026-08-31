@@ -223,8 +223,11 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
             if exists.is_some() { return Err(format!("WBS row {}: WBS code already exists in the selected project.", index + 1)); }
         } else {
             let pattern = string_value(row, "working_pattern");
-            if !matches!(pattern.as_str(), "Calendar Days" | "5-Day Week" | "6-Day Week" | "24/7") {
+            if !matches!(pattern.as_str(), "Calendar Days" | "5-Day Week" | "6-Day Week" | "24/7" | "Custom") {
                 return Err(format!("Work calendar row {}: working pattern is not governed.", index + 1));
+            }
+            if pattern == "Custom" && string_value(row, "calendar_working_days").is_empty() {
+                return Err(format!("Work calendar row {}: custom pattern requires explicit working days.", index + 1));
             }
             if !calendar_codes.insert(code.clone()) { return Err(format!("Work calendar row {}: duplicate calendar code in this import batch.", index + 1)); }
             let exists: Option<String> = sqlx::query_scalar("SELECT id FROM work_calendars WHERE lower(json_extract(payload, '$.calendar_code'))=?")

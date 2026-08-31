@@ -1766,7 +1766,7 @@ export function DataTableView({
           'actual finish': 'actual_finish_date', 'actual finish date': 'actual_finish_date',
           'activity status': 'activity_status', 'status date': 'status_data_date', 'data date': 'status_data_date',
           'resource names': 'responsible', 'calendar name': 'calendar_name',
-          'calendar': 'calendar_name', 'primary constraint': 'constraint_type', 'primary constraint date': 'constraint_date',
+          'calendar': 'calendar_name', 'calendar pattern': '_primavera_calendar_pattern', 'calendar working days': 'calendar_working_days', 'calendar exceptions': 'calendar_exceptions', 'primary constraint': 'constraint_type', 'primary constraint date': 'constraint_date',
           'constraint type': 'constraint_type', 'constraint date': 'constraint_date', 'milestone': 'is_milestone', 'predecessors': 'predecessors',
           'predecessor links': 'predecessor_links',
           'relationship': 'relationship_type', 'relationship type': 'relationship_type', 'lag': 'lag_days', 'lag days': 'lag_days',
@@ -2053,8 +2053,14 @@ export function DataTableView({
             row.calendar_name = matching.data?.calendar_name || 'Calendar Days';
             continue;
           }
-          const pattern = calendarPatternFor(sourceCalendar);
+          const pattern = String(row._primavera_calendar_pattern || '') || calendarPatternFor(sourceCalendar);
           if (!pattern) throw new Error(`Calendar "${sourceCalendar}" cannot be interpreted safely. Create or map its working pattern before importing; no dates were changed.`);
+          if (!['Calendar Days', '5-Day Week', '6-Day Week', '24/7', 'Custom'].includes(pattern)) throw new Error(`Calendar "${sourceCalendar}" has an invalid imported working pattern.`);
+          let workingDays: unknown[] = [];
+          let exceptions: unknown[] = [];
+          try { const parsed = typeof row.calendar_working_days === 'string' ? JSON.parse(row.calendar_working_days) : row.calendar_working_days; if (Array.isArray(parsed)) workingDays = parsed; } catch { /* governed backend validates the persisted calendar */ }
+          try { const parsed = typeof row.calendar_exceptions === 'string' ? JSON.parse(row.calendar_exceptions) : row.calendar_exceptions; if (Array.isArray(parsed)) exceptions = parsed; } catch { /* preserved as an empty list if malformed */ }
+          if (pattern === 'Custom' && !workingDays.length) throw new Error(`Calendar "${sourceCalendar}" is custom but contains no readable working days; no dates were changed.`);
           const stageKey = `${String(row.project_id || '')}:${String(row.contract_id || '')}:${sourceKey}`;
           let staged = stagedCalendarsBySource.get(stageKey);
           if (!staged) {
@@ -2064,7 +2070,7 @@ export function DataTableView({
               row: {
                 id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
                 calendar_code: calendarCodeFor(row, sourceCalendar), calendar_name: sourceCalendar, working_pattern: pattern,
-                calendar_exceptions: '', status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
+                calendar_working_days: JSON.stringify(workingDays), calendar_exceptions: JSON.stringify(exceptions), status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
               },
             };
             stagedCalendarsBySource.set(stageKey, staged);
@@ -2072,6 +2078,8 @@ export function DataTableView({
           }
           row.calendar_id = staged.row.id;
           row.calendar_name = pattern;
+          row.calendar_working_days = staged.row.calendar_working_days;
+          row.calendar_exceptions = staged.row.calendar_exceptions;
           row._pending_calendar_import = true;
         }
         const existingWbsByCode = new Map((relationshipOptions?.wbs_id || []).map((option) => [String(option.data?.wbs_code || '').trim().toLowerCase(), option]));

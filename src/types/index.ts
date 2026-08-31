@@ -351,6 +351,8 @@ export interface Schedule {
   calendar_name?: string;
   /** Comma-separated or JSON array of explicitly approved non-working ISO dates. */
   calendar_exceptions?: string[] | string | null;
+  /** JS weekday values (0 Sunday through 6 Saturday) for a Custom calendar. */
+  calendar_working_days?: number[] | string | null;
   critical_path: boolean;
   is_critical_item: boolean;
   responsible: string;
@@ -364,8 +366,9 @@ export interface WorkCalendar {
   id: string;
   calendar_code: string;
   calendar_name: string;
-  working_pattern: 'Calendar Days' | '5-Day Week' | '6-Day Week' | '24/7' | string;
+  working_pattern: 'Calendar Days' | '5-Day Week' | '6-Day Week' | '24/7' | 'Custom' | string;
   calendar_exceptions?: string[] | string | null;
+  calendar_working_days?: number[] | string | null;
   status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;

@@ -3190,6 +3190,7 @@ export default function App() {
           calendar_display_name: calendar.calendar_name || '',
           calendar_name: calendar.working_pattern || 'Calendar Days',
           calendar_exceptions: calendar.calendar_exceptions || '',
+          calendar_working_days: calendar.calendar_working_days || '',
         },
       }));
     relationshipOptions.supersedes_document_id = data.documents
