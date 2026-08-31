@@ -14,6 +14,7 @@ const TABLES = new Set([
   "app_users",
   "cash_flow", "subcontractor_invoices", "client_invoices", "variations", "variation_lines",
   "documents", "wir_entries", "labor_duty", "equipment", "tracking_sheet",
+  "resource_masters",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
   "parties", "party_contacts", "rate_history",
   "report_templates",

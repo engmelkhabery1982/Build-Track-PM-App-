@@ -1509,6 +1509,14 @@ export function DataTableView({
         throw new Error(`Resource date must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
       }
     }
+    if (tableName === 'labor_duty' && record.resource_id) {
+      const resource = relationshipOptions?.resource_id?.find((option) => option.value === record.resource_id);
+      if (!resource || resource.data?.resource_type !== 'Labor') throw new Error('Select an active Labor resource from Resource Master.');
+    }
+    if (tableName === 'equipment' && record.resource_id) {
+      const resource = relationshipOptions?.resource_id?.find((option) => option.value === record.resource_id);
+      if (!resource || resource.data?.resource_type !== 'Equipment') throw new Error('Select an active Equipment resource from Resource Master.');
+    }
     if (tableName === 'wir_entries') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
       if (!item) throw new Error('Select a valid BOQ item before saving the inspection request.');

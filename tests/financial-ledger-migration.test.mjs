@@ -125,6 +125,26 @@ print('ok')
   assert.equal(result, 'ok');
 });
 
+test('resource master migration creates a reusable local resource register', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*39,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 39 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO resource_masters VALUES ('res-1','2026-08-31T00:00:00Z',NULL,NULL,NULL,NULL,NULL,NULL,'{\"resource_code\":\"LAB-001\"}')")
+try:
+    db.execute("INSERT INTO resource_masters VALUES ('res-2','2026-08-31T00:00:00Z',NULL,NULL,NULL,NULL,NULL,NULL,'{\"resource_code\":\"LAB-001\"}')")
+    raise AssertionError('resource code uniqueness was not enforced')
+except sqlite3.IntegrityError:
+    pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});
+
 test('procurement receipt migration creates a controlled actual-cost source table', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
   const match = rust.match(/version:\s*25,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -68,6 +68,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'procurement', label: 'Procurement', icon: Package, group: 'Cost & Resources' },
   { key: 'procurementReconciliation', label: 'PO Reconciliation', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'procurementReceipts', label: 'Goods Receipts', icon: ClipboardCheck, group: 'Cost & Resources' },
+  { key: 'resourceMaster', label: 'Resource Master', icon: Users, group: 'Cost & Resources' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
   { key: 'tasks', label: 'Tasks & Actions', icon: CheckSquare, group: 'Field & Governance' },
@@ -770,6 +771,7 @@ const LABOR_DUTY_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
+  { key: 'resource_id', label: 'Resource', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'worker_name', label: 'Worker Name', type: 'text', editable: true },
   { key: 'role', label: 'Role', type: 'text', editable: true, options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] },
@@ -787,6 +789,7 @@ const EQUIPMENT_COLUMNS: ColumnDef[] = [
   { key: 'contract_id', label: 'Contract Code', type: 'select', editable: true },
   { key: 'boq_item_id', label: 'BOQ Item Code', type: 'select', editable: true },
   { key: 'schedule_id', label: 'Activity', type: 'select', editable: true },
+  { key: 'resource_id', label: 'Resource', type: 'select', editable: true },
   { key: 'date', label: 'Date', type: 'date', editable: true },
   { key: 'equipment_name', label: 'Equipment Name', type: 'text', editable: true },
   { key: 'equipment_type', label: 'Type', type: 'text', editable: true, options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] },
@@ -795,6 +798,18 @@ const EQUIPMENT_COLUMNS: ColumnDef[] = [
   { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
   { key: 'amount', label: 'Amount', type: 'money' },
   { key: 'payment_status', label: 'Payment Status', type: 'status', editable: true, options: PAYMENT_STATUSES },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+
+const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
+  { key: 'resource_code', label: 'Resource Code', type: 'text', editable: true },
+  { key: 'resource_name', label: 'Resource Name', type: 'text', editable: true },
+  { key: 'resource_type', label: 'Resource Type', type: 'status', editable: true, options: ['Labor', 'Equipment'] },
+  { key: 'role_or_type', label: 'Role / Equipment Type', type: 'text', editable: true },
+  { key: 'unit', label: 'Unit', type: 'text', editable: true },
+  { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
+  { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 
@@ -856,6 +871,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
   wir: { columns: WIR_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
   laborDuty: { columns: LABOR_DUTY_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] }], showProjectFilter: true, dateRangeColumn: 'date' },
+  resourceMaster: { columns: RESOURCE_MASTER_COLUMNS, filters: [{ key: 'resource_type', label: 'Type', options: ['Labor', 'Equipment'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   equipment: { columns: EQUIPMENT_COLUMNS, filters: [{ key: 'equipment_type', label: 'Type', options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   tracking: { columns: TRACKING_COLUMNS, filters: [{ key: 'status', label: 'Status', options: [] }, { key: 'source_type', label: 'Source', options: [] }], showProjectFilter: true, dateRangeColumn: 'created_time' },
 };
@@ -869,7 +885,7 @@ const TABLE_NAMES: Record<string, string> = {
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', variationLines: 'variation_lines', documents: 'documents', wir: 'wir_entries',
-  laborDuty: 'labor_duty', equipment: 'equipment', tracking: 'tracking_sheet',
+  laborDuty: 'labor_duty', resourceMaster: 'resource_masters', equipment: 'equipment', tracking: 'tracking_sheet',
   parties: 'parties', partyContacts: 'party_contacts', rateHistory: 'rate_history',
 };
 
@@ -882,7 +898,7 @@ const VIEW_TITLES: Record<string, string> = {
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', variationLines: 'Variation Lines', documents: 'Documents', wir: 'Work Inspection Reports',
-  laborDuty: 'Labor Duty', equipment: 'Equipment', tracking: 'Tracking Sheet',
+  laborDuty: 'Labor Duty', resourceMaster: 'Resource Master', equipment: 'Equipment', tracking: 'Tracking Sheet',
   parties: 'Clients, Vendors & Subcontractors', partyContacts: 'Party Contacts', rateHistory: 'Rate History',
 };
 
@@ -3108,6 +3124,22 @@ export default function App() {
           },
         };
       });
+    relationshipOptions.resource_id = data.resourceMasters
+      .filter((resource: any) => resource.status !== 'Inactive')
+      .map((resource: any) => ({
+        value: resource.id,
+        label: `${resource.resource_code || 'RES'} — ${resource.resource_name || 'Unnamed resource'}`,
+        data: {
+          resource_type: resource.resource_type,
+          worker_name: resource.resource_type === 'Labor' ? resource.resource_name : undefined,
+          equipment_name: resource.resource_type === 'Equipment' ? resource.resource_name : undefined,
+          role: resource.resource_type === 'Labor' ? resource.role_or_type : undefined,
+          equipment_type: resource.resource_type === 'Equipment' ? resource.role_or_type : undefined,
+          unit: resource.unit,
+          rate_per_hour: resource.resource_type === 'Labor' ? resource.standard_rate : undefined,
+          unit_rate: resource.resource_type === 'Equipment' ? resource.standard_rate : undefined,
+        },
+      }));
     relationshipOptions.calendar_id = data.workCalendars
       .filter((calendar: any) => calendar.status !== 'Inactive')
       .map((calendar: any) => ({

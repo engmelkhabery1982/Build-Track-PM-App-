@@ -147,7 +147,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return (actualStart && row.start_date && actualStart < String(row.start_date))
       || (actualFinish && row.end_date && actualFinish > String(row.end_date));
   });
-  pushIf(lateOrEarlyActualActivities.length > 0, { severity: 'Warning', title: 'Actual activity dates differ from current plan', detail: `${lateOrEarlyActualActivities.length} activity update(s) start earlier or finish later than the controlled current plan. Record and approve the schedule variance; do not overwrite baseline dates.`, view: 'schedule' });
+  pushIf(findings, lateOrEarlyActualActivities.length > 0, { severity: 'Warning', title: 'Actual activity dates differ from current plan', detail: `${lateOrEarlyActualActivities.length} activity update(s) start earlier or finish later than the controlled current plan. Record and approve the schedule variance; do not overwrite baseline dates.`, view: 'schedule' });
   const excessivePlans = data.boqItems.filter((item) => data.schedules.filter((row) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, excessivePlans.length > 0, { severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
   const invalidDistributionScope = scheduleDistributions.filter((row) => {

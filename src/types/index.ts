@@ -559,6 +559,7 @@ export interface LaborDuty {
   project_id: string;
   contract_id: string | null;
   schedule_id?: string | null;
+  resource_id?: string | null;
   project_code: string;
   date: string | null;
   worker_name: string;
@@ -578,6 +579,7 @@ export interface Equipment {
   project_id: string;
   contract_id: string | null;
   schedule_id?: string | null;
+  resource_id?: string | null;
   project_code: string;
   date: string | null;
   equipment_name: string;
@@ -586,6 +588,21 @@ export interface Equipment {
   quantity: number;
   unit_rate: number;
   amount: number;
+  notes: string;
+  created_at: string;
+}
+
+/** Reusable workforce/equipment catalogue. Assignments remain project records. */
+export interface ResourceMaster {
+  id: string;
+  resource_code: string;
+  resource_name: string;
+  resource_type: 'Labor' | 'Equipment' | string;
+  role_or_type: string;
+  unit: string;
+  standard_rate: number;
+  daily_capacity_hours: number;
+  status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
 }
@@ -863,5 +880,5 @@ export type ViewKey =
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
-  | 'variations' | 'variationLines' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking'
+  | 'variations' | 'variationLines' | 'documents' | 'wir' | 'resourceMaster' | 'laborDuty' | 'equipment' | 'tracking'
   | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'costChanges' | 'paymentCertificates';

@@ -1423,6 +1423,20 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 39,
+            description: "create_reusable_resource_master",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS resource_masters (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
+        project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_resource_master_code
+        ON resource_masters(json_extract(payload, '$.resource_code'));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

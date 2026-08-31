@@ -3,7 +3,7 @@ import { dataRepository } from '@/data';
 import type {
   Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
-  ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
+  ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
   InvoiceTracking, ScheduleDistribution, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange, WorkCalendar,
 } from '@/types';
 
@@ -53,6 +53,7 @@ export function useData() {
   const [wirEntries, setWirEntries] = useState<WIREntry[]>([]);
   const [laborDuty, setLaborDuty] = useState<LaborDuty[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [resourceMasters, setResourceMasters] = useState<ResourceMaster[]>([]);
   const [tracking, setTracking] = useState<TrackingSheet[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [partyContacts, setPartyContacts] = useState<PartyContact[]>([]);
@@ -80,7 +81,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -119,6 +120,7 @@ export function useData() {
         dataRepository.list<WIREntry>('wir_entries'),
         dataRepository.list<LaborDuty>('labor_duty'),
         dataRepository.list<Equipment>('equipment'),
+        listOptional<ResourceMaster>('resource_masters'),
         dataRepository.list<TrackingSheet>('tracking_sheet'),
         listOptional<Party>('parties'),
         listOptional<PartyContact>('party_contacts'),
@@ -162,6 +164,7 @@ export function useData() {
       setWirEntries(wr);
       setLaborDuty(ld);
       setEquipment(eq);
+      setResourceMasters(rm);
       setTracking(tr);
       setParties(pa); setPartyContacts(pc); setRateHistory(rh);
       setReportTemplates(rt);
@@ -235,6 +238,7 @@ export function useData() {
       case 'wir_entries': apply(setWirEntries); break;
       case 'labor_duty': apply(setLaborDuty); break;
       case 'equipment': apply(setEquipment); break;
+      case 'resource_masters': apply(setResourceMasters); break;
       case 'tracking_sheet': apply(setTracking); break;
       case 'parties': apply(setParties); break;
       case 'party_contacts': apply(setPartyContacts); break;
@@ -258,7 +262,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, workCalendars, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
-    documents, wirEntries, laborDuty, equipment, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,
+    documents, wirEntries, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }
