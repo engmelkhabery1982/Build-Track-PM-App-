@@ -25,7 +25,7 @@ export interface GovernedImportUpdate {
  * target rows. Primavera schedule import may create WBS nodes and safely
  * interpreted Work Calendar masters. */
 export interface GovernedImportAuxiliaryRow {
-  table: 'wbs_nodes' | 'work_calendars';
+  table: 'wbs_nodes' | 'work_calendars' | 'resource_masters' | 'schedule_resource_assignments';
   row: Record<string, unknown>;
 }
 

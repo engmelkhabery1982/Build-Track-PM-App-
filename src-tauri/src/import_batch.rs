@@ -201,10 +201,10 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
     let mut wbs_codes = HashSet::new();
     let mut calendar_codes = HashSet::new();
     for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
-        if !matches!(auxiliary.table.as_str(), "wbs_nodes" | "work_calendars") { return Err("Only WBS nodes and work calendars may be created as supporting import rows.".into()); }
-        let label = if auxiliary.table == "wbs_nodes" { "WBS" } else { "Work calendar" };
+        if !matches!(auxiliary.table.as_str(), "wbs_nodes" | "work_calendars" | "resource_masters" | "schedule_resource_assignments") { return Err("Unsupported supporting import table.".into()); }
+        let label = match auxiliary.table.as_str() { "wbs_nodes" => "WBS", "work_calendars" => "Work calendar", "resource_masters" => "Resource master", _ => "Resource assignment" };
         let row = auxiliary.row.as_object().ok_or_else(|| format!("{label} row {}: import data is not an object.", index + 1))?;
-        let code_field = if auxiliary.table == "wbs_nodes" { "wbs_code" } else { "calendar_code" };
+        let code_field = match auxiliary.table.as_str() { "wbs_nodes" => "wbs_code", "work_calendars" => "calendar_code", "resource_masters" => "resource_code", _ => "id" };
         if string_value(row, "id").is_empty() || string_value(row, code_field).is_empty() {
             return Err(format!("{label} row {}: a controlled identifier and {code_field} are required.", index + 1));
         }
@@ -221,7 +221,7 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
             let exists: Option<String> = sqlx::query_scalar("SELECT id FROM wbs_nodes WHERE project_id=? AND lower(json_extract(payload, '$.wbs_code'))=?")
                 .bind(&request.project_id).bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
             if exists.is_some() { return Err(format!("WBS row {}: WBS code already exists in the selected project.", index + 1)); }
-        } else {
+        } else if auxiliary.table == "work_calendars" {
             let pattern = string_value(row, "working_pattern");
             if !matches!(pattern.as_str(), "Calendar Days" | "5-Day Week" | "6-Day Week" | "24/7" | "Custom") {
                 return Err(format!("Work calendar row {}: working pattern is not governed.", index + 1));
@@ -233,6 +233,14 @@ async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &Imp
             let exists: Option<String> = sqlx::query_scalar("SELECT id FROM work_calendars WHERE lower(json_extract(payload, '$.calendar_code'))=?")
                 .bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
             if exists.is_some() { return Err(format!("Work calendar row {}: calendar code already exists.", index + 1)); }
+        } else if auxiliary.table == "resource_masters" {
+            let kind = string_value(row, "resource_type");
+            if !matches!(kind.as_str(), "Labor" | "Equipment") || string_value(row, "resource_name").is_empty() { return Err(format!("Resource master row {}: name and governed Labor/Equipment type are required.", index + 1)); }
+            let exists: Option<String> = sqlx::query_scalar("SELECT id FROM resource_masters WHERE lower(json_extract(payload, '$.resource_code'))=?")
+                .bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+            if exists.is_some() { return Err(format!("Resource master row {}: resource code already exists.", index + 1)); }
+        } else {
+            if string_value(row, "schedule_id").is_empty() || string_value(row, "resource_id").is_empty() || !matches!(string_value(row, "resource_type").as_str(), "Labor" | "Equipment") { return Err(format!("Resource assignment row {}: activity, resource and governed type are required.", index + 1)); }
         }
     }
     Ok(())
@@ -260,7 +268,7 @@ async fn insert_target(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<
 }
 
 async fn insert_auxiliary(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<String, Value>) -> Result<(), String> {
-    if !matches!(table, "wbs_nodes" | "work_calendars") { return Err("Unsupported supporting import table.".into()); }
+    if !matches!(table, "wbs_nodes" | "work_calendars" | "resource_masters" | "schedule_resource_assignments") { return Err("Unsupported supporting import table.".into()); }
     sqlx::query(&format!("INSERT INTO {table} (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)"))
         .bind(string_value(row,"id")).bind(string_value(row,"created_at")).bind(string_value(row,"project_id")).bind(string_value(row,"contract_id"))
         .bind(string_value(row,"boq_header_id")).bind(string_value(row,"boq_item_id")).bind(string_value(row,"parent_main_project_id")).bind(string_value(row,"parent_main_contract_id"))

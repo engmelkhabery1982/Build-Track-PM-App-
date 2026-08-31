@@ -2187,6 +2187,32 @@ export function DataTableView({
             row._planning_refresh = true;
           }
         }
+        // P6 resource assignments become governed local masters plus planned
+        // activity assignments in the same desktop import batch. This keeps
+        // the P6 import traceable without allowing a free-text resource to
+        // enter the planning model.
+        const existingResources = new Map((relationshipOptions?.resource_id || []).map((option) => [String(option.label || '').split('—')[0].trim().toLowerCase(), option]));
+        const stagedResources = new Map<string, GovernedImportAuxiliaryRow>();
+        for (const row of mapped) {
+          let entries: Array<Record<string, any>> = [];
+          try { const parsed = typeof row._primavera_resource_assignments === 'string' ? JSON.parse(row._primavera_resource_assignments) : row._primavera_resource_assignments; if (Array.isArray(parsed)) entries = parsed; } catch { /* parser validation preserves an empty safe set */ }
+          for (const entry of entries) {
+            const code = String(entry.resource_code || '').trim();
+            const type = String(entry.resource_type || '');
+            if (!code || !['Labor', 'Equipment'].includes(type)) continue;
+            const key = code.toLowerCase();
+            let resourceId = existingResources.get(key)?.value;
+            if (!resourceId) {
+              let staged = stagedResources.get(key);
+              if (!staged) {
+                staged = { table: 'resource_masters', row: { id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id || applicableScope.project_id || null, contract_id: row.contract_id || applicableScope.contract_id || null, resource_code: code, resource_name: String(entry.resource_name || code), resource_type: type, role_or_type: type, unit: 'Hour', standard_rate: Number(entry.planned_hours) > 0 ? Math.round((Number(entry.planned_cost) || 0) / Number(entry.planned_hours) * 100) / 100 : 0, daily_capacity_hours: 8, status: 'Active', notes: 'Created automatically from governed Primavera resource import.' } };
+                stagedResources.set(key, staged); auxiliaryRows.push(staged);
+              }
+              resourceId = String(staged.row.id);
+            }
+            auxiliaryRows.push({ table: 'schedule_resource_assignments', row: { id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id, boq_header_id: row.boq_header_id || null, boq_item_id: row.boq_item_id || null, schedule_id: row.id, resource_id: resourceId, resource_type: type, assignment_start: row.start_date || null, assignment_end: row.end_date || null, planned_hours: Number(entry.planned_hours) || 0, planned_quantity: 0, planned_cost: Number(entry.planned_cost) || 0, notes: `Imported from Primavera activity ${row.activity_code || row.id}.` } });
+          }
+        }
       }
       // Do not write immediately after the user chooses a file.  The user
       // first reviews the mapped values and the active project/contract
