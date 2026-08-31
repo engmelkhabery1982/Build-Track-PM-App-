@@ -39,6 +39,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
+  { key: 'workCalendars', label: 'Work Calendar Master', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'scheduleDistributions', label: 'Planned Quantity Distribution', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'wir', label: 'Inspection Requests', icon: FileCheck2, group: 'Planning & Controls' },
   { key: 'progress', label: 'WIR & Progress', icon: TrendingUp, group: 'Planning & Controls' },
@@ -415,13 +416,22 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'network_warning', label: 'Network Check', type: 'text', editable: false },
   { key: 'forecast_start_date', label: 'CPM Forecast Start', type: 'date', editable: false },
   { key: 'forecast_end_date', label: 'CPM Forecast Finish', type: 'date', editable: false },
-  { key: 'calendar_name', label: 'Calendar', type: 'status', editable: true, options: [...WORK_CALENDARS] },
-  { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: true },
+  { key: 'calendar_id', label: 'Work Calendar', type: 'select', editable: true },
+  { key: 'calendar_name', label: 'Calendar Pattern', type: 'status', editable: false, options: [...WORK_CALENDARS] },
+  { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: false },
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
   { key: 'is_critical_item', label: 'Critical Item', type: 'boolean', editable: true },
   { key: 'responsible', label: 'Responsible', type: 'text', editable: true },
   { key: 'variance_reason', label: 'Date Variance Reason', type: 'text', editable: true },
   { key: 'status', label: 'EVM Status', type: 'evm', editable: false },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
+const WORK_CALENDAR_COLUMNS: ColumnDef[] = [
+  { key: 'calendar_code', label: 'Calendar Code', type: 'text', editable: true },
+  { key: 'calendar_name', label: 'Calendar Name', type: 'text', editable: true },
+  { key: 'working_pattern', label: 'Working Pattern', type: 'status', editable: true, options: [...WORK_CALENDARS] },
+  { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
 const SCHEDULE_DISTRIBUTION_COLUMNS: ColumnDef[] = [
@@ -819,6 +829,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
   schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  workCalendars: { columns: WORK_CALENDAR_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }, { key: 'working_pattern', label: 'Working Pattern', options: [...WORK_CALENDARS] }] },
   scheduleDistributions: { columns: SCHEDULE_DISTRIBUTION_COLUMNS, filters: [{ key: 'activity_name', label: 'Activity', options: [] }], showProjectFilter: true, dateRangeColumn: 'period_start' },
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
@@ -842,7 +853,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 
 const TABLE_NAMES: Record<string, string> = {
   projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', costChanges: 'cost_changes', paymentCertificates: 'payment_certificates',
-  procurement: 'procurement', procurementReceipts: 'procurement_receipts', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions',
+  procurement: 'procurement', procurementReceipts: 'procurement_receipts', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions', workCalendars: 'work_calendars',
   procurementReconciliation: 'procurement',
   supplierInvoices: 'supplier_invoices', supplierInvoiceLines: 'supplier_invoice_lines', supplierInvoicePayments: 'supplier_invoice_payments',
   schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
@@ -855,7 +866,7 @@ const TABLE_NAMES: Record<string, string> = {
 
 const VIEW_TITLES: Record<string, string> = {
   projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', costChanges: 'Cost Changes', paymentCertificates: 'Payment Certificates',
-  procurement: 'Procurement', procurementReceipts: 'Goods Receipts', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution',
+  procurement: 'Procurement', procurementReceipts: 'Goods Receipts', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution', workCalendars: 'Work Calendar Master',
   procurementReconciliation: 'PO Reconciliation',
   supplierInvoices: 'Supplier Invoices / AP', supplierInvoiceLines: 'Supplier Invoice Match Lines', supplierInvoicePayments: 'Supplier Payments',
   schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
@@ -2437,8 +2448,10 @@ export default function App() {
           ? data.wirEntries
         : activeView === 'schedule'
           ? data.schedules
-          : activeView === 'scheduleDistributions'
+        : activeView === 'scheduleDistributions'
             ? data.scheduleDistributions
+            : activeView === 'workCalendars'
+              ? data.workCalendars
             : activeView === 'parties'
               ? data.parties
               : activeView === 'partyContacts'
@@ -3068,6 +3081,16 @@ export default function App() {
           },
         };
       });
+    relationshipOptions.calendar_id = data.workCalendars
+      .filter((calendar: any) => calendar.status !== 'Inactive')
+      .map((calendar: any) => ({
+        value: calendar.id,
+        label: `${calendar.calendar_code || 'CAL'} — ${calendar.calendar_name || calendar.working_pattern || 'Calendar'}`,
+        data: {
+          calendar_name: calendar.working_pattern || 'Calendar Days',
+          calendar_exceptions: calendar.calendar_exceptions || '',
+        },
+      }));
     relationshipOptions.supersedes_document_id = data.documents
       .filter((document: any) => document.is_current !== false && document.status !== 'Superseded')
       .map((document: any) => ({

@@ -103,6 +103,28 @@ print('ok')
   assert.equal(result, 'ok');
 });
 
+test('work-calendar master migration creates a reusable local SQLite register', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*38,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 38 must exist');
+  const sqliteAcceptance = String.raw`
+import sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO work_calendars VALUES ('cal-1','2026-08-31T00:00:00Z',NULL,NULL,NULL,NULL,NULL,NULL,'{\"calendar_code\":\"CAL-6D\"}')")
+try:
+    db.execute("INSERT INTO work_calendars VALUES ('cal-2','2026-08-31T00:00:00Z',NULL,NULL,NULL,NULL,NULL,NULL,'{\"calendar_code\":\"CAL-6D\"}')")
+    raise AssertionError('calendar code uniqueness was not enforced')
+except sqlite3.IntegrityError:
+    pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], {
+    input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+  assert.equal(result, 'ok');
+});
+
 test('procurement receipt migration creates a controlled actual-cost source table', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
   const match = rust.match(/version:\s*25,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);

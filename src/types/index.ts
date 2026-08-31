@@ -336,6 +336,7 @@ export interface Schedule {
   predecessor_item: string;
   predecessor_items?: string[] | string;
   predecessor_links?: Array<{ predecessor_id?: string; relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string; lag_days?: number }> | string;
+  calendar_id?: string | null;
   relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string;
   lag_days?: number;
   calendar_name?: string;
@@ -345,6 +346,18 @@ export interface Schedule {
   is_critical_item: boolean;
   responsible: string;
   status: string;
+  notes: string;
+  created_at: string;
+}
+
+/** Reusable working-time definition for activities. */
+export interface WorkCalendar {
+  id: string;
+  calendar_code: string;
+  calendar_name: string;
+  working_pattern: 'Calendar Days' | '5-Day Week' | '6-Day Week' | '24/7' | string;
+  calendar_exceptions?: string[] | string | null;
+  status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
 }
@@ -838,7 +851,7 @@ export interface ReportTemplate {
 }
 
 export type ViewKey =
-  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'tasks' | 'costs' | 'costEntries'
+  | 'dashboard' | 'alerts' | 'dataQuality' | 'insights' | 'workQueue' | 'reportPack' | 'help' | 'preferences' | 'dataEntry' | 'projects' | 'portfolio' | 'baselines' | 'reportingPeriods' | 'snapshots' | 'users' | 'governance' | 'approvals' | 'auditLog' | 'rfi' | 'submittals' | 'quality' | 'dailyReports' | 'scheduleDistributions' | 'workCalendars' | 'tasks' | 'costs' | 'costEntries'
   | 'procurement' | 'procurementReconciliation' | 'procurementReceipts' | 'safety' | 'progress' | 'schedule' | 'contracts'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
