@@ -325,6 +325,12 @@ export interface Schedule {
   start_date: string | null;
   end_date: string | null;
   duration_days: number;
+  /** Controlled status-update fields. They must never overwrite plan/baseline dates. */
+  activity_status?: 'Not Started' | 'In Progress' | 'Completed' | string;
+  actual_start_date?: string | null;
+  actual_finish_date?: string | null;
+  remaining_duration_days?: number;
+  status_data_date?: string | null;
   planned_labor_hours?: number;
   planned_equipment_hours?: number;
   budget: number;

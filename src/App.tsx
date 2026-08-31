@@ -15,7 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
-import { calculateCpm, calculateCpmForecast } from '@/utils/cpm';
+import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
@@ -397,6 +397,10 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },
+  { key: 'activity_status', label: 'Update Status', type: 'status', editable: true, options: ['Not Started', 'In Progress', 'Completed'] },
+  { key: 'status_data_date', label: 'Status Data Date', type: 'date', editable: true },
+  { key: 'actual_start_date', label: 'Actual Start', type: 'date', editable: true },
+  { key: 'actual_finish_date', label: 'Actual Finish', type: 'date', editable: true },
   { key: 'planned_labor_hours', label: 'Planned Man-hours', type: 'number', editable: true },
   { key: 'actual_labor_hours', label: 'Actual Man-hours', type: 'number', editable: false },
   { key: 'planned_equipment_hours', label: 'Planned Equipment-hours', type: 'number', editable: true },
@@ -405,7 +409,7 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'actual_work_quantity', label: 'Actual Qty (linked WIR)', type: 'number', editable: false },
   { key: 'actual_productivity', label: 'Actual Qty / MH', type: 'number', editable: false },
   { key: 'productivity_variance_pct', label: 'Productivity Variance %', type: 'number', editable: false },
-  { key: 'remaining_duration_days', label: 'Remaining Duration', type: 'number', editable: false },
+  { key: 'remaining_duration_days', label: 'Remaining Duration', type: 'number', editable: true },
   { key: 'unit_rate', label: 'Main Unit Rate', type: 'money', editable: false },
   { key: 'budget', label: 'Planned Budget', type: 'money', editable: false },
   { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: true },
@@ -2805,9 +2809,22 @@ export default function App() {
               : directWirQuantity;
             const productivity = calculateProductivityMetrics({ plannedQuantity: summaryQuantity, plannedLaborHours: summaryLaborHours, actualQuantity: summaryActualQuantity, actualLaborHours: summaryActualLaborHours });
             const network = cpmByActivity.get(schedule.id);
-            const remainingDuration = budget > 0
+            // Remaining duration is a planner-controlled status value, not an
+            // EVM percentage.  Old rows retain the former derived fallback
+            // until the planner records an actual status update.
+            const derivedRemaining = budget > 0
               ? Math.max(0, Math.round(summaryDuration * (1 - Math.min(1, earned / budget))))
               : summaryDuration;
+            const activityRemaining = (activity: any) => {
+              if (String(activity.activity_status || '') === 'Completed') return 0;
+              const recorded = Number(activity.remaining_duration_days);
+              return Number.isFinite(recorded) && recorded >= 0 ? recorded : Math.max(0, Number(activity.duration_days) || 0);
+            };
+            const remainingDuration = isSummaryRow && childActivities.length > 0
+              ? childActivities.reduce((sum: number, activity: any) => sum + activityRemaining(activity), 0)
+              : (Object.prototype.hasOwnProperty.call(schedule, 'remaining_duration_days')
+                ? activityRemaining(schedule)
+                : derivedRemaining);
             const costState = actualCost <= budget ? 'Under Budget' : 'Over Budget';
             const scheduleState = spi === null ? 'No Planned Value' : spi >= 1 ? 'Ahead of Schedule' : 'Behind Schedule';
             return {
@@ -3359,8 +3376,8 @@ export default function App() {
         readOnly={roleReadOnly}
         progressWirs={data.wirEntries}
         toolbarAction={tableName === 'schedule' ? {
-          label: 'Recalculate CPM Forecast',
-          title: 'Recalculate forecast dates, float and critical path from predecessor logic. Planned dates and approved baselines are not changed.',
+          label: 'Update CPM Status Forecast',
+          title: 'Recalculate retained-logic forecast from approved predecessor logic, actuals, remaining duration and Data Date. Planned dates and approved baselines are not changed.',
           onClick: async () => {
             const activities = data.schedules.filter((row: any) => String(row.activity || '').trim()) as Record<string, any>[];
             const byContract = new Map<string, Record<string, any>[]>();
@@ -3376,7 +3393,15 @@ export default function App() {
               if (!anchor) continue;
               const idByReference = new Map<string, string>();
               rows.forEach((row) => [row.id, row.activity_code, row.source_activity_code].filter(Boolean).forEach((reference) => idByReference.set(String(reference).trim(), row.id)));
-              const forecast = calculateCpmForecast(rows.map((row) => ({
+              const reportingDates = data.reportingPeriods
+                .filter((period: any) => period.contract_id === contractId && period.data_date)
+                .map((period: any) => String(period.data_date))
+                .sort();
+              const reportingDataDate = reportingDates[reportingDates.length - 1];
+              const activityDates = rows.map((row) => String(row.status_data_date || '')).filter(Boolean).sort();
+              const activityDataDate = activityDates[activityDates.length - 1];
+              const dataDate = reportingDataDate || activityDataDate || new Date().toISOString().slice(0, 10);
+              const forecast = calculateCpmStatusForecast(rows.map((row) => ({
                 id: row.id,
                 duration_days: row.duration_days,
                 predecessor_item: row.predecessor_item,
@@ -3386,7 +3411,11 @@ export default function App() {
                 lag_days: row.lag_days,
                 calendar_name: row.calendar_name,
                 calendar_exceptions: row.calendar_exceptions,
-              })), anchor);
+                activity_status: row.activity_status,
+                actual_start_date: row.actual_start_date,
+                actual_finish_date: row.actual_finish_date,
+                remaining_duration_days: row.remaining_duration_days,
+              })), anchor, dataDate);
               for (const row of rows) {
                 const result = forecast.get(row.id);
                 if (!result) continue;
@@ -3396,7 +3425,8 @@ export default function App() {
                   forecast_end_date: result.forecastFinish,
                   total_float_days: result.totalFloat,
                   network_critical: result.critical,
-                  network_warning: '',
+                  network_warning: result.statusWarning || '',
+                  forecast_data_date: result.dataDate,
                 });
                 data.applyLocalMutation('schedules', { type: 'update', row: saved });
                 updatedCount += 1;

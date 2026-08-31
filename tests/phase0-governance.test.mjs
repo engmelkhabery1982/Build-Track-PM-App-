@@ -253,6 +253,31 @@ test('CPM forecast writes separate forecast dates without changing planned dates
   assert.equal(forecast.get('B').forecastFinish, '2026-01-07');
 });
 
+test('CPM status forecast honors Data Date, actuals, remaining duration, and retained logic', () => {
+  const statusForecast = cpm.calculateCpmStatusForecast([
+    { id: 'A', duration_days: 5, calendar_name: 'Calendar Days', activity_status: 'Completed', actual_start_date: '2026-01-01', actual_finish_date: '2026-01-08', remaining_duration_days: 0 },
+    { id: 'B', duration_days: 4, predecessor_item: 'A', relationship_type: 'FS', calendar_name: 'Calendar Days', activity_status: 'In Progress', actual_start_date: '2026-01-09', remaining_duration_days: 2 },
+    { id: 'C', duration_days: 3, predecessor_item: 'B', relationship_type: 'FS', calendar_name: 'Calendar Days', activity_status: 'Not Started' },
+  ], '2026-01-01', '2026-01-12');
+  assert.equal(statusForecast.get('A').forecastFinish, '2026-01-08', 'completed activity keeps its actual finish');
+  assert.equal(statusForecast.get('B').forecastFinish, '2026-01-14', 'in-progress activity uses remaining duration from the Data Date');
+  assert.equal(statusForecast.get('C').forecastStart, '2026-01-14', 'not-started successor retains predecessor logic after the update');
+  assert.equal(statusForecast.get('C').forecastFinish, '2026-01-17');
+});
+
+test('data quality identifies inconsistent schedule status updates', () => {
+  const source = {
+    projects: [{ id: 'project-1' }],
+    contracts: [{ id: 'contract-1', project_id: 'project-1' }],
+    boqHeaders: [{ id: 'header-1', project_id: 'project-1', contract_id: 'contract-1' }],
+    boqItems: [{ id: 'item-1', project_id: 'project-1', contract_id: 'contract-1', boq_header_id: 'header-1', item_code: 'A', quantity: 10 }],
+    schedules: [{ id: 'activity-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', activity: 'Install', planned_quantity: 10, activity_status: 'Completed', actual_start_date: '2026-02-05', actual_finish_date: '', remaining_duration_days: 2 }],
+    wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [],
+  };
+  const findings = quality.runDataQualityChecks(source);
+  assert.ok(findings.some((finding) => finding.title === 'Schedule status update is invalid'));
+});
+
 test('locked reporting periods block dated inserts, updates and deletes', () => {
   const locked = [{ id: 'period-1', project_id: 'project-1', period_name: 'January close', start_date: '2026-01-01', end_date: '2026-01-31', data_date: '2026-01-31', status: 'Locked' }];
   assert.throws(() => periods.assertRecordPeriodIsOpen(locked, { project_id: 'project-1', inspection_date: '2026-01-15' }), /January close/);

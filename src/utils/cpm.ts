@@ -1,4 +1,4 @@
-import { addWorkingDays } from './schedulePlanning.ts';
+import { addWorkingDays, subtractWorkingDays } from './schedulePlanning.ts';
 
 export type NetworkActivity = {
   id: string;
@@ -11,6 +11,11 @@ export type NetworkActivity = {
   lag_days?: number | null;
   calendar_name?: string | null;
   calendar_exceptions?: string[] | string | null;
+  /** Status-update fields are deliberately separate from planned dates. */
+  activity_status?: 'Not Started' | 'In Progress' | 'Completed' | string | null;
+  actual_start_date?: string | null;
+  actual_finish_date?: string | null;
+  remaining_duration_days?: number | null;
 };
 
 export type CpmResult = {
@@ -24,6 +29,12 @@ export type CpmResult = {
 };
 
 export type CpmForecast = CpmResult & { forecastStart: string | null; forecastFinish: string | null };
+export type CpmStatusForecast = CpmForecast & {
+  /** Explicit data date used for this status update. */
+  dataDate: string | null;
+  /** The retained-logic status forecast never changes plan/baseline dates. */
+  statusWarning: string | null;
+};
 
 function duration(row: NetworkActivity): number { return Math.max(0, Number(row.duration_days) || 0); }
 
@@ -127,4 +138,87 @@ export function calculateCpmForecast(activities: NetworkActivity[], projectStart
     const forecastFinish = result.cycle ? null : addWorkingDays(projectStart, result.earlyFinish, activity);
     return [activity.id, { ...result, forecastStart, forecastFinish }];
   }));
+}
+
+function laterDate(...dates: Array<string | null | undefined>): string | null {
+  const usable = dates.filter((date): date is string => Boolean(date && /^\d{4}-\d{2}-\d{2}$/.test(date)));
+  const sorted = usable.sort();
+  return sorted.length ? sorted[sorted.length - 1] : null;
+}
+
+function shiftWorkingDays(date: string | null, days: number, calendar: NetworkActivity): string | null {
+  return days >= 0 ? addWorkingDays(date, days, calendar) : subtractWorkingDays(date, Math.abs(days), calendar);
+}
+
+/**
+ * Creates a retained-logic forecast from a schedule status update.  Actual
+ * dates are authoritative for completed work; in-progress work resumes at
+ * the Data Date for its governed remaining duration; not-started work is
+ * pushed by both the Data Date and predecessor forecasts.  Planned dates and
+ * baseline dates are read only in this calculation.
+ */
+export function calculateCpmStatusForecast(
+  activities: NetworkActivity[],
+  projectStart: string | null | undefined,
+  dataDate: string | null | undefined,
+): Map<string, CpmStatusForecast> {
+  const network = calculateCpm(activities);
+  const rows = new Map(activities.map((row) => [row.id, row]));
+  const base = calculateCpmForecast(activities, projectStart);
+  const result = new Map<string, CpmStatusForecast>();
+  const ordered = [...activities].sort((left, right) => {
+    const leftStart = network.get(left.id)?.earlyStart ?? Number.MAX_SAFE_INTEGER;
+    const rightStart = network.get(right.id)?.earlyStart ?? Number.MAX_SAFE_INTEGER;
+    return leftStart - rightStart || left.id.localeCompare(right.id);
+  });
+
+  for (const activity of ordered) {
+    const cpm = network.get(activity.id)!;
+    const original = base.get(activity.id)!;
+    if (cpm.cycle) {
+      result.set(activity.id, { ...original, dataDate: dataDate || null, statusWarning: 'Dependency cycle: status forecast was not calculated.' });
+      continue;
+    }
+    const status = String(activity.activity_status || 'Not Started');
+    const baselineStart = original.forecastStart;
+    const calendar = activity;
+    let forecastStart: string | null = baselineStart;
+    let forecastFinish: string | null = original.forecastFinish;
+    let warning: string | null = null;
+
+    if (status === 'Completed') {
+      forecastStart = activity.actual_start_date || baselineStart;
+      forecastFinish = activity.actual_finish_date || forecastStart;
+      if (!activity.actual_finish_date) warning = 'Completed activity has no actual finish date.';
+    } else if (status === 'In Progress') {
+      forecastStart = activity.actual_start_date || baselineStart;
+      const remaining = Math.max(0, Number(activity.remaining_duration_days) || 0);
+      const resumeDate = laterDate(dataDate || null, activity.actual_start_date || null, baselineStart);
+      forecastFinish = shiftWorkingDays(resumeDate, remaining, calendar);
+      if (!activity.actual_start_date) warning = 'In-progress activity has no actual start date.';
+      else if (!dataDate) warning = 'In-progress activity forecast uses the planned start because no Data Date was supplied.';
+    } else {
+      let constrainedStart = laterDate(baselineStart, dataDate || null);
+      for (const edge of predecessorEdges(activity)) {
+        const predecessor = rows.get(edge.id);
+        const predecessorForecast = result.get(edge.id);
+        if (!predecessor || !predecessorForecast) continue;
+        const relationship = edge.relationship;
+        let candidate: string | null;
+        if (relationship === 'SS') candidate = shiftWorkingDays(predecessorForecast.forecastStart, edge.lag, predecessor);
+        else if (relationship === 'FF') {
+          const requiredFinish = shiftWorkingDays(predecessorForecast.forecastFinish, edge.lag, predecessor);
+          candidate = subtractWorkingDays(requiredFinish, duration(activity), calendar);
+        } else if (relationship === 'SF') {
+          const requiredFinish = shiftWorkingDays(predecessorForecast.forecastStart, edge.lag, predecessor);
+          candidate = subtractWorkingDays(requiredFinish, duration(activity), calendar);
+        } else candidate = shiftWorkingDays(predecessorForecast.forecastFinish, edge.lag, predecessor);
+        constrainedStart = laterDate(constrainedStart, candidate);
+      }
+      forecastStart = constrainedStart;
+      forecastFinish = addWorkingDays(forecastStart, duration(activity), calendar);
+    }
+    result.set(activity.id, { ...original, forecastStart, forecastFinish, dataDate: dataDate || null, statusWarning: warning });
+  }
+  return result;
 }

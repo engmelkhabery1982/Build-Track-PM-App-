@@ -999,6 +999,8 @@ export function DataTableView({
       out.unit_rate = rate;
       out.planned_value = Math.round(quantity * rate * 100) / 100;
       out.budget = out.planned_value;
+      out.activity_status = out.activity_status || 'Not Started';
+      if (out.activity_status === 'Completed') out.remaining_duration_days = 0;
     }
     if (contracts && (tableName === 'subcontractor_invoices' || tableName === 'cost_entries' || tableName === 'costs' || tableName === 'progress_entries' || tableName === 'wir_entries')) {
       const mainContractId = getMainContractId(out.contract_id, contracts);
@@ -1476,6 +1478,19 @@ export function DataTableView({
       if (isExecutableActivity && outsideItemDates && !String(record.variance_reason || '').trim()) {
         throw new Error(`Activity dates are outside the governed BOQ item period (${itemStart || 'not set'} to ${itemEnd || 'not set'}). Enter a variance reason before saving.`);
       }
+      const updateStatus = String(record.activity_status || 'Not Started');
+      const actualStart = String(record.actual_start_date || '');
+      const actualFinish = String(record.actual_finish_date || '');
+      const statusDate = String(record.status_data_date || '');
+      const remaining = Number(record.remaining_duration_days);
+      if (!['Not Started', 'In Progress', 'Completed'].includes(updateStatus)) throw new Error('Select a valid activity update status.');
+      if (updateStatus === 'In Progress' && !actualStart) throw new Error('An in-progress activity requires an actual start date.');
+      if (updateStatus === 'Completed' && (!actualStart || !actualFinish)) throw new Error('A completed activity requires actual start and actual finish dates.');
+      if (updateStatus === 'Completed' && Number.isFinite(remaining) && Math.abs(remaining) > 0.000001) throw new Error('A completed activity must have zero remaining duration.');
+      if (updateStatus !== 'Completed' && actualFinish) throw new Error('Actual finish is allowed only after the activity is marked Completed.');
+      if (actualStart && actualFinish && actualFinish < actualStart) throw new Error('Actual finish cannot be earlier than actual start.');
+      if (actualStart && statusDate && statusDate < actualStart) throw new Error('Status Data Date cannot be earlier than actual start.');
+      if (Number.isFinite(remaining) && remaining < 0) throw new Error('Remaining duration cannot be negative.');
     }
     if (tableName === 'schedule_distributions') {
       if (!record.schedule_id || !selectedSchedule) throw new Error('Select a valid schedule activity for the time-phased distribution.');
@@ -1484,15 +1499,6 @@ export function DataTableView({
         record,
         data.filter((row) => row.schedule_id === record.schedule_id),
       );
-    }
-    if ((tableName === 'labor_duty' || tableName === 'equipment') && record.schedule_id) {
-      if (!selectedSchedule) throw new Error('Select a valid activity before allocating a resource record.');
-      const resourceDate = String(record.date || '');
-      const activityStart = String(selectedSchedule.data?.start_date || '');
-      const activityEnd = String(selectedSchedule.data?.end_date || '');
-      if (resourceDate && ((activityStart && resourceDate < activityStart) || (activityEnd && resourceDate > activityEnd))) {
-        throw new Error(`Resource date must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
-      }
     }
     if ((tableName === 'labor_duty' || tableName === 'equipment') && record.schedule_id) {
       if (!selectedSchedule) throw new Error('Select a valid activity before allocating a resource record.');
@@ -1587,6 +1593,7 @@ export function DataTableView({
       'baseline_start_date', 'baseline_end_date', 'inspection_date', 'date',
       'invoice_date', 'due_date', 'payment_date', 'order_date', 'delivery_date',
       'baseline_date', 'data_date', 'raised_date', 'submitted_date',
+      'actual_start_date', 'actual_finish_date', 'status_data_date',
       'requested_date', 'decision_date', 'approved_date', 'upload_date',
       'period_start', 'period_end', 'from_date', 'to_date', 'effective_date',
     ];
@@ -1726,6 +1733,9 @@ export function DataTableView({
           'original duration': 'duration_days', 'planned duration': 'duration_days',
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
           'planned cost': 'budget', 'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
+          'actual start': 'actual_start_date', 'actual start date': 'actual_start_date',
+          'actual finish': 'actual_finish_date', 'actual finish date': 'actual_finish_date',
+          'activity status': 'activity_status', 'status date': 'status_data_date', 'data date': 'status_data_date',
           'resource names': 'responsible', 'calendar name': 'calendar_name',
           'calendar': 'calendar_name', 'primary constraint': 'notes', 'predecessors': 'predecessors',
           'predecessor links': 'predecessor_links',

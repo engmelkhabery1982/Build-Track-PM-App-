@@ -15,6 +15,7 @@ const NON_NEGATIVE_FIELDS = new Set([
 
 const DATE_PAIRS: Array<[string, string, string]> = [
   ['start_date', 'end_date', 'End date cannot be earlier than start date.'],
+  ['actual_start_date', 'actual_finish_date', 'Actual finish cannot be earlier than actual start.'],
   ['baseline_start_date', 'baseline_end_date', 'Baseline finish cannot be earlier than baseline start.'],
   ['planned_start_date', 'planned_end_date', 'Planned finish cannot be earlier than planned start.'],
   ['period_start', 'period_end', 'Period end cannot be earlier than period start.'],

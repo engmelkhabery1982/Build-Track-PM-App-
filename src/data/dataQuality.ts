@@ -124,6 +124,22 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
     return [...calculateCpm(rows as any[]).values()].some((result) => result.cycle);
   });
   pushIf(findings, cyclicScheduleContracts.length > 0, { severity: 'Error', title: 'Schedule network contains a dependency cycle', detail: `${cyclicScheduleContracts.length} contract schedule(s) contain a CPM dependency cycle; correct the links before relying on forecast dates or float.`, view: 'schedule' });
+  const invalidScheduleStatus = data.schedules.filter((row) => {
+    if (!String(row.activity || '').trim()) return false;
+    const status = String(row.activity_status || 'Not Started');
+    const actualStart = String(row.actual_start_date || '');
+    const actualFinish = String(row.actual_finish_date || '');
+    const dataDate = String(row.status_data_date || '');
+    const remaining = Number(row.remaining_duration_days);
+    return !['Not Started', 'In Progress', 'Completed'].includes(status)
+      || (status === 'In Progress' && !actualStart)
+      || (status === 'Completed' && (!actualStart || !actualFinish || (Number.isFinite(remaining) && Math.abs(remaining) > 0.000001)))
+      || (status !== 'Completed' && Boolean(actualFinish))
+      || (actualStart && actualFinish && actualFinish < actualStart)
+      || (actualStart && dataDate && dataDate < actualStart)
+      || (Number.isFinite(remaining) && remaining < 0);
+  });
+  pushIf(findings, invalidScheduleStatus.length > 0, { severity: 'Error', title: 'Schedule status update is invalid', detail: `${invalidScheduleStatus.length} activity update(s) have inconsistent actual dates, Data Date, status, or remaining duration.`, view: 'schedule' });
   const excessivePlans = data.boqItems.filter((item) => data.schedules.filter((row) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, excessivePlans.length > 0, { severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
   const invalidDistributionScope = scheduleDistributions.filter((row) => {
