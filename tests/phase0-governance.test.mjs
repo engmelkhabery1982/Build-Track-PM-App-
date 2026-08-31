@@ -117,6 +117,17 @@ test('approved baselines freeze activity-level schedule scope and require a gove
   ]), {
     baselineActivityCount: 2, currentActivityCount: 2, addedActivityCount: 1, removedActivityCount: 1, changedActivityCount: 1, criticalPathVariance: 0,
   });
+  const detail = baselines.compareBaselineActivityDetails(snapshot, [
+    { ...activities[0], start_date: '2026-01-10', end_date: '2026-01-16', duration_days: 5, planned_quantity: 55, budget: 2100, calendar_name: 'Calendar Days', critical_path: false, predecessor_links: [{ predecessor_id: 'A', relationship: 'FS' }] },
+    { id: 'a-3', activity_code: 'C', activity: 'Commission', start_date: '2026-01-13', end_date: '2026-01-14', duration_days: 1, planned_quantity: 1, budget: 20 },
+  ]);
+  const changed = detail.find((row) => row.activityCode === 'B');
+  assert.equal(changed?.status, 'Changed');
+  assert.ok(changed?.changedFields.includes('Start date'));
+  assert.ok(changed?.changedFields.includes('Predecessor logic'));
+  assert.equal(changed?.finishVarianceDays, 4);
+  assert.equal(detail.find((row) => row.activityCode === 'A')?.status, 'Removed');
+  assert.equal(detail.find((row) => row.activityCode === 'C')?.status, 'Added');
   assert.throws(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: '', activities: [], hasPriorApprovedBaseline: false }), /at least one scheduled activity/i);
   assert.throws(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: '', activities, hasPriorApprovedBaseline: true }), /revision reason/i);
   assert.doesNotThrow(() => baselines.assertBaselineApproval({ baselineDate: '2026-01-12', revisionReason: 'Client-approved extension', activities, hasPriorApprovedBaseline: true }));

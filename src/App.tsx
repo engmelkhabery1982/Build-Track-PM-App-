@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, createBaselineActivitySnapshot, createCodeDraft, dataRepository, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
@@ -143,6 +143,7 @@ const BASELINE_COLUMNS: ColumnDef[] = [
   { key: 'added_activity_count', label: 'Added Activities', type: 'number', editable: false },
   { key: 'removed_activity_count', label: 'Removed Activities', type: 'number', editable: false },
   { key: 'changed_activity_count', label: 'Changed Activities', type: 'number', editable: false },
+  { key: 'variance_register_status', label: 'Variance Register', type: 'text', editable: false },
   { key: 'critical_path_variance', label: 'Critical Path Variance', type: 'number', editable: false },
   { key: 'current_schedule_start', label: 'Current Forecast Start', type: 'date', editable: false },
   { key: 'current_schedule_finish', label: 'Current Forecast Finish', type: 'date', editable: false },
@@ -2572,6 +2573,7 @@ export default function App() {
         const activities = data.schedules.filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim());
         const snapshotSummary = summarizeBaselineSchedule(baseline.activity_snapshot);
         const activityComparison = compareBaselineActivities(baseline.activity_snapshot, activities);
+        const activityDetails = compareBaselineActivityDetails(baseline.activity_snapshot, activities);
         const activityStarts = activities
           .map((activity: any) => String(activity.start_date || ''))
           .filter(Boolean)
@@ -2604,6 +2606,9 @@ export default function App() {
           added_activity_count: activityComparison.addedActivityCount,
           removed_activity_count: activityComparison.removedActivityCount,
           changed_activity_count: activityComparison.changedActivityCount,
+          variance_register_status: !Array.isArray(baseline.activity_snapshot) || baseline.activity_snapshot.length === 0
+            ? 'No frozen activity snapshot'
+            : `${activityDetails.filter((row) => row.status !== 'Unchanged').length} exception(s) — open Variance Register`,
           critical_path_variance: activityComparison.criticalPathVariance,
           current_schedule_start: currentStart,
           current_schedule_finish: currentFinish,
@@ -3556,6 +3561,29 @@ export default function App() {
           label: 'Preview Cash',
           title: 'Render this cash-flow record using a saved flexible template.',
           onClick: (row) => previewRecordWithTemplate('Cash Forecast', row),
+        } : tableName === 'project_baselines' ? {
+          label: 'Variance Register',
+          title: 'Review activity-level baseline variance without altering the approved baseline.',
+          onClick: (row) => {
+            const activities = data.schedules.filter((activity: any) => activity.contract_id === row.contract_id && String(activity.activity || '').trim());
+            const details = compareBaselineActivityDetails(row.activity_snapshot, activities);
+            if (!details.length) {
+              window.alert('This baseline has no frozen activity snapshot. Approve a governed baseline revision after the controlled schedule is ready.');
+              return;
+            }
+            const exceptions = details.filter((detail) => detail.status !== 'Unchanged');
+            const lines = (exceptions.length ? exceptions : details).map((detail) => {
+              const changes = detail.status === 'Changed' ? detail.changedFields.join(', ') : detail.status;
+              const variance = [
+                detail.startVarianceDays === null ? '' : `Start ${detail.startVarianceDays >= 0 ? '+' : ''}${detail.startVarianceDays}d`,
+                detail.finishVarianceDays === null ? '' : `Finish ${detail.finishVarianceDays >= 0 ? '+' : ''}${detail.finishVarianceDays}d`,
+                detail.durationVarianceDays === null ? '' : `Duration ${detail.durationVarianceDays >= 0 ? '+' : ''}${detail.durationVarianceDays}d`,
+                detail.budgetVariance === null ? '' : `Budget ${detail.budgetVariance >= 0 ? '+' : ''}${detail.budgetVariance.toLocaleString()}`,
+              ].filter(Boolean).join(' | ');
+              return `${detail.activityCode} — ${detail.activity}\n${changes || 'No change'}${variance ? `\n${variance}` : ''}`;
+            });
+            window.alert(`Baseline variance register — ${row.baseline_number || row.id}\n${exceptions.length} exception(s) across ${details.length} activity/activities.\n\n${lines.join('\n\n')}`);
+          },
         } : undefined}
         formColumns={tailoredFormColumns || (['client_invoices', 'subcontractor_invoices'].includes(tableName) ? INVOICE_GENERATION_FORM_COLUMNS : tableName === 'app_users' ? USER_FORM_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}
         editFormColumns={tailoredFormColumns || (tableName === 'app_users' ? USER_EDIT_COLUMNS : tableName === 'project_baselines' ? BASELINE_FORM_COLUMNS : undefined)}
