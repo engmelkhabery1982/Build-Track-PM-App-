@@ -3489,6 +3489,7 @@ export default function App() {
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
         progressWirs={data.wirEntries}
+        scheduleResourceAssignments={data.scheduleResourceAssignments as Record<string, any>[]}
         toolbarAction={tableName === 'schedule' ? {
           label: 'Update CPM Status Forecast',
           title: 'Recalculate retained-logic forecast from approved predecessor logic, actuals, remaining duration and Data Date. Planned dates and approved baselines are not changed.',

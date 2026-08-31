@@ -176,14 +176,18 @@ async fn validate_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitR
 async fn validate_updates(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
     if request.updates.is_empty() { return Ok(()); }
     if request.target_table != "schedules" { return Err("Only schedule planning refreshes may update existing imported records.".into()); }
-    let allowed: HashSet<&str> = ["activity", "source_activity_code", "start_date", "end_date", "duration_days", "calendar_id", "calendar_name", "calendar_exceptions", "wbs_id", "wbs_code", "predecessor_links", "predecessor_items", "predecessor_item", "predecessors", "relationship_type", "lag_days", "constraint_type", "constraint_date", "critical_path", "responsible", "notes", "is_non_boq_activity"].into_iter().collect();
     let mut ids = HashSet::new();
     for (index, update) in request.updates.iter().enumerate() {
-        if update.table != "schedules" || update.id.trim().is_empty() { return Err(format!("Planning refresh row {} is invalid.", index + 1)); }
-        if !ids.insert(update.id.to_lowercase()) { return Err(format!("Planning refresh row {} repeats an activity.", index + 1)); }
+        if !matches!(update.table.as_str(), "schedules" | "schedule_resource_assignments") || update.id.trim().is_empty() { return Err(format!("Planning refresh row {} is invalid.", index + 1)); }
+        if !ids.insert(format!("{}:{}", update.table, update.id.to_lowercase())) { return Err(format!("Planning refresh row {} repeats a record.", index + 1)); }
+        let allowed: HashSet<&str> = if update.table == "schedules" {
+          ["activity", "source_activity_code", "start_date", "end_date", "duration_days", "calendar_id", "calendar_name", "calendar_exceptions", "calendar_working_days", "calendar_hours_per_day", "wbs_id", "wbs_code", "predecessor_links", "predecessor_items", "predecessor_item", "predecessors", "relationship_type", "lag_days", "constraint_type", "constraint_date", "critical_path", "responsible", "notes", "is_non_boq_activity"].into_iter().collect()
+        } else {
+          ["resource_type", "assignment_start", "assignment_end", "planned_hours", "planned_quantity", "planned_cost", "notes"].into_iter().collect()
+        };
         let patch = update.patch.as_object().ok_or_else(|| format!("Planning refresh row {} has an invalid patch.", index + 1))?;
         if patch.keys().any(|key| !allowed.contains(key.as_str())) { return Err(format!("Planning refresh row {} attempts to change protected progress, quantity, cost, code, or scope data.", index + 1)); }
-        let before_text: Option<String> = sqlx::query_scalar("SELECT payload FROM schedules WHERE id=? AND project_id=? AND contract_id=?")
+        let before_text: Option<String> = sqlx::query_scalar(&format!("SELECT payload FROM {} WHERE id=? AND project_id=? AND contract_id=?", update.table))
             .bind(&update.id).bind(&request.project_id).bind(&request.contract_id).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
         let before_text = before_text.ok_or_else(|| format!("Planning refresh row {} is missing or outside the selected project and contract.", index + 1))?;
         let before: Value = serde_json::from_str(&before_text).map_err(|error| error.to_string())?;
@@ -299,7 +303,7 @@ async fn insert_auxiliary(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &M
 }
 
 async fn update_payload(tx: &mut Transaction<'_, Sqlite>, table: &str, id: &str, patch: &Value) -> Result<(Value, Value), String> {
-    if !matches!(table, "boq_items" | "contracts" | "schedules") { return Err("Only BOQ item, contract, and governed schedule planning updates are allowed in an import batch.".into()); }
+    if !matches!(table, "boq_items" | "contracts" | "schedules" | "schedule_resource_assignments") { return Err("Only BOQ item, contract, schedule, and resource-planning updates are allowed in an import batch.".into()); }
     let before_text: String = sqlx::query_scalar(&format!("SELECT payload FROM {table} WHERE id=?")).bind(id).fetch_optional(&mut **tx).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Derived update record {id} was not found."))?;
     let mut after: Value = serde_json::from_str(&before_text).map_err(|e| e.to_string())?;
@@ -312,7 +316,7 @@ async fn update_payload(tx: &mut Transaction<'_, Sqlite>, table: &str, id: &str,
         sqlx::query("UPDATE contracts SET project_id=?,parent_main_contract_id=?,payload=? WHERE id=?")
             .bind(string_value(after_object,"project_id")).bind(string_value(after_object,"parent_main_contract_id")).bind(after.to_string()).bind(id).execute(&mut **tx).await.map_err(|e| e.to_string())?;
     } else {
-        sqlx::query("UPDATE schedules SET project_id=?,contract_id=?,boq_header_id=?,boq_item_id=?,payload=? WHERE id=?")
+        sqlx::query(&format!("UPDATE {table} SET project_id=?,contract_id=?,boq_header_id=?,boq_item_id=?,payload=? WHERE id=?"))
             .bind(string_value(after_object,"project_id")).bind(string_value(after_object,"contract_id"))
             .bind(string_value(after_object,"boq_header_id")).bind(string_value(after_object,"boq_item_id"))
             .bind(after.to_string()).bind(id).execute(&mut **tx).await.map_err(|e| e.to_string())?;
@@ -436,6 +440,8 @@ mod tests {
             "CREATE TABLE schedules (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE wbs_nodes (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
             "CREATE TABLE work_calendars (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
+            "CREATE TABLE resource_masters (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
+            "CREATE TABLE schedule_resource_assignments (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
             "CREATE TABLE wir_entries (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE import_batches (id TEXT PRIMARY KEY, created_at TEXT, committed_at TEXT, source TEXT, file_name TEXT, target_table TEXT, project_id TEXT, contract_id TEXT, status TEXT, row_count INTEGER, committed_count INTEGER, rejected_count INTEGER, summary_json TEXT)",
@@ -542,6 +548,35 @@ mod tests {
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         let restored: Value = serde_json::from_str(&sqlx::query_scalar::<_, String>("SELECT payload FROM schedules WHERE id='a1'").fetch_one(&pool).await.unwrap()).unwrap();
         assert_eq!(restored["start_date"], "2026-01-01");
+        pool.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn resource_assignment_refresh_updates_once_and_reverses_without_duplication() {
+        let path = std::env::temp_dir().join(format!("buildtrack-import-resource-refresh-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        sqlx::query("INSERT INTO schedules VALUES ('a1','2026-01-01T00:00:00Z','p1','c1','','','','',?)")
+            .bind(json!({"id":"a1","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","planned_quantity":100}).to_string()).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO schedule_resource_assignments VALUES ('ra1','2026-01-01T00:00:00Z','p1','c1','','','','',?)")
+            .bind(json!({"id":"ra1","project_id":"p1","contract_id":"c1","schedule_id":"a1","resource_id":"r1","resource_type":"Labor","planned_hours":40,"planned_cost":800}).to_string()).execute(&pool).await.unwrap();
+        pool.close().await;
+        let request = ImportCommitRequest {
+            batch_id: "batch-resource-refresh".into(), source: "Primavera".into(), file_name: "schedule.xer".into(), target_table: "schedules".into(), project_id: "p1".into(), contract_id: "c1".into(), rows: vec![],
+            updates: vec![ImportUpdate { table: "schedule_resource_assignments".into(), id: "ra1".into(), patch: json!({"resource_type":"Labor","assignment_start":"2026-01-03","assignment_end":"2026-01-08","planned_hours":56,"planned_quantity":0,"planned_cost":1120,"notes":"P6 refresh"}) }], derived_patches: vec![], auxiliary_rows: vec![],
+        };
+        assert_eq!(commit_governed_import(&path, request).await.unwrap().committed_count, 1);
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedule_resource_assignments").fetch_one(&pool).await.unwrap(), 1);
+        let refreshed: Value = serde_json::from_str(&sqlx::query_scalar::<_, String>("SELECT payload FROM schedule_resource_assignments WHERE id='ra1'").fetch_one(&pool).await.unwrap()).unwrap();
+        assert_eq!(refreshed["planned_hours"], 56);
+        pool.close().await;
+        reverse_governed_import(&path, ImportReverseRequest { batch_id: "batch-resource-refresh".into(), reason: "acceptance test".into() }).await.unwrap();
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        let restored: Value = serde_json::from_str(&sqlx::query_scalar::<_, String>("SELECT payload FROM schedule_resource_assignments WHERE id='ra1'").fetch_one(&pool).await.unwrap()).unwrap();
+        assert_eq!(restored["planned_hours"], 40);
         pool.close().await;
         let _ = std::fs::remove_file(&path);
     }

@@ -110,6 +110,7 @@ interface DataTableViewProps {
   toolbarAction?: { label: string; title?: string; onClick: () => void | Promise<void> };
   rowAction?: { label: string; title?: string; onClick: (row: Record<string, any>) => void | Promise<void> };
   progressWirs?: Record<string, any>[];
+  scheduleResourceAssignments?: Record<string, any>[];
   /** Allows an import to update a directly governed parent record without a full page reload. */
   onRelatedMutation?: (tableName: string, mutation: LocalDataMutation) => void;
 }
@@ -358,7 +359,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, onRelatedMutation, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, onRelatedMutation, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [], scheduleResourceAssignments = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -377,7 +378,7 @@ export function DataTableView({
   const [lastImportBatchId, setLastImportBatchId] = useState<string | null>(null);
   const [lastImportDerivedRestores, setLastImportDerivedRestores] = useState<{ table: 'boq_items' | 'contracts'; row: Record<string, any> }[]>([]);
   const [lastImportAuxiliaryRows, setLastImportAuxiliaryRows] = useState<GovernedImportAuxiliaryRow[]>([]);
-  const [lastImportRefreshRestores, setLastImportRefreshRestores] = useState<Record<string, any>[]>([]);
+  const [lastImportRefreshRestores, setLastImportRefreshRestores] = useState<Array<{ table: 'schedules' | 'schedule_resource_assignments'; row: Record<string, any> }>>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -2195,6 +2196,8 @@ export function DataTableView({
         // enter the planning model.
         const existingResources = new Map((relationshipOptions?.resource_id || []).map((option) => [String(option.label || '').split('—')[0].trim().toLowerCase(), option]));
         const stagedResources = new Map<string, GovernedImportAuxiliaryRow>();
+        const existingAssignments = new Map(scheduleResourceAssignments.map((assignment) => [`${String(assignment.schedule_id)}|${String(assignment.resource_id)}`, assignment]));
+        const stagedAssignments = new Map<string, GovernedImportAuxiliaryRow>();
         for (const row of mapped) {
           let entries: Array<Record<string, any>> = [];
           try { const parsed = typeof row._primavera_resource_assignments === 'string' ? JSON.parse(row._primavera_resource_assignments) : row._primavera_resource_assignments; if (Array.isArray(parsed)) entries = parsed; } catch { /* parser validation preserves an empty safe set */ }
@@ -2212,7 +2215,23 @@ export function DataTableView({
               }
               resourceId = String(staged.row.id);
             }
-            auxiliaryRows.push({ table: 'schedule_resource_assignments', row: { id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id, boq_header_id: row.boq_header_id || null, boq_item_id: row.boq_item_id || null, schedule_id: row.id, resource_id: resourceId, resource_type: type, assignment_start: row.start_date || null, assignment_end: row.end_date || null, planned_hours: Number(entry.planned_hours) || 0, planned_quantity: 0, planned_cost: Number(entry.planned_cost) || 0, notes: `Imported from Primavera activity ${row.activity_code || row.id}.` } });
+            const assignmentKey = `${row.id}|${resourceId}`;
+            const existingAssignment = existingAssignments.get(assignmentKey);
+            const previous = stagedAssignments.get(assignmentKey);
+            if (previous) {
+              previous.row.planned_hours = (Number(previous.row.planned_hours) || 0) + (Number(entry.planned_hours) || 0);
+              previous.row.planned_cost = (Number(previous.row.planned_cost) || 0) + (Number(entry.planned_cost) || 0);
+              continue;
+            }
+            const stagedAssignment: GovernedImportAuxiliaryRow = { table: 'schedule_resource_assignments', row: {
+              id: existingAssignment?.id || crypto.randomUUID(), created_at: existingAssignment?.created_at || new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
+              boq_header_id: row.boq_header_id || null, boq_item_id: row.boq_item_id || null, schedule_id: row.id, resource_id: resourceId,
+              resource_type: type, assignment_start: row.start_date || null, assignment_end: row.end_date || null, planned_hours: Number(entry.planned_hours) || 0,
+              planned_quantity: 0, planned_cost: Number(entry.planned_cost) || 0, notes: `Imported from Primavera activity ${row.activity_code || row.id}.`,
+              _planning_resource_refresh: Boolean(existingAssignment),
+            } };
+            stagedAssignments.set(assignmentKey, stagedAssignment);
+            auxiliaryRows.push(stagedAssignment);
           }
         }
       }
@@ -2322,15 +2341,29 @@ export function DataTableView({
             }
           }
         }
-        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, updates: refreshUpdates, derivedPatches, auxiliaryRows: importPreview.auxiliaryRows });
-        const refreshRestores = refreshUpdates.map((update) => data.find((row) => row.id === update.id)).filter(Boolean) as Record<string, any>[];
+        const resourceAssignmentUpdates: GovernedImportUpdate[] = importPreview.auxiliaryRows
+          .filter((entry) => entry.table === 'schedule_resource_assignments' && entry.row._planning_resource_refresh)
+          .map((entry) => ({ table: 'schedule_resource_assignments', id: String(entry.row.id), patch: Object.fromEntries(['resource_type', 'assignment_start', 'assignment_end', 'planned_hours', 'planned_quantity', 'planned_cost', 'notes'].map((key) => [key, entry.row[key]])) }));
+        const newAuxiliaryRows = importPreview.auxiliaryRows
+          .filter((entry) => !entry.row._planning_resource_refresh)
+          .map((entry) => ({ ...entry, row: Object.fromEntries(Object.entries(entry.row).filter(([key]) => key !== '_planning_resource_refresh')) }));
+        const allRefreshUpdates = [...refreshUpdates, ...resourceAssignmentUpdates];
+        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, updates: allRefreshUpdates, derivedPatches, auxiliaryRows: newAuxiliaryRows });
+        const refreshRestores = allRefreshUpdates.flatMap((update) => {
+          const row = update.table === 'schedules' ? data.find((candidate) => candidate.id === update.id) : scheduleResourceAssignments.find((candidate) => candidate.id === update.id);
+          return row ? [{ table: update.table, row }] : [];
+        });
         onMutated({ type: 'insertMany', rows: preparedRows });
         refreshUpdates.forEach((update) => {
           const existing = data.find((row) => row.id === update.id);
           if (existing) onMutated({ type: 'update', row: { ...existing, ...update.patch } });
         });
+        resourceAssignmentUpdates.forEach((update) => {
+          const existing = scheduleResourceAssignments.find((assignment) => assignment.id === update.id);
+          if (existing) onRelatedMutation?.('schedule_resource_assignments', { type: 'update', row: { ...existing, ...update.patch } });
+        });
         for (const table of ['wbs_nodes', 'work_calendars', 'resource_masters', 'schedule_resource_assignments'] as const) {
-          const rows = importPreview.auxiliaryRows.filter((entry) => entry.table === table).map((entry) => entry.row as Record<string, any>);
+          const rows = newAuxiliaryRows.filter((entry) => entry.table === table).map((entry) => entry.row as Record<string, any>);
           if (rows.length) onRelatedMutation?.(table, { type: 'insertMany', rows });
         }
         derivedPatches.forEach((derived) => {
@@ -2341,10 +2374,10 @@ export function DataTableView({
         setLastImportParentRestores([]);
         setLastImportBatchId(result.batchId);
         setLastImportDerivedRestores(derivedRestores);
-        setLastImportAuxiliaryRows(importPreview.auxiliaryRows);
+        setLastImportAuxiliaryRows(newAuxiliaryRows);
         setLastImportRefreshRestores(refreshRestores);
         setImportResult({ success: result.committedCount, failed: 0, errors: [] });
-        const refreshSummary = refreshUpdates.length ? ` ${preparedRows.length} new activity(s) inserted and ${refreshUpdates.length} existing activity planning refresh(es) applied.` : ` ${preparedRows.length} row(s) inserted.`;
+        const refreshSummary = allRefreshUpdates.length ? ` ${preparedRows.length} new activity(s) inserted and ${allRefreshUpdates.length} existing planning/resource refresh(es) applied.` : ` ${preparedRows.length} row(s) inserted.`;
         setOperationNotice({ kind: 'success', text: `Committed ${result.committedCount}/${result.committedCount} rows atomically.${refreshSummary} Batch ${result.batchId}.` });
         setImportPreview(null);
       } catch (error: any) {
@@ -2463,7 +2496,10 @@ export function DataTableView({
       try {
         const result = await reverseGovernedImport({ batchId: lastImportBatchId, reason: 'User reversed the latest governed import from the table.' });
         lastImportRows.forEach((row) => onMutated({ type: 'delete', id: row.id }));
-        lastImportRefreshRestores.forEach((row) => onMutated({ type: 'update', row }));
+        lastImportRefreshRestores.forEach((restore) => {
+          if (restore.table === 'schedules') onMutated({ type: 'update', row: restore.row });
+          else onRelatedMutation?.(restore.table, { type: 'update', row: restore.row });
+        });
         lastImportAuxiliaryRows.forEach((auxiliary) => onRelatedMutation?.(auxiliary.table, { type: 'delete', id: String(auxiliary.row.id) }));
         lastImportDerivedRestores.forEach((restore) => onRelatedMutation?.(restore.table, { type: 'update', row: restore.row }));
         setLastImportRows([]);

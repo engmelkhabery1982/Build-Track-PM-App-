@@ -16,7 +16,7 @@ export interface GovernedImportDerivedPatch {
 /** A Primavera planning refresh may update an existing activity's planning
  * fields while preserving actuals, progress, and earned-value facts. */
 export interface GovernedImportUpdate {
-  table: 'schedules';
+  table: 'schedules' | 'schedule_resource_assignments';
   id: string;
   patch: Record<string, unknown>;
 }
