@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as Chec
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate } from '@/utils/schedulePlanning';
+import { cashForecastAt } from '@/utils/cashForecast';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -411,9 +412,8 @@ export function Dashboard({
       const planned = datedSchedules.reduce((sum, schedule) => sum + distributedPlannedValueToDate(schedule as Record<string, any>, scheduleDistributions, dateStr), 0);
       const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
       const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-      const forecast = actual + fCashFlow.filter((entry: any) => entry.movement_type === 'Forecast' && String(entry.date || '') <= dateStr).reduce((sum: number, entry: any) => sum + (Number(entry.outflow) || 0), 0);
-      const cash = fCashFlow.filter((entry: any) => String(entry.date || '') <= dateStr).reduce((sum: number, entry: any) => sum + (Number(entry.inflow) || 0) - (Number(entry.outflow) || 0), 0);
-      points.push({ label: dateStr, planned, earned, actual, forecast, cash, date: dateStr });
+      const cashPosition = cashForecastAt(fCashFlow as Record<string, any>[], dateStr);
+      points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, date: dateStr });
     }
     return points;
   }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow]);
@@ -1144,8 +1144,8 @@ export function Dashboard({
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-violet-500" /><span className="text-neutral-600">EV</span></span>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-success-500" /><span className="text-neutral-600">AC</span></span>
-                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-orange-500" /><span className="text-neutral-600">Forecast</span></span>
-                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-teal-500" /><span className="text-neutral-600">Cash</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-orange-500" /><span className="text-neutral-600">Cash Forecast</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-teal-500" /><span className="text-neutral-600">Actual Cash</span></span>
                   </div>
                 </div>
                 <SCurveChart data={sCurve} />

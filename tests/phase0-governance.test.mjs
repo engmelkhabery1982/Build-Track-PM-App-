@@ -11,6 +11,7 @@ const quality = await import('../src/data/dataQuality.ts');
 const primavera = await import('../src/data/primaveraImport.ts');
 const baselines = await import('../src/data/baselineGovernance.ts');
 const productivity = await import('../src/utils/resourceProductivity.ts');
+const cashForecast = await import('../src/utils/cashForecast.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
@@ -128,6 +129,16 @@ test('data quality rejects resource records outside their linked activity scope'
     laborDuty: [{ id: 'labour-1', project_id: 'project-1', contract_id: 'contract-1', boq_item_id: 'item-1', schedule_id: 'activity-1', date: '2026-01-09' }],
   };
   assert.ok(quality.runDataQualityChecks(source).some((finding) => finding.title === 'Resource allocation is outside activity scope'));
+});
+
+test('cash forecast separates settled cash from open forecast and excludes cancelled movements', () => {
+  const point = cashForecast.cashForecastAt([
+    { id: 'actual-in', date: '2026-01-05', movement_type: 'Actual', status: 'Settled', inflow: 1000, outflow: 0 },
+    { id: 'actual-out', date: '2026-01-06', movement_type: 'Manual', status: 'Settled', inflow: 0, outflow: 200 },
+    { id: 'forecast-out', date: '2026-01-15', movement_type: 'Forecast', status: 'Open', inflow: 0, outflow: 300 },
+    { id: 'cancelled', date: '2026-01-12', movement_type: 'Forecast', status: 'Cancelled', inflow: 0, outflow: 999 },
+  ], '2026-01-31');
+  assert.deepEqual(point, { actualNet: 800, openForecastNet: -300, forecastNet: 500 });
 });
 
 test('new governed commercial and field records receive scoped codes', () => {
