@@ -175,6 +175,17 @@ test('CPM respects relationship types and reports dependency cycles', () => {
   assert.equal(cyclic.get('B').cycle, true);
 });
 
+test('CPM forecast writes separate forecast dates without changing planned dates', () => {
+  const forecast = cpm.calculateCpmForecast([
+    { id: 'A', duration_days: 2, calendar_name: 'Calendar Days' },
+    { id: 'B', duration_days: 3, predecessor_item: 'A', relationship_type: 'FS', lag_days: 1, calendar_name: 'Calendar Days' },
+  ], '2026-01-01');
+  assert.equal(forecast.get('A').forecastStart, '2026-01-01');
+  assert.equal(forecast.get('A').forecastFinish, '2026-01-03');
+  assert.equal(forecast.get('B').forecastStart, '2026-01-04');
+  assert.equal(forecast.get('B').forecastFinish, '2026-01-07');
+});
+
 test('locked reporting periods block dated inserts, updates and deletes', () => {
   const locked = [{ id: 'period-1', project_id: 'project-1', period_name: 'January close', start_date: '2026-01-01', end_date: '2026-01-31', data_date: '2026-01-31', status: 'Locked' }];
   assert.throws(() => periods.assertRecordPeriodIsOpen(locked, { project_id: 'project-1', inspection_date: '2026-01-15' }), /January close/);

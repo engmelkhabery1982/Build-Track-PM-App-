@@ -15,7 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
-import { calculateCpm } from '@/utils/cpm';
+import { calculateCpm, calculateCpmForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
@@ -413,6 +413,8 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'total_float_days', label: 'Total Float (days)', type: 'number', editable: false },
   { key: 'network_critical', label: 'Network Critical', type: 'boolean', editable: false },
   { key: 'network_warning', label: 'Network Check', type: 'text', editable: false },
+  { key: 'forecast_start_date', label: 'CPM Forecast Start', type: 'date', editable: false },
+  { key: 'forecast_end_date', label: 'CPM Forecast Finish', type: 'date', editable: false },
   { key: 'calendar_name', label: 'Calendar', type: 'status', editable: true, options: [...WORK_CALENDARS] },
   { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: true },
   { key: 'critical_path', label: 'Critical Path', type: 'boolean', editable: true },
@@ -2523,7 +2525,7 @@ export default function App() {
           .sort();
         const activityEnds = data.schedules
           .filter((activity: any) => activity.contract_id === baseline.contract_id && String(activity.activity || '').trim())
-          .map((activity: any) => String(activity.end_date || ''))
+          .map((activity: any) => String(activity.forecast_end_date || activity.end_date || ''))
           .filter(Boolean)
           .sort();
         const currentStart = activityStarts[0] || null;
@@ -2759,7 +2761,7 @@ export default function App() {
               ? calendarSpan - summaryDuration
               : 0;
             const revisedFinish = scheduleContract?.revised_end_date || scheduleContract?.end_date;
-            const reportedFinish = isSummaryRow ? forecastEnd || governedEnd : schedule.end_date;
+            const reportedFinish = isSummaryRow ? forecastEnd || governedEnd : schedule.forecast_end_date || schedule.end_date;
             const boqDelay = isSummaryRow && forecastEnd && governedEnd && forecastEnd > governedEnd
               ? `Delayed against BOQ plan: forecast ${forecastEnd}, governed finish ${governedEnd}`
               : '';
@@ -2813,6 +2815,8 @@ export default function App() {
               total_float_days: isSummaryRow ? null : network?.totalFloat ?? null,
               network_critical: isSummaryRow ? false : Boolean(network?.critical),
               network_warning: isSummaryRow ? '' : network?.cycle ? 'Dependency cycle detected' : '',
+              forecast_start_date: isSummaryRow ? null : schedule.forecast_start_date || null,
+              forecast_end_date: isSummaryRow ? forecastEnd || null : schedule.forecast_end_date || null,
               status: `${calendarGapDays !== 0 ? `Calendar ${calendarGapDays > 0 ? 'gap' : 'overlap'}: ${Math.abs(calendarGapDays)} day(s) | ` : ''}${boqDelay ? `${boqDelay} | ` : ''}${dateAlert ? `${dateAlert} | ` : ''}${costState} | ${scheduleState} | CPI ${cpi === null ? 'N/A' : cpi.toFixed(2)} | SPI ${spi === null ? 'N/A' : spi.toFixed(2)}`,
             };
           })
@@ -3322,7 +3326,54 @@ export default function App() {
         canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
         readOnly={roleReadOnly}
         progressWirs={data.wirEntries}
-        toolbarAction={tableName === 'parties' ? {
+        toolbarAction={tableName === 'schedule' ? {
+          label: 'Recalculate CPM Forecast',
+          title: 'Recalculate forecast dates, float and critical path from predecessor logic. Planned dates and approved baselines are not changed.',
+          onClick: async () => {
+            const activities = data.schedules.filter((row: any) => String(row.activity || '').trim()) as Record<string, any>[];
+            const byContract = new Map<string, Record<string, any>[]>();
+            activities.forEach((activity) => {
+              const key = String(activity.contract_id || '');
+              byContract.set(key, [...(byContract.get(key) || []), activity]);
+            });
+            let updatedCount = 0;
+            let cycleCount = 0;
+            for (const [contractId, rows] of byContract) {
+              const contract = data.contracts.find((candidate: any) => candidate.id === contractId) as any;
+              const anchor = contract?.start_date || rows.map((row) => String(row.start_date || '')).filter(Boolean).sort()[0];
+              if (!anchor) continue;
+              const idByReference = new Map<string, string>();
+              rows.forEach((row) => [row.id, row.activity_code, row.source_activity_code].filter(Boolean).forEach((reference) => idByReference.set(String(reference).trim(), row.id)));
+              const forecast = calculateCpmForecast(rows.map((row) => ({
+                id: row.id,
+                duration_days: row.duration_days,
+                predecessor_item: row.predecessor_item,
+                predecessor_items: String(row.predecessors || '').split(',').map((reference) => idByReference.get(String(reference).trim()) || String(reference).trim()).filter(Boolean),
+                predecessor_links: row.predecessor_links,
+                relationship_type: row.relationship_type,
+                lag_days: row.lag_days,
+                calendar_name: row.calendar_name,
+                calendar_exceptions: row.calendar_exceptions,
+              })), anchor);
+              for (const row of rows) {
+                const result = forecast.get(row.id);
+                if (!result) continue;
+                if (result.cycle) { cycleCount += 1; continue; }
+                const saved = await dataRepository.update<Record<string, any>>('schedules', row.id, {
+                  forecast_start_date: result.forecastStart,
+                  forecast_end_date: result.forecastFinish,
+                  total_float_days: result.totalFloat,
+                  network_critical: result.critical,
+                  network_warning: '',
+                });
+                data.applyLocalMutation('schedules', { type: 'update', row: saved });
+                updatedCount += 1;
+              }
+            }
+            if (cycleCount) window.alert(`CPM forecast updated for ${updatedCount} activities. ${cycleCount} cyclic activity/activities were not updated; correct the predecessor logic first.`);
+            else window.alert(`CPM forecast updated for ${updatedCount} activities. Planned dates and baselines were not changed.`);
+          },
+        } : tableName === 'parties' ? {
           label: 'Migrate Existing Parties',
           title: 'Create master records and link existing contracts and procurement without deleting legacy names.',
           onClick: migrateLegacyParties,

@@ -1,3 +1,5 @@
+import { addWorkingDays } from './schedulePlanning.ts';
+
 export type NetworkActivity = {
   id: string;
   duration_days?: number | null;
@@ -7,6 +9,8 @@ export type NetworkActivity = {
   predecessor_links?: Array<{ predecessor_id?: string; id?: string; relationship_type?: string; lag_days?: number | string }> | string | null;
   relationship_type?: string | null;
   lag_days?: number | null;
+  calendar_name?: string | null;
+  calendar_exceptions?: string[] | string | null;
 };
 
 export type CpmResult = {
@@ -18,6 +22,8 @@ export type CpmResult = {
   critical: boolean;
   cycle: boolean;
 };
+
+export type CpmForecast = CpmResult & { forecastStart: string | null; forecastFinish: string | null };
 
 function duration(row: NetworkActivity): number { return Math.max(0, Number(row.duration_days) || 0); }
 
@@ -107,5 +113,18 @@ export function calculateCpm(activities: NetworkActivity[]): Map<string, CpmResu
     const d = duration(row);
     const float = Math.max(0, Math.round((ls - es) * 100) / 100);
     return [row.id, { earlyStart: es, earlyFinish: es + d, lateStart: ls, lateFinish: ls + d, totalFloat: float, critical: float === 0 && !cyclic.has(row.id), cycle: cyclic.has(row.id) }];
+  }));
+}
+
+/** Converts CPM offsets into forecast dates while preserving the editable
+ * schedule dates and approved baseline. A dependency cycle deliberately
+ * produces no forecast dates; it must be corrected by the planner first. */
+export function calculateCpmForecast(activities: NetworkActivity[], projectStart: string | null | undefined): Map<string, CpmForecast> {
+  const network = calculateCpm(activities);
+  return new Map(activities.map((activity) => {
+    const result = network.get(activity.id)!;
+    const forecastStart = result.cycle ? null : addWorkingDays(projectStart, result.earlyStart, activity);
+    const forecastFinish = result.cycle ? null : addWorkingDays(projectStart, result.earlyFinish, activity);
+    return [activity.id, { ...result, forecastStart, forecastFinish }];
   }));
 }
