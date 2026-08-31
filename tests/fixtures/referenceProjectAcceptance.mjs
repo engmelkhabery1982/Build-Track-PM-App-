@@ -26,9 +26,9 @@ export const referenceProject = {
     { id: 'act-mep-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', boq_item_id: 'boq-mep-1', activity_code: 'MEP-001-A01', activity: 'MEP installation', start_date: '2026-02-01', end_date: '2026-03-31', planned_quantity: 200, unit_rate: 2_500, predecessor_item: 'act-civil-02', relationship_type: 'FS', calendar_name: '6-Day Week' },
   ],
   scheduleDistributions: [
-    { id: 'dist-civil-01', schedule_id: 'act-civil-01', period_start: '2026-01-01', period_end: '2026-01-07', planned_quantity: 200, unit_rate: 500, planned_value: 100_000 },
-    { id: 'dist-civil-02', schedule_id: 'act-civil-01', period_start: '2026-01-08', period_end: '2026-01-14', planned_quantity: 300, unit_rate: 500, planned_value: 150_000 },
-    { id: 'dist-civil-03', schedule_id: 'act-civil-02', period_start: '2026-01-15', period_end: '2026-01-31', planned_quantity: 500, unit_rate: 500, planned_value: 250_000 },
+    { id: 'dist-civil-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', boq_item_id: 'boq-civil-1', schedule_id: 'act-civil-01', period_start: '2026-01-01', period_end: '2026-01-07', planned_quantity: 200, unit_rate: 500, planned_value: 100_000 },
+    { id: 'dist-civil-02', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', boq_item_id: 'boq-civil-1', schedule_id: 'act-civil-01', period_start: '2026-01-08', period_end: '2026-01-14', planned_quantity: 300, unit_rate: 500, planned_value: 150_000 },
+    { id: 'dist-civil-03', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', boq_item_id: 'boq-civil-1', schedule_id: 'act-civil-02', period_start: '2026-01-15', period_end: '2026-01-31', planned_quantity: 500, unit_rate: 500, planned_value: 250_000 },
   ],
   wirEntries: [
     { id: 'wir-acc-01', project_id: 'project-acceptance-1', contract_id: 'contract-main-1', boq_item_id: 'boq-civil-1', inspection_date: '2026-01-14', quantity: 500, result: 'Pass' },

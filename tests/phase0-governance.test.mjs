@@ -138,6 +138,20 @@ test('planned value uses approved distribution before linear fallback', () => {
   ];
   assert.equal(schedule.distributedPlannedValueToDate(activity, distributions, '2026-01-07'), 200);
   assert.equal(schedule.distributedPlannedValueToDate(activity, distributions, '2026-01-14'), 1000);
+  assert.deepEqual(schedule.reconcileScheduleDistributions(activity, distributions), {
+    plannedQuantity: 100, plannedValue: 1000, distributedQuantity: 100, distributedValue: 1000,
+    remainingQuantity: 0, remainingValue: 0, isOverAllocated: false, isComplete: true,
+  });
+  assert.throws(() => schedule.assertValidScheduleDistribution(
+    activity,
+    { id: 'd3', schedule_id: 'a1', period_start: '2026-01-15', period_end: '2026-01-20', planned_quantity: 1, unit_rate: 10 },
+    distributions,
+  ), /exceeds the activity plan/i);
+  assert.throws(() => schedule.assertValidScheduleDistribution(
+    activity,
+    { id: 'd3', schedule_id: 'a1', period_start: '2026-01-15', period_end: '2026-01-20', planned_quantity: 1, unit_rate: 11 },
+    [],
+  ), /must match the governed activity unit rate/i);
 });
 
 test('calendar additions preserve the ISO date contract', () => {

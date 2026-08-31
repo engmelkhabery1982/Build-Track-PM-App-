@@ -120,6 +120,80 @@ export function distributedPlannedValueToDate(
   }, 0) * 100) / 100;
 }
 
+export interface ScheduleDistributionReconciliation {
+  plannedQuantity: number;
+  plannedValue: number;
+  distributedQuantity: number;
+  distributedValue: number;
+  remainingQuantity: number;
+  remainingValue: number;
+  isOverAllocated: boolean;
+  isComplete: boolean;
+}
+
+/**
+ * Reconciles the time-phased rows to their one executable activity.  The
+ * activity is the commercial source of truth: a distribution may split its
+ * quantity across periods, but it must never redefine the unit rate, quantity
+ * or total budget of that activity.
+ */
+export function reconcileScheduleDistributions(
+  activity: Record<string, any>,
+  distributions: Record<string, any>[],
+): ScheduleDistributionReconciliation {
+  const plannedQuantity = Math.max(0, Number(activity.planned_quantity) || 0);
+  const plannedValue = scheduleBudget(activity);
+  const rows = distributions.filter((row) => row.schedule_id === activity.id);
+  const distributedQuantity = Math.round(rows.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) * 10000) / 10000;
+  const distributedValue = Math.round(rows.reduce((sum, row) => {
+    const value = Number(row.planned_value);
+    return sum + (Number.isFinite(value) ? value : (Number(row.planned_quantity) || 0) * (Number(row.unit_rate) || 0));
+  }, 0) * 100) / 100;
+  const remainingQuantity = Math.round((plannedQuantity - distributedQuantity) * 10000) / 10000;
+  const remainingValue = Math.round((plannedValue - distributedValue) * 100) / 100;
+  const isOverAllocated = remainingQuantity < -0.000001 || remainingValue < -0.01;
+  return {
+    plannedQuantity,
+    plannedValue,
+    distributedQuantity,
+    distributedValue,
+    remainingQuantity: Math.max(0, remainingQuantity),
+    remainingValue: Math.max(0, remainingValue),
+    isOverAllocated,
+    isComplete: rows.length > 0 && !isOverAllocated && Math.abs(remainingQuantity) <= 0.000001 && Math.abs(remainingValue) <= 0.01,
+  };
+}
+
+export function assertValidScheduleDistribution(
+  activity: Record<string, any>,
+  distribution: Record<string, any>,
+  siblingDistributions: Record<string, any>[],
+): void {
+  const periodStart = String(distribution.period_start || '');
+  const periodEnd = String(distribution.period_end || '');
+  if (!periodStart || !periodEnd) throw new Error('Time-phased distribution requires both period start and period end.');
+  if (periodEnd < periodStart) throw new Error('Distribution period end cannot be earlier than period start.');
+  const activityStart = String(activity.start_date || '');
+  const activityEnd = String(activity.end_date || '');
+  if ((activityStart && periodStart < activityStart) || (activityEnd && periodEnd > activityEnd)) {
+    throw new Error(`Distribution period must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
+  }
+  const quantity = Number(distribution.planned_quantity) || 0;
+  if (quantity <= 0) throw new Error('Time-phased planned quantity must be greater than zero.');
+  const activityRate = Number(activity.unit_rate) || 0;
+  const rate = Number(distribution.unit_rate) || 0;
+  if (Math.abs(rate - activityRate) > 0.000001) {
+    throw new Error('Time-phased unit rate must match the governed activity unit rate.');
+  }
+  const reconciliation = reconcileScheduleDistributions(activity, [
+    ...siblingDistributions.filter((row) => row.id !== distribution.id),
+    distribution,
+  ]);
+  if (reconciliation.isOverAllocated) {
+    throw new Error(`Time-phased allocation exceeds the activity plan: planned ${reconciliation.plannedQuantity.toLocaleString()} quantity / ${reconciliation.plannedValue.toLocaleString()} value, allocated ${reconciliation.distributedQuantity.toLocaleString()} quantity / ${reconciliation.distributedValue.toLocaleString()} value.`);
+  }
+}
+
 export function addCalendarDays(date: string | null | undefined, days: number): string | null {
   if (!date) return null;
   // Use UTC to keep contract dates calendar-based regardless of the desktop

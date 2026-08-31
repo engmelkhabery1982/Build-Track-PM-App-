@@ -15,6 +15,7 @@ export interface DataQualitySource {
   boqHeaders: Record<string, any>[];
   boqItems: Record<string, any>[];
   schedules: Record<string, any>[];
+  scheduleDistributions?: Record<string, any>[];
   wirEntries: Record<string, any>[];
   costEntries: Record<string, any>[];
   reportingPeriods: Record<string, any>[];
@@ -71,6 +72,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const supplierInvoiceLines = data.supplierInvoiceLines || [];
   const supplierInvoicePayments = data.supplierInvoicePayments || [];
   const cashFlow = data.cashFlow || [];
+  const scheduleDistributions = data.scheduleDistributions || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -90,6 +92,28 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   pushIf(findings, invalidSchedules.length > 0, { severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
   const excessivePlans = data.boqItems.filter((item) => data.schedules.filter((row) => row.boq_item_id === item.id && String(row.activity || '').trim()).reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, excessivePlans.length > 0, { severity: 'Warning', title: 'Planned quantities exceed BOQ', detail: `${excessivePlans.length} BOQ item(s) have activities exceeding their contractual quantity.`, view: 'schedule' });
+  const invalidDistributionScope = scheduleDistributions.filter((row) => {
+    const activity = scheduleById.get(row.schedule_id);
+    return !activity || activity.project_id !== row.project_id || activity.contract_id !== row.contract_id || activity.boq_item_id !== row.boq_item_id;
+  });
+  pushIf(findings, invalidDistributionScope.length > 0, { severity: 'Error', title: 'Time-phased distribution relationship mismatch', detail: `${invalidDistributionScope.length} distribution row(s) do not match their activity project, contract, or BOQ scope.`, view: 'scheduleDistributions' });
+  const invalidDistributionPeriods = scheduleDistributions.filter((row) => {
+    const activity = scheduleById.get(row.schedule_id);
+    const start = String(row.period_start || '');
+    const end = String(row.period_end || '');
+    return !start || !end || end < start || Boolean(activity && ((activity.start_date && start < activity.start_date) || (activity.end_date && end > activity.end_date)));
+  });
+  pushIf(findings, invalidDistributionPeriods.length > 0, { severity: 'Error', title: 'Time-phased distribution period is invalid', detail: `${invalidDistributionPeriods.length} distribution row(s) fall outside their activity dates or have an invalid period.`, view: 'scheduleDistributions' });
+  const unreconciledDistributions = data.schedules.filter((activity) => {
+    const rows = scheduleDistributions.filter((row) => row.schedule_id === activity.id);
+    if (!rows.length) return false;
+    const plannedQty = Number(activity.planned_quantity) || 0;
+    const plannedValue = Number(activity.budget) > 0 ? Number(activity.budget) : plannedQty * (Number(activity.unit_rate) || 0);
+    const qty = rows.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
+    const value = rows.reduce((sum, row) => sum + (Number(row.planned_value) || ((Number(row.planned_quantity) || 0) * (Number(row.unit_rate) || 0))), 0);
+    return qty > plannedQty + 0.000001 || value > plannedValue + 0.01 || Math.abs(qty - plannedQty) > 0.000001 || Math.abs(value - plannedValue) > 0.01;
+  });
+  pushIf(findings, unreconciledDistributions.length > 0, { severity: 'Warning', title: 'Time-phased plan does not reconcile to activity', detail: `${unreconciledDistributions.length} activity plan(s) have partial or over-allocated time-phased quantities/values; complete or correct the profile before relying on PV/cash forecast.`, view: 'scheduleDistributions' });
 
   const invalidWirs = data.wirEntries.filter((row) => !contractById.has(row.contract_id) || !itemById.has(row.boq_item_id));
   pushIf(findings, invalidWirs.length > 0, { severity: 'Error', title: 'Inspection request missing scope', detail: `${invalidWirs.length} WIR record(s) are missing a valid contract or BOQ item.`, view: 'wir' });

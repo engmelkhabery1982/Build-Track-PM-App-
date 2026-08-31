@@ -19,7 +19,7 @@ import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
 import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
 import { commitGovernedImport, reverseGovernedImport, type GovernedImportDerivedPatch } from '@/data/governedImport';
-import { addWorkingDays, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
+import { addWorkingDays, assertValidScheduleDistribution, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
 // actions, so loading it on demand keeps the desktop app responsive at start.
@@ -1141,6 +1141,15 @@ export function DataTableView({
       updated.planned_value = Math.round(plannedQuantity * updated.unit_rate * 100) / 100;
       updated.budget = updated.planned_value;
     }
+    if (tableName === 'schedule_distributions' && changedKey === 'schedule_id') {
+      const allocatedQuantity = existingRows
+        .filter((item) => item.id !== updated.id && item.schedule_id === selectedValue)
+        .reduce((sum, item) => sum + (Number(item.planned_quantity) || 0), 0);
+      const activityQuantity = Number(selected?.data?.planned_quantity) || 0;
+      updated.unit_rate = Number(selected?.data?.unit_rate) || 0;
+      updated.planned_quantity = Math.max(0, Math.round((activityQuantity - allocatedQuantity) * 10000) / 10000);
+      updated.planned_value = Math.round(updated.planned_quantity * updated.unit_rate * 100) / 100;
+    }
     if (tableName === 'wir_entries' && changedKey === 'company_name' && selected?.data?.contract_number) {
       const prefix = `${String(selected.data.contract_number)}-${selected.data.contract_role === 'Subcontract' ? 'SUB-' : ''}WIR-`;
       const next = existingRows.filter((item) => item.contract_id === selected?.data?.contract_id)
@@ -1460,23 +1469,11 @@ export function DataTableView({
     }
     if (tableName === 'schedule_distributions') {
       if (!record.schedule_id || !selectedSchedule) throw new Error('Select a valid schedule activity for the time-phased distribution.');
-      const periodStart = String(record.period_start || '');
-      const periodEnd = String(record.period_end || '');
-      if (!periodStart || !periodEnd) throw new Error('Time-phased distribution requires both period start and period end.');
-      if (periodEnd < periodStart) throw new Error('Distribution period end cannot be earlier than period start.');
-      const activityStart = String(selectedSchedule.data?.start_date || '');
-      const activityEnd = String(selectedSchedule.data?.end_date || '');
-      if ((activityStart && periodStart < activityStart) || (activityEnd && periodEnd > activityEnd)) {
-        throw new Error(`Distribution period must stay within the activity dates (${activityStart || 'not set'} to ${activityEnd || 'not set'}).`);
-      }
-      const alreadyDistributed = data
-        .filter((row) => row.id !== record.id && row.schedule_id === record.schedule_id)
-        .reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
-      const totalDistributed = alreadyDistributed + (Number(record.planned_quantity) || 0);
-      const activityQuantity = Number(selectedSchedule.data?.planned_quantity) || 0;
-      if (totalDistributed > activityQuantity + 0.000001) {
-        throw new Error(`Time-phased quantity exceeds the activity plan: existing ${alreadyDistributed.toLocaleString()} + new ${(Number(record.planned_quantity) || 0).toLocaleString()} = ${totalDistributed.toLocaleString()}, while the activity allows ${activityQuantity.toLocaleString()}.`);
-      }
+      assertValidScheduleDistribution(
+        { id: record.schedule_id, ...selectedSchedule.data },
+        record,
+        data.filter((row) => row.schedule_id === record.schedule_id),
+      );
     }
     if (tableName === 'wir_entries') {
       const item = boqItems?.find((candidate) => candidate.id === record.boq_item_id);
