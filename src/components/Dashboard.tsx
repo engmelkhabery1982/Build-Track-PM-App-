@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { selectPrimaryContracts } from '@/data';
-import { addCalendarDays, distributedPlannedValueToDate } from '@/utils/schedulePlanning';
+import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
@@ -391,6 +391,7 @@ export function Dashboard({
       ...fWirs.map((wir) => wir.inspection_date),
       ...costEntries.filter((entry) => pid === 'all' || entry.project_id === pid).map((entry) => entry.date),
       ...fCashFlow.map((entry) => entry.date),
+      reportDate,
     ].filter((date): date is string => Boolean(date)).sort();
     if (dates.length === 0) return [];
     const projectStart = dates[0];
@@ -404,7 +405,12 @@ export function Dashboard({
       const mainItem = item?.main_boq_item_id ? boqItems.find((candidate) => candidate.id === item.main_boq_item_id) : item;
       return Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
     };
-    const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; date: string }[] = [];
+    const totalBudget = datedSchedules.reduce((sum, schedule) => sum + scheduleBudget(schedule as Record<string, any>), 0);
+    const earnedAtDataDate = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= reportDate).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
+    const actualAtDataDate = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= reportDate).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    const cpiAtDataDate = actualAtDataDate > 0 ? earnedAtDataDate / actualAtDataDate : 0;
+    const estimateAtCompletion = cpiAtDataDate > 0 ? totalBudget / cpiAtDataDate : totalBudget;
+    const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
     for (let i = 0; i <= numPoints; i++) {
       const dayOffset = (i / numPoints) * totalDays;
@@ -414,10 +420,17 @@ export function Dashboard({
       const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
       const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
       const cashPosition = cashForecastAt(fCashFlow as Record<string, any>[], dateStr);
-      points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, date: dateStr });
+      const dateEstimate = dateStr <= reportDate
+        ? actual
+        : (() => {
+          const forecastDays = Math.max(1, Math.ceil((endMs - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
+          const elapsedForecastDays = Math.max(0, Math.ceil((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
+          return Math.min(estimateAtCompletion, actualAtDataDate + Math.max(0, estimateAtCompletion - actualAtDataDate) * Math.min(1, elapsedForecastDays / forecastDays));
+        })();
+      points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow]);
+  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, reportDate]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
@@ -1144,12 +1157,13 @@ export function Dashboard({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-primary-600" />
-                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV &amp; Actual Cost</h3>
+                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV, AC, EAC &amp; Cash</h3>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-violet-500" /><span className="text-neutral-600">EV</span></span>
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-success-500" /><span className="text-neutral-600">AC</span></span>
+                    <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-red-600" /><span className="text-neutral-600">EAC Forecast</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-orange-500" /><span className="text-neutral-600">Cash Forecast</span></span>
                     <span className="flex items-center gap-1.5"><span className="h-0 w-3 border-t-2 border-dashed border-teal-500" /><span className="text-neutral-600">Actual Cash</span></span>
                   </div>

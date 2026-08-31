@@ -7,6 +7,7 @@ interface SCurvePoint {
   actual: number;
   forecast?: number;
   cash?: number;
+  estimate?: number;
   date: string;
 }
 
@@ -32,7 +33,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
   const xScale = (i: number) => (i / Math.max(data.length - 1, 1)) * chartW;
   // Cash can legitimately be negative. Keep zero inside the scale instead of
   // clipping a deficit to the axis, otherwise the executive curve lies.
-  const values = data.flatMap((point) => [point.planned, point.earned, point.actual, point.forecast || 0, point.cash || 0]);
+  const values = data.flatMap((point) => [point.planned, point.earned, point.actual, point.forecast || 0, point.cash || 0, point.estimate || 0]);
   const maximum = Math.max(...values, 0, 1);
   const minimum = Math.min(...values, 0);
   const valueRange = Math.max(maximum - minimum, 1);
@@ -51,6 +52,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
     .join(' ');
   const forecastPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.forecast || 0).toFixed(1)}`).join(' ');
   const cashPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.cash || 0).toFixed(1)}`).join(' ');
+  const estimatePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(d.estimate || 0).toFixed(1)}`).join(' ');
 
   const plannedArea = `${plannedPath} L ${xScale(data.length - 1).toFixed(1)} ${zeroY.toFixed(1)} L 0 ${zeroY.toFixed(1)} Z`;
   const actualArea = `${actualPath} L ${xScale(data.length - 1).toFixed(1)} ${zeroY.toFixed(1)} L 0 ${zeroY.toFixed(1)} Z`;
@@ -113,6 +115,7 @@ export function SCurveChart({ data }: { data: SCurvePoint[] }) {
           <path d={earnedPath} fill="none" stroke="#8b5cf6" strokeWidth={2.5} strokeLinejoin="round" strokeDasharray="6 4" />
           <path d={forecastPath} fill="none" stroke="#f97316" strokeWidth={2} strokeLinejoin="round" strokeDasharray="3 4" />
           <path d={cashPath} fill="none" stroke="#14b8a6" strokeWidth={2} strokeLinejoin="round" strokeDasharray="8 3" />
+          <path d={estimatePath} fill="none" stroke="#dc2626" strokeWidth={2} strokeLinejoin="round" strokeDasharray="10 4" />
 
           {/* Data points */}
           {data.map((d, i) => (
