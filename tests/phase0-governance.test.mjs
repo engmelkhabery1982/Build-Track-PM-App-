@@ -14,11 +14,26 @@ const productivity = await import('../src/utils/resourceProductivity.ts');
 const resourceLoading = await import('../src/utils/resourceLoading.ts');
 const cashForecast = await import('../src/utils/cashForecast.ts');
 const paymentTerms = await import('../src/utils/paymentTerms.ts');
+const pmoSnapshot = await import('../src/utils/pmoSnapshot.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approve'), false);
   assert.equal(dictionary.isCanonicalStatus('reportingPeriod', 'Locked'), true);
+});
+
+test('PMO Snapshot uses only dated PV, approved WIR and actual-cost facts through its data date', () => {
+  const snapshot = pmoSnapshot.calculatePmoSnapshot({
+    contract: { id: 'c1', project_id: 'p1' }, dataDate: '2026-01-10',
+    schedules: [{ id: 'a1', contract_id: 'c1', activity: 'Install', start_date: '2026-01-01', end_date: '2026-01-11', planned_quantity: 100, unit_rate: 10 }], scheduleDistributions: [],
+    boqItems: [{ id: 'b1', unit_rate: 10 }],
+    wirEntries: [{ project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 30, inspection_date: '2026-01-09', status: 'Approved' }, { project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 70, inspection_date: '2026-01-11', status: 'Approved' }],
+    costEntries: [{ project_id: 'p1', contract_id: 'c1', date: '2026-01-09', amount: 250 }, { project_id: 'p1', contract_id: 'c1', date: '2026-01-11', amount: 750 }],
+  });
+  assert.equal(snapshot.earnedValue, 300);
+  assert.equal(snapshot.actualCost, 250);
+  assert.equal(snapshot.budgetAtCompletion, 1000);
+  assert.ok(snapshot.plannedValue > 0 && snapshot.plannedValue < 1000);
 });
 
 test('financial and date governance catches invalid data', () => {

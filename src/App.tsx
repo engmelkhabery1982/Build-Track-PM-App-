@@ -15,6 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
+import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculateResourceLoads } from '@/utils/resourceLoading';
@@ -3676,16 +3677,13 @@ export default function App() {
           }
           return inserted;
         } : tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
-          const projectCosts = data.costs.filter((cost: any) => cost.project_id === snapshotDraft.project_id);
-          const planned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
-          const earned = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
-          const actual = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
-          const bac = projectCosts.reduce((sum: number, cost: any) => sum + (Number(cost.budget) || Number(cost.planned) || 0), 0);
-          const cpi = actual > 0 ? earned / actual : null;
-          const spi = planned > 0 ? earned / planned : null;
+          const dataDate = String(snapshotDraft.data_date || '').slice(0, 10);
+          const contract = data.contracts.find((row: any) => row.id === snapshotDraft.contract_id) as any;
+          if (!contract || contract.parent_main_contract_id) throw new Error('Select a valid main contract for the PMO Snapshot.');
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries });
           return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
-            ...snapshotDraft, planned_value: planned, earned_value: earned, actual_cost: actual,
-            cpi, spi, eac: cpi && cpi > 0 ? bac / cpi : bac,
+            ...snapshotDraft, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost,
+            cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion,
           });
         } : tableName === 'schedules' ? async (scheduleRow) => {
           const contract = data.contracts.find((item: any) => item.id === scheduleRow.contract_id) as any;
