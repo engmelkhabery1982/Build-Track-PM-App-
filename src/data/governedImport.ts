@@ -13,6 +13,13 @@ export interface GovernedImportDerivedPatch {
   patch: Record<string, unknown>;
 }
 
+/** Supporting master rows created in the same transaction as the imported
+ * target rows. At present Primavera schedule import may create WBS nodes. */
+export interface GovernedImportAuxiliaryRow {
+  table: 'wbs_nodes';
+  row: Record<string, unknown>;
+}
+
 export interface GovernedImportReverseResult {
   batchId: string;
   status: 'Reversed';
@@ -32,6 +39,7 @@ export async function commitGovernedImport(request: {
   contractId: string;
   rows: Record<string, unknown>[];
   derivedPatches?: GovernedImportDerivedPatch[];
+  auxiliaryRows?: GovernedImportAuxiliaryRow[];
 }): Promise<GovernedImportResult> {
   if (!('__TAURI_INTERNALS__' in window)) {
     throw new Error('Atomic governed imports are available only in the BuildTrack desktop application.');

@@ -101,6 +101,21 @@ test('Primavera XER import retains supported constraints and milestones', () => 
   assert.equal(row.Milestone, true);
 });
 
+test('Primavera XER import resolves the P6 WBS code, name and parent', () => {
+  const xer = `%T\tPROJWBS
+%F\twbs_id\twbs_short_name\twbs_name\tparent_wbs_id
+%R\t1\tBLD\tBuilding Works\t
+%R\t2\tBLD.10\tStructure\t1
+%T\tTASK
+%F\ttask_id\ttask_code\ttask_name\twbs_id\ttarget_start_date\ttarget_end_date\ttarget_drtn
+%R\t10\tACT-10\tExcavate\t2\t2026-01-01\t2026-01-03\t3
+`;
+  const [row] = primavera.parsePrimaveraXerTasks(xer);
+  assert.equal(row.WBS, 'BLD.10');
+  assert.equal(row['WBS Name'], 'Structure');
+  assert.equal(row['WBS Parent'], 'BLD');
+});
+
 test('approved baselines freeze activity-level schedule scope and require a governed revision', () => {
   const activities = [
     { id: 'a-2', activity_code: 'B', activity: 'Concrete', start_date: '2026-01-08', end_date: '2026-01-12', duration_days: 4, planned_quantity: 50, budget: 2000, calendar_name: '6-Day Week', critical_path: true },

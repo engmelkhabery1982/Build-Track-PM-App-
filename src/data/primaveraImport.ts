@@ -15,6 +15,13 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     if (cells[0] === '%R' && table && fields.length) tables.get(table)?.push(Object.fromEntries(fields.map((field, index) => [field, cells[index + 1] ?? ''])));
   }
   const calendars = new Map((tables.get('CALENDAR') || []).map((row) => [row.clndr_id, row.clndr_name || row.clndr_id]));
+  const wbsRows = tables.get('PROJWBS') || tables.get('WBS') || [];
+  const wbsById = new Map(wbsRows.map((row) => [row.wbs_id, {
+    code: row.wbs_short_name || row.wbs_code || row.wbs_id || '',
+    name: row.wbs_name || row.wbs_short_name || row.wbs_id || '',
+    parentId: row.parent_wbs_id || '',
+  }]));
+  const wbsFor = (id: string) => wbsById.get(id) || { code: id || '', name: id || '', parentId: '' };
   const tasks = tables.get('TASK') || [];
   const codeCount = new Map<string, number>();
   tasks.forEach((task) => codeCount.set(task.task_code || '', (codeCount.get(task.task_code || '') || 0) + 1));
@@ -30,6 +37,8 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
   }[String(value || '').toUpperCase()] || 'None');
   for (const link of tables.get('TASKPRED') || []) predecessorsByTask.set(link.task_id, [...(predecessorsByTask.get(link.task_id) || []), link]);
   return tasks.map((task) => {
+    const wbs = wbsFor(task.wbs_id || '');
+    const parentWbs = wbsFor(wbs.parentId);
     const links = predecessorsByTask.get(task.task_id) || [];
     const predecessorCodes = links.map((link) => taskCodeById.get(link.pred_task_id)).filter(Boolean) as string[];
     const first = links[0];
@@ -39,7 +48,9 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Activity ID': uniqueTaskCode(task),
       'Source Activity ID': task.task_code || '',
       'Activity Name': task.task_name || '',
-      WBS: task.wbs_id || '',
+      WBS: wbs.code,
+      'WBS Name': wbs.name,
+      'WBS Parent': wbs.parentId ? parentWbs.code : '',
       Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
       Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
       'Original Duration': task.target_drtn || task.remain_drtn || '',

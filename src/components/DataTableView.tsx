@@ -18,7 +18,7 @@ import {
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
 import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
-import { commitGovernedImport, reverseGovernedImport, type GovernedImportDerivedPatch } from '@/data/governedImport';
+import { commitGovernedImport, reverseGovernedImport, type GovernedImportAuxiliaryRow, type GovernedImportDerivedPatch } from '@/data/governedImport';
 import { addWorkingDays, assertValidScheduleDistribution, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
@@ -371,11 +371,12 @@ export function DataTableView({
   const [projectFilter, setProjectFilter] = useState(initialProjectId || 'all');
   const [importScope, setImportScope] = useState<Record<string, any> | null>(null);
   const [workContext, setWorkContext] = useState<Record<string, any> | null>(null);
-  const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[]; validationErrors: { row: number; message: string }[] } | null>(null);
+  const [importPreview, setImportPreview] = useState<{ fileName: string; rows: Record<string, any>[]; auxiliaryRows: GovernedImportAuxiliaryRow[]; validationErrors: { row: number; message: string }[] } | null>(null);
   const [lastImportRows, setLastImportRows] = useState<Record<string, any>[]>([]);
   const [lastImportParentRestores, setLastImportParentRestores] = useState<Record<string, any>[]>([]);
   const [lastImportBatchId, setLastImportBatchId] = useState<string | null>(null);
   const [lastImportDerivedRestores, setLastImportDerivedRestores] = useState<{ table: 'boq_items' | 'contracts'; row: Record<string, any> }[]>([]);
+  const [lastImportAuxiliaryRows, setLastImportAuxiliaryRows] = useState<GovernedImportAuxiliaryRow[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -1755,7 +1756,7 @@ export function DataTableView({
         Object.assign(labelToKey, {
           'activity id': 'activity_code', 'activity name': 'activity', 'task name': 'activity',
           'source activity id': 'source_activity_code',
-          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'start': 'start_date', 'start date': 'start_date',
+          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'wbs name': '_primavera_wbs_name', 'wbs parent': '_primavera_wbs_parent_code', 'start': 'start_date', 'start date': 'start_date',
           'finish': 'end_date', 'finish date': 'end_date', 'end date': 'end_date',
           'original duration': 'duration_days', 'planned duration': 'duration_days',
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
@@ -2009,6 +2010,62 @@ export function DataTableView({
           if (!row.activity_code) row.activity_code = `${item.item_code || 'ITEM'}-ACT-${String((existingActivityCountByItem.get(item.id) || 0) + (importedActivityCountByItem.get(item.id) || 0)).padStart(3, '0')}`;
         });
       }
+      // A P6/XER export identifies activities by WBS code, while BuildTrack
+      // stores a governed WBS foreign key. Match the existing WBS register or
+      // stage the missing nodes for the same atomic desktop transaction.
+      const auxiliaryRows: GovernedImportAuxiliaryRow[] = [];
+      if (tableName === 'schedules') {
+        const existingWbsByCode = new Map((relationshipOptions?.wbs_id || []).map((option) => [String(option.data?.wbs_code || '').trim().toLowerCase(), option]));
+        const stagedWbsByCode = new Map<string, GovernedImportAuxiliaryRow>();
+        for (const row of mapped) {
+          const wbsCode = String(row.wbs_code || '').trim();
+          if (!wbsCode) continue;
+          const key = wbsCode.toLowerCase();
+          const existing = existingWbsByCode.get(key);
+          if (existing) {
+            const scope = existing.data || {};
+            if ((row.project_id && scope.project_id && row.project_id !== scope.project_id)
+              || (scope.contract_id && row.contract_id && row.contract_id !== scope.contract_id)) {
+              throw new Error(`WBS ${wbsCode} is already assigned outside this Primavera import scope.`);
+            }
+            row.wbs_id = existing.value;
+            row.wbs_code = scope.wbs_code || wbsCode;
+            continue;
+          }
+          let staged = stagedWbsByCode.get(key);
+          if (!staged) {
+            if (!row.project_id || !row.contract_id) throw new Error(`WBS ${wbsCode} cannot be created until the activity resolves to one project and main contract.`);
+            staged = {
+              table: 'wbs_nodes',
+              row: {
+                id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
+                wbs_code: wbsCode, wbs_code_locked: false, name: String(row._primavera_wbs_name || wbsCode),
+                description: 'Imported from Primavera schedule.', parent_wbs_id: null, wbs_level: 1, status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
+                _primavera_parent_wbs_code: String(row._primavera_wbs_parent_code || '').trim(),
+              },
+            };
+            stagedWbsByCode.set(key, staged);
+            auxiliaryRows.push(staged);
+          }
+          row.wbs_id = staged.row.id;
+          row.wbs_code = wbsCode;
+        }
+        const stagedCodeById = new Map(auxiliaryRows.map((entry) => [String(entry.row.id), entry]));
+        const levelFor = (entry: GovernedImportAuxiliaryRow, stack = new Set<string>()): number => {
+          const id = String(entry.row.id);
+          if (stack.has(id)) throw new Error(`Primavera WBS hierarchy contains a circular parent reference at ${entry.row.wbs_code}.`);
+          const parentCode = String(entry.row._primavera_parent_wbs_code || '').trim().toLowerCase();
+          if (!parentCode) return 1;
+          const existingParent = existingWbsByCode.get(parentCode);
+          if (existingParent) { entry.row.parent_wbs_id = existingParent.value; return Number(existingParent.data?.wbs_level) + 1 || 2; }
+          const stagedParent = stagedWbsByCode.get(parentCode);
+          if (!stagedParent) return 1;
+          entry.row.parent_wbs_id = stagedParent.row.id;
+          const nextStack = new Set(stack); nextStack.add(id);
+          return levelFor(stagedParent, nextStack) + 1;
+        };
+        for (const entry of stagedCodeById.values()) entry.row.wbs_level = levelFor(entry);
+      }
       // Do not write immediately after the user chooses a file.  The user
       // first reviews the mapped values and the active project/contract
       // context, then explicitly accepts the import in the preview panel.
@@ -2026,7 +2083,7 @@ export function DataTableView({
           validationErrors.push({ row: index + 2, message: error.message || 'Validation failed.' });
         }
       });
-      setImportPreview({ fileName: file.name, rows: mapped, validationErrors });
+      setImportPreview({ fileName: file.name, rows: mapped, auxiliaryRows, validationErrors });
     } catch (err: any) {
       setImportResult({ success: 0, failed: 0, errors: [err.message || 'Failed to read the Excel file.'] });
     }
@@ -2048,7 +2105,7 @@ export function DataTableView({
         const createdAt = new Date().toISOString();
         const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
         const preparedRows = importPreview.rows.map((source) => {
-          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, ...row } = source;
+          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, ...row } = source;
           return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
         });
         if (tableName === 'schedules') {
@@ -2111,8 +2168,9 @@ export function DataTableView({
             }
           }
         }
-        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, derivedPatches });
+        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, derivedPatches, auxiliaryRows: importPreview.auxiliaryRows });
         onMutated({ type: 'insertMany', rows: preparedRows });
+        if (importPreview.auxiliaryRows.length) onRelatedMutation?.('wbs_nodes', { type: 'insertMany', rows: importPreview.auxiliaryRows.map((entry) => entry.row as Record<string, any>) });
         derivedPatches.forEach((derived) => {
           const original = derivedRestores.find((restore) => restore.table === derived.table && restore.row.id === derived.id)?.row;
           if (original) onRelatedMutation?.(derived.table, { type: 'update', row: { ...original, ...derived.patch } });
@@ -2121,6 +2179,7 @@ export function DataTableView({
         setLastImportParentRestores([]);
         setLastImportBatchId(result.batchId);
         setLastImportDerivedRestores(derivedRestores);
+        setLastImportAuxiliaryRows(importPreview.auxiliaryRows);
         setImportResult({ success: result.committedCount, failed: 0, errors: [] });
         setOperationNotice({ kind: 'success', text: `Committed ${result.committedCount}/${result.committedCount} rows atomically. Batch ${result.batchId}.` });
         setImportPreview(null);
@@ -2136,6 +2195,13 @@ export function DataTableView({
     const parentRestores: Record<string, any>[] = [];
     const errors: string[] = [];
     const importedPredecessors: { activityCode: string; predecessorCode: string }[] = [];
+    const insertedAuxiliaryRows: GovernedImportAuxiliaryRow[] = [];
+    if (tableName === 'schedules' && importPreview.auxiliaryRows.length) {
+      setImportResult({ success: 0, failed: importPreview.rows.length, errors: ['This Primavera import needs new WBS nodes. Use the BuildTrack desktop app so the WBS and activities can be committed atomically.'] });
+      setOperationNotice({ kind: 'error', text: 'No rows were saved. Missing WBS nodes require a governed desktop import.' });
+      setImporting(false);
+      return;
+    }
     // Persist one row at a time so that valid operational records survive an
     // invalid row, while the outcome clearly tells the user exactly what was
     // accepted and what must be corrected.
@@ -2218,6 +2284,7 @@ export function DataTableView({
     setLastImportParentRestores(parentRestores);
     setLastImportBatchId(null);
     setLastImportDerivedRestores([]);
+    setLastImportAuxiliaryRows(insertedAuxiliaryRows);
     if (success > 0) setOperationNotice({ kind: errors.length ? 'warning' : 'success', text: errors.length ? `${success} row(s) imported. ${errors.length} row(s) need correction.` : `${success} row(s) imported successfully. You can undo this import during this session.` });
     setImportPreview(null);
     setImporting(false);
@@ -2231,11 +2298,13 @@ export function DataTableView({
       try {
         const result = await reverseGovernedImport({ batchId: lastImportBatchId, reason: 'User reversed the latest governed import from the table.' });
         lastImportRows.forEach((row) => onMutated({ type: 'delete', id: row.id }));
+        lastImportAuxiliaryRows.forEach((auxiliary) => onRelatedMutation?.(auxiliary.table, { type: 'delete', id: String(auxiliary.row.id) }));
         lastImportDerivedRestores.forEach((restore) => onRelatedMutation?.(restore.table, { type: 'update', row: restore.row }));
         setLastImportRows([]);
         setLastImportParentRestores([]);
         setLastImportBatchId(null);
         setLastImportDerivedRestores([]);
+        setLastImportAuxiliaryRows([]);
         setOperationNotice({ kind: 'success', text: `The governed import batch was reversed (${result.reversedCount} imported records).` });
       } catch (error: any) {
         setOperationNotice({ kind: 'error', text: error.message || 'The governed import batch could not be reversed.' });
@@ -2250,6 +2319,12 @@ export function DataTableView({
         onMutated({ type: 'delete', id: row.id });
       } catch (error: any) { failed.push(error.message || `Could not remove row ${row.id}.`); }
     }
+    for (const auxiliary of lastImportAuxiliaryRows) {
+      try {
+        await dataRepository.delete(auxiliary.table, String(auxiliary.row.id));
+        onRelatedMutation?.(auxiliary.table, { type: 'delete', id: String(auxiliary.row.id) });
+      } catch (error: any) { failed.push(error.message || `Could not remove supporting WBS ${auxiliary.row.wbs_code || auxiliary.row.id}.`); }
+    }
     for (const restore of lastImportParentRestores) {
       try {
         const { id, ...patch } = restore;
@@ -2261,6 +2336,7 @@ export function DataTableView({
     setLastImportParentRestores([]);
     setLastImportBatchId(null);
     setLastImportDerivedRestores([]);
+    setLastImportAuxiliaryRows([]);
     setImporting(false);
     setOperationNotice(failed.length ? { kind: 'warning', text: `Import undo completed with ${failed.length} issue(s).` } : { kind: 'success', text: 'The latest import was removed.' });
   }
@@ -3391,7 +3467,7 @@ export function DataTableView({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-bold text-neutral-900">Review import before saving</h3><p className="mt-1 text-sm text-neutral-500">{importPreview.fileName} · {importPreview.rows.length.toLocaleString()} mapped row(s) · {importPreview.rows.length - importPreview.validationErrors.length} ready to save.{importPreview.auxiliaryRows.length ? ` ${importPreview.auxiliaryRows.length} missing WBS node(s) will be created in the same governed transaction.` : ''}</p></div><button onClick={() => setImportPreview(null)} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100" title="Cancel import"><X size={20}/></button></div>
             <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900"><span className="font-semibold">Final step:</span> click <span className="font-semibold">Save rows to table</span> below to write these records. Closing this window does not save anything.</div>
             {activeScope && <div className="mt-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">Context applied: {projectMap[activeScope.project_id] || 'Selected project'}{activeScope.contract_id ? ` / ${(contracts?.find((contract: any) => contract.id === activeScope.contract_id) as any)?.contract_number || 'Selected contract'}` : ''}</div>}
             <p className="mt-4 text-sm text-neutral-600">The template maps only user-entered fields. Project, contract, linked BOQ values, codes and calculated values are applied from the current context. Relationship, quantity, date and locked-period rules will run again when you confirm.</p>

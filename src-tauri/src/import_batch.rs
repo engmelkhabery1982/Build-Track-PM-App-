@@ -15,11 +15,17 @@ pub struct ImportCommitRequest {
     pub rows: Vec<Value>,
     #[serde(default)]
     pub derived_patches: Vec<ImportDerivedPatch>,
+    #[serde(default)]
+    pub auxiliary_rows: Vec<ImportAuxiliaryRow>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportDerivedPatch { pub table: String, pub id: String, pub patch: Value }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportAuxiliaryRow { pub table: String, pub row: Value }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -149,6 +155,30 @@ async fn validate_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitR
     Ok(())
 }
 
+async fn validate_auxiliary_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
+    let mut codes = HashSet::new();
+    for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
+        if auxiliary.table != "wbs_nodes" { return Err("Only WBS nodes may be created as supporting import rows.".into()); }
+        let row = auxiliary.row.as_object().ok_or_else(|| format!("WBS row {}: import data is not an object.", index + 1))?;
+        if string_value(row, "id").is_empty() || string_value(row, "wbs_code").is_empty() {
+            return Err(format!("WBS row {}: a controlled identifier and WBS code are required.", index + 1));
+        }
+        if string_value(row, "project_id") != request.project_id {
+            return Err(format!("WBS row {}: project scope does not match the selected project.", index + 1));
+        }
+        let contract_id = string_value(row, "contract_id");
+        if !contract_id.is_empty() && contract_id != request.contract_id {
+            return Err(format!("WBS row {}: contract scope does not match the selected contract.", index + 1));
+        }
+        let code = string_value(row, "wbs_code").to_lowercase();
+        if !codes.insert(code.clone()) { return Err(format!("WBS row {}: duplicate WBS code in this import batch.", index + 1)); }
+        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM wbs_nodes WHERE project_id=? AND lower(json_extract(payload, '$.wbs_code'))=?")
+            .bind(&request.project_id).bind(&code).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+        if exists.is_some() { return Err(format!("WBS row {}: WBS code already exists in the selected project.", index + 1)); }
+    }
+    Ok(())
+}
+
 // The alias makes the validation flow easier to read while retaining a small
 // function above that is directly testable in the SQLite transaction.
 async fn await_scope(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest, row: &Map<String, Value>, source_row: usize) -> Result<(), String> {
@@ -167,6 +197,15 @@ async fn insert_target(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<
             .bind(string_value(row,"parent_main_project_id")).bind(string_value(row,"parent_main_contract_id"))
             .bind(string_value(row,"boq_header_id")).bind(string_value(row,"boq_item_id")).bind(payload).execute(&mut **tx).await.map_err(|error| error.to_string())?;
     }
+    Ok(())
+}
+
+async fn insert_auxiliary(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &Map<String, Value>) -> Result<(), String> {
+    if table != "wbs_nodes" { return Err("Unsupported supporting import table.".into()); }
+    sqlx::query("INSERT INTO wbs_nodes (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)")
+        .bind(string_value(row,"id")).bind(string_value(row,"created_at")).bind(string_value(row,"project_id")).bind(string_value(row,"contract_id"))
+        .bind(string_value(row,"boq_header_id")).bind(string_value(row,"boq_item_id")).bind(string_value(row,"parent_main_project_id")).bind(string_value(row,"parent_main_contract_id"))
+        .bind(Value::Object(row.clone()).to_string()).execute(&mut **tx).await.map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -195,7 +234,27 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
     let outcome = async {
         sqlx::query("INSERT INTO import_batches (id,created_at,source,file_name,target_table,project_id,contract_id,status,row_count,summary_json) VALUES (?,?,?,?,?,?,?,?,?,?)")
             .bind(&request.batch_id).bind(&started).bind(&request.source).bind(&request.file_name).bind(&request.target_table).bind(&request.project_id).bind(&request.contract_id).bind("Validating").bind(request.rows.len() as i64).bind("{}").execute(&mut *tx).await.map_err(|error| error.to_string())?;
+        validate_auxiliary_rows(&mut tx, &request).await?;
         validate_rows(&mut tx, &request).await?;
+        for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
+            let row = auxiliary.row.as_object().ok_or_else(|| format!("WBS row {}: invalid mapped payload.", index + 1))?;
+            insert_auxiliary(&mut tx, &auxiliary.table, row).await?;
+            let record_id = string_value(row, "id");
+            let audit_id = format!("{}-aux-wbs-{}", request.batch_id, index + 1);
+            let audit_payload = json!({
+                "id": audit_id, "created_at": started, "project_id": request.project_id,
+                "contract_id": request.contract_id, "entity_type": auxiliary.table,
+                "entity_id": record_id, "action": "Insert", "actor": "Local User",
+                "after": Value::Object(row.clone()), "summary": format!("Atomic import {}", request.batch_id),
+                "import_batch_id": request.batch_id,
+            });
+            sqlx::query("INSERT INTO audit_log (id,created_at,project_id,contract_id,parent_main_project_id,parent_main_contract_id,boq_header_id,boq_item_id,payload) VALUES (?,?,?,?,?,?,?,?,?)")
+                .bind(&audit_id).bind(&started).bind(&request.project_id).bind(&request.contract_id)
+                .bind("").bind("").bind("").bind("").bind(audit_payload.to_string())
+                .execute(&mut *tx).await.map_err(|error| error.to_string())?;
+            sqlx::query("INSERT INTO import_batch_rows (id,batch_id,source_row_number,target_table,target_record_id,status,source_json,mapped_json) VALUES (?,?,?,?,?,?,?,?)")
+                .bind(format!("{}-aux-wbs-{}", request.batch_id, index + 1)).bind(&request.batch_id).bind(0_i64).bind(&auxiliary.table).bind(&record_id).bind("Committed").bind(auxiliary.row.to_string()).bind(auxiliary.row.to_string()).execute(&mut *tx).await.map_err(|error| error.to_string())?;
+        }
         for (index, value) in request.rows.iter().enumerate() {
             let row = value.as_object().ok_or_else(|| format!("Row {}: invalid mapped payload.", index + 2))?;
             insert_target(&mut tx, &request.target_table, row).await?;
@@ -264,6 +323,7 @@ mod tests {
             "CREATE TABLE boq_headers (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT)",
             "CREATE TABLE boq_items (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, boq_header_id TEXT, payload TEXT)",
             "CREATE TABLE schedules (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
+            "CREATE TABLE wbs_nodes (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT)",
             "CREATE TABLE wir_entries (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT)",
             "CREATE TABLE import_batches (id TEXT PRIMARY KEY, created_at TEXT, committed_at TEXT, source TEXT, file_name TEXT, target_table TEXT, project_id TEXT, contract_id TEXT, status TEXT, row_count INTEGER, committed_count INTEGER, rejected_count INTEGER, summary_json TEXT)",
@@ -283,7 +343,7 @@ mod tests {
         let request = ImportCommitRequest { batch_id: "batch-1".into(), source: "Excel".into(), file_name: "boq.xlsx".into(), target_table: "boq_items".into(), project_id: "p1".into(), contract_id: "c1".into(), rows: vec![
             json!({"id":"i1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10}),
             json!({"id":"i2","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10}),
-        ], derived_patches: vec![] };
+        ], derived_patches: vec![], auxiliary_rows: vec![] };
         assert!(commit_governed_import(&path, request).await.is_err());
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM boq_items").fetch_one(&pool).await.unwrap(), 0);
@@ -301,7 +361,7 @@ mod tests {
         let request = ImportCommitRequest {
             batch_id: "batch-reverse".into(), source: "Excel".into(), file_name: "boq.xlsx".into(), target_table: "boq_items".into(), project_id: "p1".into(), contract_id: "c1".into(),
             rows: vec![json!({"id":"i1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10})],
-            derived_patches: vec![],
+            derived_patches: vec![], auxiliary_rows: vec![],
         };
         let committed = commit_governed_import(&path, request).await.unwrap();
         assert_eq!(committed.status, "Committed");
@@ -311,6 +371,31 @@ mod tests {
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM boq_items").fetch_one(&pool).await.unwrap(), 0);
         assert_eq!(sqlx::query_scalar::<_, String>("SELECT status FROM import_batches WHERE id='batch-reverse'").fetch_one(&pool).await.unwrap(), "Reversed");
+        pool.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn schedule_import_commits_and_reverses_its_supporting_wbs_nodes() {
+        let path = std::env::temp_dir().join(format!("buildtrack-import-wbs-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let request = ImportCommitRequest {
+            batch_id: "batch-wbs".into(), source: "Primavera".into(), file_name: "schedule.xer".into(), target_table: "schedules".into(), project_id: "p1".into(), contract_id: "c1".into(),
+            rows: vec![json!({"id":"a1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","wbs_id":"w1"})],
+            derived_patches: vec![],
+            auxiliary_rows: vec![ImportAuxiliaryRow { table: "wbs_nodes".into(), row: json!({"id":"w1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","wbs_code":"BLD.10","name":"Structure"}) }],
+        };
+        commit_governed_import(&path, request).await.unwrap();
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedules").fetch_one(&pool).await.unwrap(), 1);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wbs_nodes").fetch_one(&pool).await.unwrap(), 1);
+        pool.close().await;
+        let reversed = reverse_governed_import(&path, ImportReverseRequest { batch_id: "batch-wbs".into(), reason: "acceptance test".into() }).await.unwrap();
+        assert_eq!(reversed.status, "Reversed");
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedules").fetch_one(&pool).await.unwrap(), 0);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wbs_nodes").fetch_one(&pool).await.unwrap(), 0);
         pool.close().await;
         let _ = std::fs::remove_file(&path);
     }
