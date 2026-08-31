@@ -13,6 +13,7 @@ const baselines = await import('../src/data/baselineGovernance.ts');
 const productivity = await import('../src/utils/resourceProductivity.ts');
 const resourceLoading = await import('../src/utils/resourceLoading.ts');
 const cashForecast = await import('../src/utils/cashForecast.ts');
+const paymentTerms = await import('../src/utils/paymentTerms.ts');
 
 test('canonical status dictionary rejects synonyms', () => {
   assert.equal(dictionary.isCanonicalStatus('variation', 'Approved'), true);
@@ -197,6 +198,12 @@ test('cash forecast separates settled cash from open forecast and excludes cance
     { id: 'cancelled', date: '2026-01-12', movement_type: 'Forecast', status: 'Cancelled', inflow: 0, outflow: 999 },
   ], '2026-01-31');
   assert.deepEqual(point, { actualNet: 800, openForecastNet: -300, forecastNet: 500 });
+});
+
+test('payment terms produce a governed invoice due date', () => {
+  assert.equal(paymentTerms.dueDateFromTerms('2026-02-10', 30), '2026-03-12');
+  assert.equal(paymentTerms.dueDateFromTerms('2026-02-10', -10), '2026-02-10');
+  assert.equal(paymentTerms.dueDateFromTerms(null, 30), null);
 });
 
 test('new governed commercial and field records receive scoped codes', () => {

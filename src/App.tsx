@@ -17,6 +17,7 @@ import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
+import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
@@ -1857,6 +1858,10 @@ export default function App() {
     }
     const totalWorkValue = invoiceRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     const first = invoiceRows[0];
+    const contract = data.contracts.find((row: any) => row.id === first.contract_id) as any;
+    const partyId = invoiceTable === 'client_invoices' ? contract?.client_party_id : contract?.contractor_party_id;
+    const party = data.parties.find((row: any) => row.id === partyId) as any;
+    const dueDate = dueDateFromTerms(first.invoice_date || null, party?.payment_terms_days);
     await dataRepository.insert<Record<string, any>>(trackingTable, {
       id: crypto.randomUUID(),
       invoice_id: null,
@@ -1865,7 +1870,7 @@ export default function App() {
       project_code: first.project_code || '',
       contract_id: first.contract_id,
       invoice_date: first.invoice_date || null,
-      due_date: null,
+      due_date: dueDate,
       status: 'Generated',
       payment_status: 'Unpaid',
       payment_date: null,
@@ -1907,6 +1912,12 @@ export default function App() {
     const invoiceTable = trackingTable === 'client_invoice_tracking' ? 'client_invoices' : 'subcontractor_invoices';
     const invoiceRows = (invoiceTable === 'client_invoices' ? data.clientInvoices : data.subInvoices)
       .filter((row: any) => row.invoice_number === updatedTracking.invoice_number) as Record<string, any>[];
+    if (!updatedTracking.due_date) {
+      const contract = data.contracts.find((row: any) => row.id === updatedTracking.contract_id) as any;
+      const partyId = trackingTable === 'client_invoice_tracking' ? contract?.client_party_id : contract?.contractor_party_id;
+      const party = data.parties.find((row: any) => row.id === partyId) as any;
+      updatedTracking.due_date = dueDateFromTerms(updatedTracking.invoice_date || invoiceRows[0]?.invoice_date || null, party?.payment_terms_days);
+    }
 
     // Invoice tracking is the commercial control point. Keep every generated
     // line for the invoice aligned with the single tracking decision.
