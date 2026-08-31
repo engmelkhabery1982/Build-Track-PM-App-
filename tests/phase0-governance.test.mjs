@@ -80,6 +80,15 @@ test('Primavera XER import preserves calendar, logic, dates and duplicate activi
   assert.equal(rows[0].Critical, true);
 });
 
+test('Primavera XER retains planned labour and equipment assignments on the activity', () => {
+  const xer = `%T\tRSRC\n%F\trsrc_id\trsrc_short_name\trsrc_name\trsrc_type\n%R\t1\tCREW-01\tConcrete Crew\tRT_Labor\n%R\t2\tCRANE-01\tTower Crane\tRT_Equip\n%T\tTASK\n%F\ttask_id\ttask_code\ttask_name\ttarget_start_date\ttarget_end_date\ttarget_drtn\n%R\t10\tACT-10\tPour Concrete\t2026-01-01\t2026-01-05\t5\n%T\tTASKRSRC\n%F\ttask_id\trsrc_id\ttarget_qty\ttarget_cost\n%R\t10\t1\t40\t800\n%R\t10\t2\t20\t1200\n`;
+  const [row] = primavera.parsePrimaveraXerTasks(xer);
+  assert.equal(row['Planned Labor Hours'], 40);
+  assert.equal(row['Planned Equipment Hours'], 20);
+  assert.equal(row['Planned Resource Cost'], 2000);
+  assert.match(row.Notes, /Concrete Crew/);
+});
+
 test('Primavera XER calendar data preserves custom working days and exceptions', () => {
   const xer = `%T\tCALENDAR
 %F\tclndr_id\tclndr_name\tclndr_data

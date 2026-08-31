@@ -61,6 +61,17 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     return (codeCount.get(source) || 0) > 1 ? `${source}-P6-${task.task_id}` : source;
   };
   const taskCodeById = new Map(tasks.map((task) => [task.task_id, uniqueTaskCode(task)]));
+  const resourceById = new Map((tables.get('RSRC') || []).map((resource) => [resource.rsrc_id, resource]));
+  const resourceAssignmentsByTask = new Map<string, Record<string, string>[]>();
+  for (const assignment of tables.get('TASKRSRC') || []) {
+    resourceAssignmentsByTask.set(assignment.task_id, [...(resourceAssignmentsByTask.get(assignment.task_id) || []), assignment]);
+  }
+  const resourceType = (resource: Record<string, string> | undefined) => {
+    const value = String(resource?.rsrc_type || resource?.resource_type || '').toLowerCase();
+    return /equip/.test(value) ? 'Equipment' : /labor|labour|person|crew/.test(value) ? 'Labor' : 'Other';
+  };
+  const resourceHours = (assignment: Record<string, string>) => Number(assignment.target_qty || assignment.target_labor_units || assignment.target_equip_units || assignment.target_qty_per_hr || 0) || 0;
+  const resourceCost = (assignment: Record<string, string>) => Number(assignment.target_cost || assignment.target_labor_cost || assignment.target_equip_cost || 0) || 0;
   const predecessorsByTask = new Map<string, Record<string, string>[]>();
   const constraintName = (value: string) => ({
     CS_SNET: 'Start No Earlier Than', CS_FNLT: 'Finish No Later Than',
@@ -72,6 +83,18 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     const wbs = wbsFor(task.wbs_id || '');
     const parentWbs = wbsFor(wbs.parentId);
     const links = predecessorsByTask.get(task.task_id) || [];
+    const resourceAssignments = resourceAssignmentsByTask.get(task.task_id) || [];
+    const resourceSummary = resourceAssignments.map((assignment) => {
+      const resource = resourceById.get(assignment.rsrc_id);
+      return {
+        resource_id: assignment.rsrc_id || '', resource_code: resource?.rsrc_short_name || resource?.rsrc_name || assignment.rsrc_id || '',
+        resource_name: resource?.rsrc_name || resource?.rsrc_short_name || assignment.rsrc_id || '', resource_type: resourceType(resource),
+        planned_hours: resourceHours(assignment), planned_cost: resourceCost(assignment),
+      };
+    });
+    const laborHours = resourceSummary.filter((assignment) => assignment.resource_type === 'Labor').reduce((sum, assignment) => sum + assignment.planned_hours, 0);
+    const equipmentHours = resourceSummary.filter((assignment) => assignment.resource_type === 'Equipment').reduce((sum, assignment) => sum + assignment.planned_hours, 0);
+    const plannedResourceCost = resourceSummary.reduce((sum, assignment) => sum + assignment.planned_cost, 0);
     const predecessorCodes = links.map((link) => taskCodeById.get(link.pred_task_id)).filter(Boolean) as string[];
     const first = links[0];
     const relation = String(first?.pred_type || 'PR_FS').replace(/^PR_/, '') || 'FS';
@@ -91,6 +114,10 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       'Constraint Date': String(task.cstr_date || task.primary_cstr_date || '').slice(0, 10),
       Milestone: /mile/i.test(String(task.task_type || task.activity_type || '')),
       'Planned Qty': '',
+      'Planned Labor Hours': laborHours || '',
+      'Planned Equipment Hours': equipmentHours || '',
+      'Planned Resource Cost': plannedResourceCost || '',
+      'P6 Resource Assignments': JSON.stringify(resourceSummary),
       Calendar: calendar.name,
       'Calendar Pattern': calendar.pattern,
       'Calendar Working Days': JSON.stringify(calendar.workingDays),
@@ -106,7 +133,7 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       Relationship: relation,
       'Lag (days)': lagHours ? Math.round((lagHours / calendar.dayHours) * 100) / 100 : 0,
       Critical: task.driving_path_flag === 'Y' || task.critical_path_flag === 'Y',
-      Notes: task.task_descr || '',
+      Notes: `${task.task_descr || ''}${resourceSummary.length ? `${task.task_descr ? '\n' : ''}Imported P6 resources: ${resourceSummary.map((assignment) => `${assignment.resource_code} / ${assignment.resource_name} (${assignment.resource_type}, ${assignment.planned_hours}h)`).join(', ')}` : ''}`,
     };
   }).filter((row) => row['Activity ID'] && row['Activity Name']);
 }

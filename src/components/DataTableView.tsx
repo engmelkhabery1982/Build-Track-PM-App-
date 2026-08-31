@@ -1784,6 +1784,8 @@ export function DataTableView({
           'original duration': 'duration_days', 'planned duration': 'duration_days',
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
           'planned cost': 'budget', 'budgeted units': 'planned_quantity', 'planned units': 'planned_quantity',
+          'planned labor hours': 'planned_labor_hours', 'planned equipment hours': 'planned_equipment_hours',
+          'planned resource cost': '_primavera_resource_cost', 'p6 resource assignments': '_primavera_resource_assignments',
           'actual start': 'actual_start_date', 'actual start date': 'actual_start_date',
           'actual finish': 'actual_finish_date', 'actual finish date': 'actual_finish_date',
           'activity status': 'activity_status', 'status date': 'status_data_date', 'data date': 'status_data_date',
