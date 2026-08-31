@@ -516,6 +516,15 @@ test('planned resource load profile detects capacity overload before site actual
   assert.equal(loads[0].overAllocatedHours, 2);
 });
 
+test('planned resource load respects the governed resource availability window', () => {
+  const loads = resourceLoading.calculatePlannedResourceLoads(
+    [{ id: 'r1', daily_capacity_hours: 8, availability_start_date: '2026-03-02', availability_end_date: '2026-03-03' }],
+    [{ resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-04', planned_hours: 16 }],
+  );
+  assert.deepEqual(loads.map((load) => load.date), ['2026-03-02', '2026-03-03']);
+  assert.deepEqual(loads.map((load) => load.allocatedHours), [8, 8]);
+});
+
 test('resource leveling recommendations identify affected activities without changing the plan', () => {
   const assignments = [
     { id: 'ra-1', schedule_id: 'a-1', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 6 },

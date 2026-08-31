@@ -3352,7 +3352,17 @@ export default function App() {
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
             : null;
         } : undefined}
-        validateRecord={tableName === 'reporting_periods' ? (row) => {
+        validateRecord={tableName === 'resourceAssignments' ? (row) => {
+          const resource = data.resourceMasters.find((candidate: any) => candidate.id === row.resource_id) as any;
+          const start = String(row.assignment_start || ''); const end = String(row.assignment_end || '');
+          if (!resource) throw new Error('Select a valid active Resource Master record.');
+          if (resource.status === 'Inactive') throw new Error('An inactive resource cannot receive a planned assignment.');
+          if (resource.availability_start_date && start && start < resource.availability_start_date) throw new Error(`Assignment starts before this resource is available (${resource.availability_start_date}).`);
+          if (resource.availability_end_date && end && end > resource.availability_end_date) throw new Error(`Assignment finishes after this resource is available (${resource.availability_end_date}).`);
+          assertRecordPeriodIsOpen(data.reportingPeriods, row);
+        } : tableName === 'resourceMaster' ? (row) => {
+          if (row.availability_start_date && row.availability_end_date && String(row.availability_end_date) < String(row.availability_start_date)) throw new Error('Resource availability end cannot be earlier than its availability start.');
+        } : tableName === 'reporting_periods' ? (row) => {
           assertReportingPeriodDefinition(row, data.reportingPeriods);
         } : config.dateRangeColumn && !['project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
           const governedRow = tableName === 'projects' ? { ...row, project_id: row.id } : row;

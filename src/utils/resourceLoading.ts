@@ -55,7 +55,8 @@ export function timePhasedPlannedResourceCost(
     const start = String(assignment.assignment_start || '');
     const end = String(assignment.assignment_end || start);
     if (!resource || !start || !end || end < start) continue;
-    const dates = workingDatesBetween(start, end, scheduleById.get(String(assignment.schedule_id || '')) || assignment);
+    const dates = workingDatesBetween(start, end, scheduleById.get(String(assignment.schedule_id || '')) || assignment)
+      .filter((date) => (!resource.availability_start_date || date >= String(resource.availability_start_date)) && (!resource.availability_end_date || date <= String(resource.availability_end_date)));
     const hours = Math.max(0, Number(assignment.planned_hours) || 0);
     const directCost = Math.max(0, Number(assignment.planned_cost) || 0);
     const cost = directCost || hours * Math.max(0, Number(resource.standard_rate) || 0);
@@ -124,8 +125,10 @@ export function calculatePlannedResourceLoads(
     const start = String(row.assignment_start || '');
     const end = String(row.assignment_end || start);
     const capacity = capacityByResource.get(resourceId);
-    if (!resourceId || !start || !end || end < start || capacity === undefined) continue;
-    const dates = workingDatesBetween(start, end, scheduleById.get(String(row.schedule_id || '')) || row);
+    const resource = resources.find((candidate) => String(candidate.id) === resourceId);
+    if (!resourceId || !start || !end || end < start || capacity === undefined || !resource) continue;
+    const dates = workingDatesBetween(start, end, scheduleById.get(String(row.schedule_id || '')) || row)
+      .filter((date) => (!resource.availability_start_date || date >= String(resource.availability_start_date)) && (!resource.availability_end_date || date <= String(resource.availability_end_date)));
     const hours = Math.max(0, Number(row.planned_hours) || 0);
     if (!hours) continue;
     if (!dates.length) continue;

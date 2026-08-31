@@ -133,7 +133,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const unmappedScheduleCalendars = data.schedules.filter((row) => !row.calendar_id && String(row.calendar_name || '').trim() && !governedPatterns.has(String(row.calendar_name).trim()));
   pushIf(findings, unmappedScheduleCalendars.length > 0, { severity: 'Error', title: 'Activity uses an unmapped calendar name', detail: `${unmappedScheduleCalendars.length} activity row(s) use a free-text calendar name without a governed Work Calendar. Map or create the calendar before relying on duration, CPM, or planned value.`, view: 'schedule' });
   const resourceById = new Map(resourceMasters.map((resource) => [resource.id, resource]));
-  const invalidResourceMasters = resourceMasters.filter((resource) => !String(resource.resource_code || '').trim() || !String(resource.resource_name || '').trim() || !['Labor', 'Equipment'].includes(String(resource.resource_type || '')) || Number(resource.daily_capacity_hours) < 0);
+  const invalidResourceMasters = resourceMasters.filter((resource) => !String(resource.resource_code || '').trim() || !String(resource.resource_name || '').trim() || !['Labor', 'Equipment'].includes(String(resource.resource_type || '')) || Number(resource.daily_capacity_hours) < 0 || (resource.availability_start_date && resource.availability_end_date && String(resource.availability_end_date) < String(resource.availability_start_date)));
   pushIf(findings, invalidResourceMasters.length > 0, { severity: 'Error', title: 'Resource master is incomplete', detail: `${invalidResourceMasters.length} resource(s) need a code, name, valid type, and non-negative daily capacity.`, view: 'resourceMaster' });
   const invalidResourceAssignments = [...laborDuty, ...equipment].filter((row) => {
     if (!row.resource_id) return false; // legacy rows remain visible for controlled migration.
@@ -153,6 +153,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
       || String(resource.resource_type) !== String(row.resource_type)
       || !start || !end || end < start
       || (activity.start_date && start < activity.start_date) || (activity.end_date && end > activity.end_date)
+      || (resource.availability_start_date && start < resource.availability_start_date) || (resource.availability_end_date && end > resource.availability_end_date)
       || Number(row.planned_hours) < 0 || Number(row.planned_cost) < 0;
   });
   pushIf(findings, invalidPlannedResourceAssignments.length > 0, { severity: 'Error', title: 'Planned resource assignment is invalid', detail: `${invalidPlannedResourceAssignments.length} planned assignment(s) use an invalid resource, activity scope, date range, type or planned value.`, view: 'resourceAssignments' });
