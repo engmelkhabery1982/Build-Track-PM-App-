@@ -13,6 +13,14 @@ export interface GovernedImportDerivedPatch {
   patch: Record<string, unknown>;
 }
 
+/** A Primavera planning refresh may update an existing activity's planning
+ * fields while preserving actuals, progress, and earned-value facts. */
+export interface GovernedImportUpdate {
+  table: 'schedules';
+  id: string;
+  patch: Record<string, unknown>;
+}
+
 /** Supporting master rows created in the same transaction as the imported
  * target rows. Primavera schedule import may create WBS nodes and safely
  * interpreted Work Calendar masters. */
@@ -39,6 +47,7 @@ export async function commitGovernedImport(request: {
   projectId: string;
   contractId: string;
   rows: Record<string, unknown>[];
+  updates?: GovernedImportUpdate[];
   derivedPatches?: GovernedImportDerivedPatch[];
   auxiliaryRows?: GovernedImportAuxiliaryRow[];
 }): Promise<GovernedImportResult> {

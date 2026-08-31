@@ -14,6 +14,8 @@ pub struct ImportCommitRequest {
     pub contract_id: String,
     pub rows: Vec<Value>,
     #[serde(default)]
+    pub updates: Vec<ImportUpdate>,
+    #[serde(default)]
     pub derived_patches: Vec<ImportDerivedPatch>,
     #[serde(default)]
     pub auxiliary_rows: Vec<ImportAuxiliaryRow>,
@@ -22,6 +24,10 @@ pub struct ImportCommitRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportDerivedPatch { pub table: String, pub id: String, pub patch: Value }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportUpdate { pub table: String, pub id: String, pub patch: Value }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,7 +133,7 @@ async fn validate_scope(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommit
 
 async fn validate_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
     if !supported_table(&request.target_table) { return Err("This import target is not governed by atomic import.".into()); }
-    if request.rows.is_empty() { return Err("The import contains no rows.".into()); }
+    if request.rows.is_empty() && request.updates.is_empty() { return Err("The import contains no rows.".into()); }
     let existing = query_payloads(tx, &request.target_table, &request.project_id, &request.contract_id).await?;
     let mut codes = HashSet::new();
     let mut planned_by_item: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
@@ -163,6 +169,30 @@ async fn validate_rows(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitR
                 if *total > capacity.unwrap_or(0.0) + 0.000001 { return Err(format!("Row {source_row}: cumulative {quantity_key} exceeds the BOQ quantity; no rows were saved.")); }
             }
         }
+    }
+    Ok(())
+}
+
+async fn validate_updates(tx: &mut Transaction<'_, Sqlite>, request: &ImportCommitRequest) -> Result<(), String> {
+    if request.updates.is_empty() { return Ok(()); }
+    if request.target_table != "schedules" { return Err("Only schedule planning refreshes may update existing imported records.".into()); }
+    let allowed: HashSet<&str> = ["activity", "source_activity_code", "start_date", "end_date", "duration_days", "calendar_id", "calendar_name", "calendar_exceptions", "wbs_id", "wbs_code", "predecessor_links", "predecessor_items", "predecessor_item", "predecessors", "relationship_type", "lag_days", "constraint_type", "constraint_date", "critical_path", "responsible", "notes", "is_non_boq_activity"].into_iter().collect();
+    let mut ids = HashSet::new();
+    for (index, update) in request.updates.iter().enumerate() {
+        if update.table != "schedules" || update.id.trim().is_empty() { return Err(format!("Planning refresh row {} is invalid.", index + 1)); }
+        if !ids.insert(update.id.to_lowercase()) { return Err(format!("Planning refresh row {} repeats an activity.", index + 1)); }
+        let patch = update.patch.as_object().ok_or_else(|| format!("Planning refresh row {} has an invalid patch.", index + 1))?;
+        if patch.keys().any(|key| !allowed.contains(key.as_str())) { return Err(format!("Planning refresh row {} attempts to change protected progress, quantity, cost, code, or scope data.", index + 1)); }
+        let before_text: Option<String> = sqlx::query_scalar("SELECT payload FROM schedules WHERE id=? AND project_id=? AND contract_id=?")
+            .bind(&update.id).bind(&request.project_id).bind(&request.contract_id).fetch_optional(&mut **tx).await.map_err(|error| error.to_string())?;
+        let before_text = before_text.ok_or_else(|| format!("Planning refresh row {} is missing or outside the selected project and contract.", index + 1))?;
+        let before: Value = serde_json::from_str(&before_text).map_err(|error| error.to_string())?;
+        let merged = {
+            let mut object = before.as_object().cloned().unwrap_or_default();
+            for (key, value) in patch { object.insert(key.clone(), value.clone()); }
+            object
+        };
+        validate_scope(tx, request, &merged, index + 2).await?;
     }
     Ok(())
 }
@@ -236,7 +266,7 @@ async fn insert_auxiliary(tx: &mut Transaction<'_, Sqlite>, table: &str, row: &M
 }
 
 async fn update_payload(tx: &mut Transaction<'_, Sqlite>, table: &str, id: &str, patch: &Value) -> Result<(Value, Value), String> {
-    if !matches!(table, "boq_items" | "contracts") { return Err("Only BOQ item and contract derived updates are allowed in an import batch.".into()); }
+    if !matches!(table, "boq_items" | "contracts" | "schedules") { return Err("Only BOQ item, contract, and governed schedule planning updates are allowed in an import batch.".into()); }
     let before_text: String = sqlx::query_scalar(&format!("SELECT payload FROM {table} WHERE id=?")).bind(id).fetch_optional(&mut **tx).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Derived update record {id} was not found."))?;
     let mut after: Value = serde_json::from_str(&before_text).map_err(|e| e.to_string())?;
@@ -245,9 +275,14 @@ async fn update_payload(tx: &mut Transaction<'_, Sqlite>, table: &str, id: &str,
     if table == "boq_items" {
         sqlx::query("UPDATE boq_items SET project_id=?,boq_header_id=?,payload=? WHERE id=?")
             .bind(string_value(after_object,"project_id")).bind(string_value(after_object,"boq_header_id")).bind(after.to_string()).bind(id).execute(&mut **tx).await.map_err(|e| e.to_string())?;
-    } else {
+    } else if table == "contracts" {
         sqlx::query("UPDATE contracts SET project_id=?,parent_main_contract_id=?,payload=? WHERE id=?")
             .bind(string_value(after_object,"project_id")).bind(string_value(after_object,"parent_main_contract_id")).bind(after.to_string()).bind(id).execute(&mut **tx).await.map_err(|e| e.to_string())?;
+    } else {
+        sqlx::query("UPDATE schedules SET project_id=?,contract_id=?,boq_header_id=?,boq_item_id=?,payload=? WHERE id=?")
+            .bind(string_value(after_object,"project_id")).bind(string_value(after_object,"contract_id"))
+            .bind(string_value(after_object,"boq_header_id")).bind(string_value(after_object,"boq_item_id"))
+            .bind(after.to_string()).bind(id).execute(&mut **tx).await.map_err(|e| e.to_string())?;
     }
     Ok((serde_json::from_str(&before_text).map_err(|e| e.to_string())?, after))
 }
@@ -259,9 +294,10 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
     let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
     let outcome = async {
         sqlx::query("INSERT INTO import_batches (id,created_at,source,file_name,target_table,project_id,contract_id,status,row_count,summary_json) VALUES (?,?,?,?,?,?,?,?,?,?)")
-            .bind(&request.batch_id).bind(&started).bind(&request.source).bind(&request.file_name).bind(&request.target_table).bind(&request.project_id).bind(&request.contract_id).bind("Validating").bind(request.rows.len() as i64).bind("{}").execute(&mut *tx).await.map_err(|error| error.to_string())?;
+            .bind(&request.batch_id).bind(&started).bind(&request.source).bind(&request.file_name).bind(&request.target_table).bind(&request.project_id).bind(&request.contract_id).bind("Validating").bind((request.rows.len() + request.updates.len()) as i64).bind("{}").execute(&mut *tx).await.map_err(|error| error.to_string())?;
         validate_auxiliary_rows(&mut tx, &request).await?;
         validate_rows(&mut tx, &request).await?;
+        validate_updates(&mut tx, &request).await?;
         for (index, auxiliary) in request.auxiliary_rows.iter().enumerate() {
             let row = auxiliary.row.as_object().ok_or_else(|| format!("Supporting row {}: invalid mapped payload.", index + 1))?;
             insert_auxiliary(&mut tx, &auxiliary.table, row).await?;
@@ -300,6 +336,22 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
             sqlx::query("INSERT INTO import_batch_rows (id,batch_id,source_row_number,target_table,target_record_id,status,source_json,mapped_json) VALUES (?,?,?,?,?,?,?,?)")
                 .bind(format!("{}-{}", request.batch_id, index + 2)).bind(&request.batch_id).bind((index + 2) as i64).bind(&request.target_table).bind(string_value(row,"id")).bind("Committed").bind(value.to_string()).bind(value.to_string()).execute(&mut *tx).await.map_err(|error| error.to_string())?;
         }
+        for (index, update) in request.updates.iter().enumerate() {
+            let (before, after) = update_payload(&mut tx, &update.table, &update.id, &update.patch).await?;
+            let audit_id = format!("{}-refresh-{}", request.batch_id, index + 1);
+            let audit_payload = json!({
+                "id": audit_id, "created_at": started, "project_id": request.project_id,
+                "contract_id": request.contract_id, "entity_type": update.table,
+                "entity_id": update.id, "action": "Planning Refresh", "actor": "Local User",
+                "before": before, "after": after, "summary": format!("Atomic Primavera planning refresh {}", request.batch_id),
+                "import_batch_id": request.batch_id,
+            });
+            sqlx::query("INSERT INTO audit_log (id,created_at,project_id,contract_id,parent_main_project_id,parent_main_contract_id,boq_header_id,boq_item_id,payload) VALUES (?,?,?,?,?,?,?,?,?)")
+                .bind(&audit_id).bind(&started).bind(&request.project_id).bind(&request.contract_id).bind("").bind("").bind("").bind("").bind(audit_payload.to_string())
+                .execute(&mut *tx).await.map_err(|error| error.to_string())?;
+            sqlx::query("INSERT INTO import_batch_rows (id,batch_id,source_row_number,target_table,target_record_id,status,source_json,mapped_json) VALUES (?,?,?,?,?,?,?,?)")
+                .bind(format!("{}-refresh-{}", request.batch_id, index + 1)).bind(&request.batch_id).bind(0_i64).bind(&update.table).bind(&update.id).bind("Updated").bind(before.to_string()).bind(after.to_string()).execute(&mut *tx).await.map_err(|error| error.to_string())?;
+        }
         for (index, derived) in request.derived_patches.iter().enumerate() {
             let (before, after) = update_payload(&mut tx, &derived.table, &derived.id, &derived.patch).await?;
             sqlx::query("INSERT INTO import_batch_rows (id,batch_id,source_row_number,target_table,target_record_id,status,source_json,mapped_json) VALUES (?,?,?,?,?,?,?,?)")
@@ -307,11 +359,11 @@ pub async fn commit_governed_import(database_path: &Path, request: ImportCommitR
         }
         let committed = now();
         sqlx::query("UPDATE import_batches SET status='Committed',committed_at=?,committed_count=? WHERE id=?")
-            .bind(&committed).bind(request.rows.len() as i64).bind(&request.batch_id).execute(&mut *tx).await.map_err(|error| error.to_string())?;
+            .bind(&committed).bind((request.rows.len() + request.updates.len()) as i64).bind(&request.batch_id).execute(&mut *tx).await.map_err(|error| error.to_string())?;
         Ok::<String, String>(committed)
     }.await;
     match outcome {
-        Ok(committed_at) => { tx.commit().await.map_err(|error| error.to_string())?; Ok(ImportCommitResult { batch_id: request.batch_id, status: "Committed".into(), committed_count: request.rows.len(), committed_at }) }
+        Ok(committed_at) => { tx.commit().await.map_err(|error| error.to_string())?; Ok(ImportCommitResult { batch_id: request.batch_id, status: "Committed".into(), committed_count: request.rows.len() + request.updates.len(), committed_at }) }
         Err(error) => { tx.rollback().await.map_err(|rollback| rollback.to_string())?; Err(error) }
     }
 }
@@ -370,7 +422,7 @@ mod tests {
         let request = ImportCommitRequest { batch_id: "batch-1".into(), source: "Excel".into(), file_name: "boq.xlsx".into(), target_table: "boq_items".into(), project_id: "p1".into(), contract_id: "c1".into(), rows: vec![
             json!({"id":"i1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10}),
             json!({"id":"i2","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10}),
-        ], derived_patches: vec![], auxiliary_rows: vec![] };
+        ], updates: vec![], derived_patches: vec![], auxiliary_rows: vec![] };
         assert!(commit_governed_import(&path, request).await.is_err());
         let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM boq_items").fetch_one(&pool).await.unwrap(), 0);
@@ -388,7 +440,7 @@ mod tests {
         let request = ImportCommitRequest {
             batch_id: "batch-reverse".into(), source: "Excel".into(), file_name: "boq.xlsx".into(), target_table: "boq_items".into(), project_id: "p1".into(), contract_id: "c1".into(),
             rows: vec![json!({"id":"i1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","boq_header_id":"h1","item_code":"A-01","quantity":10})],
-            derived_patches: vec![], auxiliary_rows: vec![],
+            updates: vec![], derived_patches: vec![], auxiliary_rows: vec![],
         };
         let committed = commit_governed_import(&path, request).await.unwrap();
         assert_eq!(committed.status, "Committed");
@@ -410,7 +462,7 @@ mod tests {
         let request = ImportCommitRequest {
             batch_id: "batch-wbs".into(), source: "Primavera".into(), file_name: "schedule.xer".into(), target_table: "schedules".into(), project_id: "p1".into(), contract_id: "c1".into(),
             rows: vec![json!({"id":"a1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","wbs_id":"w1","calendar_id":"cal-6d"})],
-            derived_patches: vec![],
+            updates: vec![], derived_patches: vec![],
             auxiliary_rows: vec![
                 ImportAuxiliaryRow { table: "wbs_nodes".into(), row: json!({"id":"w1","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","wbs_code":"BLD.10","name":"Structure"}) },
                 ImportAuxiliaryRow { table: "work_calendars".into(), row: json!({"id":"cal-6d","created_at":"2026-01-01T00:00:00Z","project_id":"p1","contract_id":"c1","calendar_code":"P6-P1-SIX-DAY","calendar_name":"Six Day Calendar","working_pattern":"6-Day Week","status":"Active"}) },
@@ -428,6 +480,35 @@ mod tests {
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schedules").fetch_one(&pool).await.unwrap(), 0);
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM wbs_nodes").fetch_one(&pool).await.unwrap(), 0);
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_calendars").fetch_one(&pool).await.unwrap(), 0);
+        pool.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn planning_refresh_updates_dates_but_preserves_actuals_and_reverses() {
+        let path = std::env::temp_dir().join(format!("buildtrack-import-refresh-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        sqlx::query("INSERT INTO schedules VALUES ('a1','2026-01-01T00:00:00Z','p1','c1','','','','',?)")
+            .bind(json!({"id":"a1","project_id":"p1","contract_id":"c1","activity_code":"ACT-01","activity":"Excavate","start_date":"2026-01-01","end_date":"2026-01-05","duration_days":5,"planned_quantity":100,"actual_start_date":"2026-01-02","actual_quantity":25,"actual_cost":400}).to_string())
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+        let request = ImportCommitRequest {
+            batch_id: "batch-refresh".into(), source: "Primavera".into(), file_name: "schedule.xer".into(), target_table: "schedules".into(), project_id: "p1".into(), contract_id: "c1".into(), rows: vec![],
+            updates: vec![ImportUpdate { table: "schedules".into(), id: "a1".into(), patch: json!({"start_date":"2026-01-03","end_date":"2026-01-08","duration_days":6,"activity":"Excavate revised"}) }], derived_patches: vec![], auxiliary_rows: vec![],
+        };
+        assert_eq!(commit_governed_import(&path, request).await.unwrap().committed_count, 1);
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        let refreshed: Value = serde_json::from_str(&sqlx::query_scalar::<_, String>("SELECT payload FROM schedules WHERE id='a1'").fetch_one(&pool).await.unwrap()).unwrap();
+        assert_eq!(refreshed["start_date"], "2026-01-03");
+        assert_eq!(refreshed["actual_start_date"], "2026-01-02");
+        assert_eq!(refreshed["actual_quantity"], 25);
+        pool.close().await;
+        reverse_governed_import(&path, ImportReverseRequest { batch_id: "batch-refresh".into(), reason: "acceptance test".into() }).await.unwrap();
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path).foreign_keys(true)).await.unwrap();
+        let restored: Value = serde_json::from_str(&sqlx::query_scalar::<_, String>("SELECT payload FROM schedules WHERE id='a1'").fetch_one(&pool).await.unwrap()).unwrap();
+        assert_eq!(restored["start_date"], "2026-01-01");
         pool.close().await;
         let _ = std::fs::remove_file(&path);
     }

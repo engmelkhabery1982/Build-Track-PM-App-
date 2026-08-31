@@ -18,7 +18,7 @@ import {
 import type { Project, BOQItem } from '@/types';
 import type { LocalDataMutation } from '@/hooks/useData';
 import { parsePrimaveraXerTasks } from '@/data/primaveraImport';
-import { commitGovernedImport, reverseGovernedImport, type GovernedImportAuxiliaryRow, type GovernedImportDerivedPatch } from '@/data/governedImport';
+import { commitGovernedImport, reverseGovernedImport, type GovernedImportAuxiliaryRow, type GovernedImportDerivedPatch, type GovernedImportUpdate } from '@/data/governedImport';
 import { addWorkingDays, assertValidScheduleDistribution, subtractWorkingDays, workingDaysBetween } from '@/utils/schedulePlanning';
 
 // XLSX is sizeable. It is used only for the explicit template/import/export
@@ -377,6 +377,7 @@ export function DataTableView({
   const [lastImportBatchId, setLastImportBatchId] = useState<string | null>(null);
   const [lastImportDerivedRestores, setLastImportDerivedRestores] = useState<{ table: 'boq_items' | 'contracts'; row: Record<string, any> }[]>([]);
   const [lastImportAuxiliaryRows, setLastImportAuxiliaryRows] = useState<GovernedImportAuxiliaryRow[]>([]);
+  const [lastImportRefreshRestores, setLastImportRefreshRestores] = useState<Record<string, any>[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -2140,6 +2141,20 @@ export function DataTableView({
           return levelFor(stagedParent, nextStack) + 1;
         };
         for (const entry of stagedCodeById.values()) entry.row.wbs_level = levelFor(entry);
+        // A later P6 export is a planning refresh, not a second schedule.
+        // Preserve the controlled local ID so uniqueness validation recognises
+        // it as the same activity; actuals/quantity/cost stay protected by
+        // the backend refresh allow-list.
+        const existingByActivityCode = new Map(data
+          .filter((activity) => String(activity.project_id || '') === String(applicableScope.project_id || activity.project_id || '') && String(activity.contract_id || '') === String(applicableScope.contract_id || activity.contract_id || ''))
+          .map((activity) => [String(activity.activity_code || '').trim().toLowerCase(), activity]));
+        for (const row of mapped) {
+          const existing = existingByActivityCode.get(String(row.activity_code || '').trim().toLowerCase());
+          if (existing) {
+            row.id = existing.id;
+            row._planning_refresh = true;
+          }
+        }
       }
       // Do not write immediately after the user chooses a file.  The user
       // first reviews the mapped values and the active project/contract
@@ -2179,31 +2194,35 @@ export function DataTableView({
       try {
         const createdAt = new Date().toISOString();
         const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
-        const preparedRows = importPreview.rows.map((source) => {
-          const { _imported_governed_dates, _pending_calendar_import, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, _primavera_wbs_hierarchy, ...row } = source;
-          return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
+        const preparedCandidates = importPreview.rows.map((source) => {
+          const { _imported_governed_dates, _pending_calendar_import, _planning_refresh, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, _primavera_wbs_hierarchy, ...row } = source;
+          return { ...row, id: _planning_refresh ? row.id : crypto.randomUUID(), created_at: _planning_refresh ? row.created_at : createdAt, _planning_refresh } as Record<string, any>;
         });
+        const preparedRows = preparedCandidates.filter((row) => !row._planning_refresh).map(({ _planning_refresh, ...row }) => row);
+        const refreshFields = ['activity', 'source_activity_code', 'start_date', 'end_date', 'duration_days', 'calendar_id', 'calendar_name', 'calendar_exceptions', 'wbs_id', 'wbs_code', 'predecessor_links', 'predecessor_items', 'predecessor_item', 'predecessors', 'relationship_type', 'lag_days', 'constraint_type', 'constraint_date', 'critical_path', 'responsible', 'notes', 'is_non_boq_activity'];
+        let refreshUpdates: GovernedImportUpdate[] = [];
         if (tableName === 'schedules') {
-          const activitiesByCode = new Map([...data, ...preparedRows].map((activity) => [String(activity.activity_code || ''), activity]));
+          const activitiesByCode = new Map([...data, ...preparedCandidates].map((activity) => [String(activity.activity_code || ''), activity]));
           importPreview.rows.forEach((source, index) => {
             const sourceLinks = Array.isArray(source._primavera_predecessor_links) ? source._primavera_predecessor_links : source._primavera_predecessor_code ? [{ predecessor_code: source._primavera_predecessor_code, relationship_type: source.relationship_type || 'FS', lag_days: source.lag_days || 0 }] : [];
             if (!sourceLinks.length) return;
             const resolved = sourceLinks.map((link: any) => {
               const predecessorCode = String(link.predecessor_code || '').trim();
               const predecessor = activitiesByCode.get(predecessorCode);
-              if (!predecessor || predecessor.id === preparedRows[index].id) throw new Error(`Row ${index + 2}: predecessor ${predecessorCode} could not be resolved; no rows were saved.`);
+              if (!predecessor || predecessor.id === preparedCandidates[index].id) throw new Error(`Row ${index + 2}: predecessor ${predecessorCode} could not be resolved; no rows were saved.`);
               return { predecessor_id: predecessor.id, relationship_type: String(link.relationship_type || 'FS').toUpperCase(), lag_days: Number(link.lag_days) || 0 };
             });
-            preparedRows[index].predecessor_links = resolved;
-            preparedRows[index].predecessor_items = resolved.map((link: any) => link.predecessor_id);
-            preparedRows[index].predecessor_item = resolved[0].predecessor_id;
-            preparedRows[index].relationship_type = resolved[0].relationship_type;
-            preparedRows[index].lag_days = resolved[0].lag_days;
+            preparedCandidates[index].predecessor_links = resolved;
+            preparedCandidates[index].predecessor_items = resolved.map((link: any) => link.predecessor_id);
+            preparedCandidates[index].predecessor_item = resolved[0].predecessor_id;
+            preparedCandidates[index].relationship_type = resolved[0].relationship_type;
+            preparedCandidates[index].lag_days = resolved[0].lag_days;
           });
+          refreshUpdates = preparedCandidates.filter((row) => row._planning_refresh).map((row) => ({ table: 'schedules', id: String(row.id), patch: Object.fromEntries(refreshFields.filter((key) => key in row).map((key) => [key, row[key]])) }));
         }
-        const contractId = String(preparedRows[0]?.contract_id || headerContract.get(preparedRows[0]?.boq_header_id) || '');
-        const projectId = String(preparedRows[0]?.project_id || '');
-        if (!contractId || !projectId || preparedRows.some((row) => String(row.project_id || '') !== projectId || String(row.contract_id || headerContract.get(row.boq_header_id) || '') !== contractId)) {
+        const contractId = String(preparedCandidates[0]?.contract_id || headerContract.get(preparedCandidates[0]?.boq_header_id) || '');
+        const projectId = String(preparedCandidates[0]?.project_id || '');
+        if (!contractId || !projectId || preparedCandidates.some((row) => String(row.project_id || '') !== projectId || String(row.contract_id || headerContract.get(row.boq_header_id) || '') !== contractId)) {
           throw new Error('All rows must resolve to one valid project and contract before the governed import can be committed.');
         }
         const derivedPatches: GovernedImportDerivedPatch[] = [];
@@ -2243,8 +2262,13 @@ export function DataTableView({
             }
           }
         }
-        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, derivedPatches, auxiliaryRows: importPreview.auxiliaryRows });
+        const result = await commitGovernedImport({ batchId: crypto.randomUUID(), source: tableName === 'schedules' ? 'Primavera / Excel' : 'Excel', fileName: importPreview.fileName, targetTable: tableName as 'boq_items' | 'schedules' | 'wir_entries', projectId, contractId, rows: preparedRows, updates: refreshUpdates, derivedPatches, auxiliaryRows: importPreview.auxiliaryRows });
+        const refreshRestores = refreshUpdates.map((update) => data.find((row) => row.id === update.id)).filter(Boolean) as Record<string, any>[];
         onMutated({ type: 'insertMany', rows: preparedRows });
+        refreshUpdates.forEach((update) => {
+          const existing = data.find((row) => row.id === update.id);
+          if (existing) onMutated({ type: 'update', row: { ...existing, ...update.patch } });
+        });
         for (const table of ['wbs_nodes', 'work_calendars'] as const) {
           const rows = importPreview.auxiliaryRows.filter((entry) => entry.table === table).map((entry) => entry.row as Record<string, any>);
           if (rows.length) onRelatedMutation?.(table, { type: 'insertMany', rows });
@@ -2258,6 +2282,7 @@ export function DataTableView({
         setLastImportBatchId(result.batchId);
         setLastImportDerivedRestores(derivedRestores);
         setLastImportAuxiliaryRows(importPreview.auxiliaryRows);
+        setLastImportRefreshRestores(refreshRestores);
         setImportResult({ success: result.committedCount, failed: 0, errors: [] });
         setOperationNotice({ kind: 'success', text: `Committed ${result.committedCount}/${result.committedCount} rows atomically. Batch ${result.batchId}.` });
         setImportPreview(null);
@@ -2363,19 +2388,21 @@ export function DataTableView({
     setLastImportBatchId(null);
     setLastImportDerivedRestores([]);
     setLastImportAuxiliaryRows(insertedAuxiliaryRows);
+    setLastImportRefreshRestores([]);
     if (success > 0) setOperationNotice({ kind: errors.length ? 'warning' : 'success', text: errors.length ? `${success} row(s) imported. ${errors.length} row(s) need correction.` : `${success} row(s) imported successfully. You can undo this import during this session.` });
     setImportPreview(null);
     setImporting(false);
   }
 
   async function undoLastImport() {
-    if (!lastImportRows.length || readOnly) return;
-    if (!window.confirm(`Remove the ${lastImportRows.length} row(s) imported in the last operation?`)) return;
+    if ((!lastImportRows.length && !lastImportRefreshRestores.length) || readOnly) return;
+    if (!window.confirm(`Reverse the ${lastImportRows.length} inserted row(s) and ${lastImportRefreshRestores.length} planning refresh(es) from the last operation?`)) return;
     setImporting(true);
     if (lastImportBatchId && '__TAURI_INTERNALS__' in window) {
       try {
         const result = await reverseGovernedImport({ batchId: lastImportBatchId, reason: 'User reversed the latest governed import from the table.' });
         lastImportRows.forEach((row) => onMutated({ type: 'delete', id: row.id }));
+        lastImportRefreshRestores.forEach((row) => onMutated({ type: 'update', row }));
         lastImportAuxiliaryRows.forEach((auxiliary) => onRelatedMutation?.(auxiliary.table, { type: 'delete', id: String(auxiliary.row.id) }));
         lastImportDerivedRestores.forEach((restore) => onRelatedMutation?.(restore.table, { type: 'update', row: restore.row }));
         setLastImportRows([]);
@@ -2383,6 +2410,7 @@ export function DataTableView({
         setLastImportBatchId(null);
         setLastImportDerivedRestores([]);
         setLastImportAuxiliaryRows([]);
+        setLastImportRefreshRestores([]);
         setOperationNotice({ kind: 'success', text: `The governed import batch was reversed (${result.reversedCount} imported records).` });
       } catch (error: any) {
         setOperationNotice({ kind: 'error', text: error.message || 'The governed import batch could not be reversed.' });
@@ -2415,6 +2443,7 @@ export function DataTableView({
     setLastImportBatchId(null);
     setLastImportDerivedRestores([]);
     setLastImportAuxiliaryRows([]);
+    setLastImportRefreshRestores([]);
     setImporting(false);
     setOperationNotice(failed.length ? { kind: 'warning', text: `Import undo completed with ${failed.length} issue(s).` } : { kind: 'success', text: 'The latest import was removed.' });
   }
