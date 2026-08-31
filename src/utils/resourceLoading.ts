@@ -1,4 +1,5 @@
 import { workingDatesBetween } from './schedulePlanning.ts';
+import { calculateCpm } from './cpm.ts';
 
 export interface ResourceLoadInput {
   id?: string;
@@ -29,6 +30,9 @@ export interface ResourceLevelingRecommendation {
   hoursToRelevel: number;
   assignmentIds: string[];
   scheduleIds: string[];
+  /** Non-critical work with available CPM float is listed first. These are
+   * candidates only; a planner must still approve every movement. */
+  candidates: Array<{ scheduleId: string; totalFloatDays: number; critical: boolean; cycle: boolean }>;
 }
 
 export interface PlannedResourceCostPoint {
@@ -78,12 +82,19 @@ export function suggestResourceLeveling(
 ): ResourceLevelingRecommendation[] {
   const loads = calculatePlannedResourceLoads(resources, assignments, schedules)
     .filter((load) => load.overAllocatedHours > 0);
+  const cpmByActivity = calculateCpm(schedules.filter((schedule) => String(schedule.activity || '').trim()) as any);
   return loads.map((load) => {
     const affected = assignments.filter((assignment) => {
       const start = String(assignment.assignment_start || '');
       const end = String(assignment.assignment_end || start);
       return String(assignment.resource_id || '') === load.resourceId && start <= load.date && load.date <= end;
     });
+    const candidates = [...new Set(affected.map((assignment) => String(assignment.schedule_id || '')).filter(Boolean))]
+      .map((scheduleId) => {
+        const cpm = cpmByActivity.get(scheduleId);
+        return { scheduleId, totalFloatDays: cpm?.totalFloat || 0, critical: Boolean(cpm?.critical), cycle: Boolean(cpm?.cycle) };
+      })
+      .sort((left, right) => Number(left.critical) - Number(right.critical) || Number(left.cycle) - Number(right.cycle) || right.totalFloatDays - left.totalFloatDays || left.scheduleId.localeCompare(right.scheduleId));
     return {
       resourceId: load.resourceId,
       date: load.date,
@@ -92,6 +103,7 @@ export function suggestResourceLeveling(
       hoursToRelevel: load.overAllocatedHours,
       assignmentIds: affected.map((assignment) => String(assignment.id)).filter(Boolean),
       scheduleIds: [...new Set(affected.map((assignment) => String(assignment.schedule_id)).filter(Boolean))],
+      candidates,
     };
   });
 }

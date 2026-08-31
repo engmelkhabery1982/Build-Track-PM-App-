@@ -521,10 +521,18 @@ test('resource leveling recommendations identify affected activities without cha
     { id: 'ra-1', schedule_id: 'a-1', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 6 },
     { id: 'ra-2', schedule_id: 'a-2', resource_id: 'r1', assignment_start: '2026-03-01', assignment_end: '2026-03-01', planned_hours: 5 },
   ];
-  const recommendations = resourceLoading.suggestResourceLeveling([{ id: 'r1', daily_capacity_hours: 8 }], assignments);
+  const schedules = [
+    { id: 'a-1', activity: 'Critical predecessor', duration_days: 1 },
+    { id: 'a-2', activity: 'Critical successor', duration_days: 4, predecessor_item: 'a-1' },
+    { id: 'a-3', activity: 'Flexible activity', duration_days: 1 },
+  ];
+  assignments[0].schedule_id = 'a-2';
+  assignments[1].schedule_id = 'a-3';
+  const recommendations = resourceLoading.suggestResourceLeveling([{ id: 'r1', daily_capacity_hours: 8 }], assignments, schedules);
   assert.equal(recommendations.length, 1);
   assert.equal(recommendations[0].hoursToRelevel, 3);
-  assert.deepEqual(recommendations[0].scheduleIds, ['a-1', 'a-2']);
+  assert.deepEqual(recommendations[0].scheduleIds, ['a-2', 'a-3']);
+  assert.deepEqual(recommendations[0].candidates[0], { scheduleId: 'a-3', totalFloatDays: 4, critical: false, cycle: false });
   assert.equal(assignments[0].assignment_start, '2026-03-01');
 });
 
