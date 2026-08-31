@@ -820,6 +820,8 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
   { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
+  { key: 'availability_start_date', label: 'Available From', type: 'date', editable: true },
+  { key: 'availability_end_date', label: 'Available Until', type: 'date', editable: true },
   { key: 'peak_load_date', label: 'Peak Load Date', type: 'date', editable: false },
   { key: 'peak_allocated_hours', label: 'Peak Recorded Load (hrs)', type: 'number', editable: false },
   { key: 'peak_overallocation_hours', label: 'Peak Over-allocation (hrs)', type: 'number', editable: false },

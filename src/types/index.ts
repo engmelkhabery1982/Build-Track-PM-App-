@@ -610,6 +610,8 @@ export interface ResourceMaster {
   unit: string;
   standard_rate: number;
   daily_capacity_hours: number;
+  availability_start_date?: string | null;
+  availability_end_date?: string | null;
   status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
