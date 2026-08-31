@@ -38,6 +38,7 @@ interface DashboardProps {
   quality: QualityEntry[];
   resourceMasters: Record<string, any>[];
   scheduleResourceAssignments: Record<string, any>[];
+  workCalendars: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
 }
 
@@ -82,7 +83,7 @@ type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety'
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -107,7 +108,7 @@ export function Dashboard({
   }), [projects, contracts, variations]);
   const fProjects = pid === 'all' ? effectiveProjects : effectiveProjects.filter((p) => p.id === pid);
   const fResourceAssignments = pid === 'all' ? scheduleResourceAssignments : scheduleResourceAssignments.filter((assignment) => assignment.project_id === pid);
-  const resourceForecast = useMemo(() => timePhasedPlannedResourceCost(resourceMasters, fResourceAssignments, schedules), [resourceMasters, fResourceAssignments, schedules]);
+  const resourceForecast = useMemo(() => timePhasedPlannedResourceCost(resourceMasters, fResourceAssignments, schedules, workCalendars), [resourceMasters, fResourceAssignments, schedules, workCalendars]);
   const fTasks = pid === 'all' ? tasks : tasks.filter((t) => t.project_id === pid);
   const fCosts = pid === 'all' ? costs : costs.filter((c) => c.project_id === pid);
   const fCostEntries = pid === 'all' ? costEntries : costEntries.filter((entry) => entry.project_id === pid);

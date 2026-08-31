@@ -3,6 +3,7 @@ import { compareBaselineActivities } from './baselineGovernance.ts';
 import { calculateCertificateBalances, calculateCertificateValues, calculateSovCostForecast } from '../utils/commercialControl.ts';
 import { calculateCpm } from '../utils/cpm.ts';
 import { calculatePlannedResourceLoads, calculateResourceLoads } from '../utils/resourceLoading.ts';
+import { calendarShiftHours } from '../utils/schedulePlanning.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -125,7 +126,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   });
   pushIf(findings, invalidScheduleWbs.length > 0, { severity: 'Error', title: 'Schedule WBS relationship mismatch', detail: `${invalidScheduleWbs.length} activity row(s) reference a missing, inactive, cross-project, or cross-contract WBS node.`, view: 'schedule' });
   const calendarById = new Map(workCalendars.map((calendar) => [calendar.id, calendar]));
-  const invalidCalendarMasters = workCalendars.filter((calendar) => !String(calendar.calendar_code || '').trim() || !String(calendar.calendar_name || '').trim() || !['Calendar Days', '5-Day Week', '6-Day Week', '24/7', 'Custom'].includes(String(calendar.working_pattern || '')) || (calendar.working_pattern === 'Custom' && !String(calendar.calendar_working_days || '').trim()) || (calendar.hours_per_day != null && (Number(calendar.hours_per_day) <= 0 || Number(calendar.hours_per_day) > 24)));
+  const invalidCalendarMasters = workCalendars.filter((calendar) => !String(calendar.calendar_code || '').trim() || !String(calendar.calendar_name || '').trim() || !['Calendar Days', '5-Day Week', '6-Day Week', '24/7', 'Custom'].includes(String(calendar.working_pattern || '')) || (calendar.working_pattern === 'Custom' && !String(calendar.calendar_working_days || '').trim()) || (calendar.hours_per_day != null && (Number(calendar.hours_per_day) <= 0 || Number(calendar.hours_per_day) > 24)) || (String(calendar.shift_definitions || '').trim() && calendarShiftHours(calendar) === null));
   pushIf(findings, invalidCalendarMasters.length > 0, { severity: 'Error', title: 'Work calendar master is incomplete', detail: `${invalidCalendarMasters.length} calendar(s) need a unique code, name and valid working pattern before use.`, view: 'workCalendars' });
   const invalidScheduleCalendars = data.schedules.filter((row) => row.calendar_id && (!calendarById.has(row.calendar_id) || calendarById.get(row.calendar_id)?.status === 'Inactive'));
   pushIf(findings, invalidScheduleCalendars.length > 0, { severity: 'Error', title: 'Activity references an inactive or missing work calendar', detail: `${invalidScheduleCalendars.length} activity row(s) must be reassigned to an active calendar.`, view: 'schedule' });
@@ -133,7 +134,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const unmappedScheduleCalendars = data.schedules.filter((row) => !row.calendar_id && String(row.calendar_name || '').trim() && !governedPatterns.has(String(row.calendar_name).trim()));
   pushIf(findings, unmappedScheduleCalendars.length > 0, { severity: 'Error', title: 'Activity uses an unmapped calendar name', detail: `${unmappedScheduleCalendars.length} activity row(s) use a free-text calendar name without a governed Work Calendar. Map or create the calendar before relying on duration, CPM, or planned value.`, view: 'schedule' });
   const resourceById = new Map(resourceMasters.map((resource) => [resource.id, resource]));
-  const invalidResourceMasters = resourceMasters.filter((resource) => !String(resource.resource_code || '').trim() || !String(resource.resource_name || '').trim() || !['Labor', 'Equipment'].includes(String(resource.resource_type || '')) || Number(resource.daily_capacity_hours) < 0 || (resource.availability_start_date && resource.availability_end_date && String(resource.availability_end_date) < String(resource.availability_start_date)));
+  const invalidResourceMasters = resourceMasters.filter((resource) => !String(resource.resource_code || '').trim() || !String(resource.resource_name || '').trim() || !['Labor', 'Equipment'].includes(String(resource.resource_type || '')) || Number(resource.daily_capacity_hours) < 0 || (resource.availability_start_date && resource.availability_end_date && String(resource.availability_end_date) < String(resource.availability_start_date)) || (resource.calendar_id && (!calendarById.has(resource.calendar_id) || calendarById.get(resource.calendar_id)?.status === 'Inactive')));
   pushIf(findings, invalidResourceMasters.length > 0, { severity: 'Error', title: 'Resource master is incomplete', detail: `${invalidResourceMasters.length} resource(s) need a code, name, valid type, and non-negative daily capacity.`, view: 'resourceMaster' });
   const invalidResourceAssignments = [...laborDuty, ...equipment].filter((row) => {
     if (!row.resource_id) return false; // legacy rows remain visible for controlled migration.
@@ -157,7 +158,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
       || Number(row.planned_hours) < 0 || Number(row.planned_cost) < 0;
   });
   pushIf(findings, invalidPlannedResourceAssignments.length > 0, { severity: 'Error', title: 'Planned resource assignment is invalid', detail: `${invalidPlannedResourceAssignments.length} planned assignment(s) use an invalid resource, activity scope, date range, type or planned value.`, view: 'resourceAssignments' });
-  const plannedOverloads = calculatePlannedResourceLoads(resourceMasters, scheduleResourceAssignments).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
+  const plannedOverloads = calculatePlannedResourceLoads(resourceMasters, scheduleResourceAssignments, data.schedules, workCalendars).filter((load) => load.capacityHours > 0 && load.overAllocatedHours > 0.000001);
   pushIf(findings, plannedOverloads.length > 0, { severity: 'Warning', title: 'Planned resource demand exceeds capacity', detail: `${plannedOverloads.length} resource/day planned load(s) exceed Resource Master capacity. Re-level the activity assignments before approving the forecast.`, view: 'resourceAssignments' });
   const invalidScheduleLinks = data.schedules.filter((row) => predecessorIds(row).some((id) => {
     const predecessor = scheduleById.get(id);

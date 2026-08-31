@@ -8,19 +8,20 @@ function hours(value: number): string {
 }
 
 export function ResourceCapacityBoard({
-  resources, assignments, schedules, laborDuty, equipment, onNavigate,
+  resources, assignments, schedules, workCalendars, laborDuty, equipment, onNavigate,
 }: {
   resources: Record<string, any>[];
   assignments: Record<string, any>[];
   schedules: Record<string, any>[];
+  workCalendars: Record<string, any>[];
   laborDuty: Record<string, any>[];
   equipment: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
 }) {
   const [resourceId, setResourceId] = useState('all');
-  const planned = useMemo(() => calculatePlannedResourceLoads(resources, assignments, schedules), [resources, assignments, schedules]);
+  const planned = useMemo(() => calculatePlannedResourceLoads(resources, assignments, schedules, workCalendars), [resources, assignments, schedules, workCalendars]);
   const actual = useMemo(() => calculateResourceLoads(resources, laborDuty, equipment), [resources, laborDuty, equipment]);
-  const recommendations = useMemo(() => suggestResourceLeveling(resources, assignments, schedules), [resources, assignments, schedules]);
+  const recommendations = useMemo(() => suggestResourceLeveling(resources, assignments, schedules, workCalendars), [resources, assignments, schedules, workCalendars]);
   const visiblePlanned = resourceId === 'all' ? planned : planned.filter((row) => row.resourceId === resourceId);
   const visibleActual = resourceId === 'all' ? actual : actual.filter((row) => row.resourceId === resourceId);
   const visibleRecommendations = resourceId === 'all' ? recommendations : recommendations.filter((row) => row.resourceId === resourceId);

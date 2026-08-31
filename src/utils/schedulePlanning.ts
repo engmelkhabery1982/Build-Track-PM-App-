@@ -19,6 +19,7 @@ export type CalendarInput = string | null | undefined | {
   calendar_working_days?: number[] | string | null;
   calendar_hours_per_day?: number | string | null;
   hours_per_day?: number | string | null;
+  shift_definitions?: Array<{ start?: string; end?: string }> | string | null;
 };
 
 function calendarDetails(input?: CalendarInput): { name: string; exceptions: Set<string>; workingDays: Set<number> } {
@@ -52,8 +53,32 @@ function isWorkingDay(date: Date, calendar?: CalendarInput): boolean {
 
 /** Retain P6 calendar day-hours for resource and lag calculations instead of
  * silently treating every calendar as an eight-hour shift. */
+export function calendarShiftHours(calendar?: CalendarInput): number | null {
+  if (typeof calendar === 'string' || !calendar || !calendar.shift_definitions) return null;
+  let shifts: unknown = calendar.shift_definitions;
+  if (typeof shifts === 'string') {
+    try { shifts = JSON.parse(shifts); } catch { return null; }
+  }
+  if (!Array.isArray(shifts) || !shifts.length) return null;
+  const intervals = shifts.map((shift: any) => {
+    const start = String(shift?.start || ''); const end = String(shift?.end || '');
+    if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return null;
+    const [startHour, startMinute] = start.split(':').map(Number); const [endHour, endMinute] = end.split(':').map(Number);
+    const from = startHour * 60 + startMinute; const until = endHour * 60 + endMinute;
+    if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59 || until <= from) return null;
+    return { from, until };
+  });
+  if (intervals.some((interval) => interval === null)) return null;
+  const ordered = (intervals as Array<{ from: number; until: number }>).sort((left, right) => left.from - right.from);
+  if (ordered.some((interval, index) => index > 0 && interval.from < ordered[index - 1].until)) return null;
+  const total = ordered.reduce((sum, interval) => sum + (interval.until - interval.from) / 60, 0);
+  return Number.isFinite(total) && total > 0 && total <= 24 ? Math.round(total * 100) / 100 : null;
+}
+
 export function calendarHoursPerDay(calendar?: CalendarInput): number {
   if (typeof calendar === 'string' || !calendar) return 8;
+  const shiftHours = calendarShiftHours(calendar);
+  if (shiftHours !== null) return shiftHours;
   const value = Number(calendar.calendar_hours_per_day ?? calendar.hours_per_day);
   return Number.isFinite(value) && value > 0 && value <= 24 ? value : 8;
 }

@@ -15,7 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
 import type { ViewKey, Project } from '@/types';
-import { addCalendarDays, addWorkingDays, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
+import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
@@ -451,6 +451,7 @@ const WORK_CALENDAR_COLUMNS: ColumnDef[] = [
   { key: 'calendar_name', label: 'Calendar Name', type: 'text', editable: true },
   { key: 'working_pattern', label: 'Working Pattern', type: 'status', editable: true, options: [...WORK_CALENDARS] },
   { key: 'hours_per_day', label: 'Hours per Working Day', type: 'number', editable: true },
+  { key: 'shift_definitions', label: 'Shift Definitions (JSON)', type: 'text', editable: true },
   { key: 'calendar_exceptions', label: 'Non-working Dates', type: 'text', editable: true },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
@@ -820,6 +821,7 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
   { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
+  { key: 'calendar_id', label: 'Resource Calendar', type: 'select', editable: true },
   { key: 'availability_start_date', label: 'Available From', type: 'date', editable: true },
   { key: 'availability_end_date', label: 'Available Until', type: 'date', editable: true },
   { key: 'peak_load_date', label: 'Peak Load Date', type: 'date', editable: false },
@@ -2224,6 +2226,7 @@ export default function App() {
           quality={data.quality}
           resourceMasters={data.resourceMasters as Record<string, any>[]}
           scheduleResourceAssignments={data.scheduleResourceAssignments as Record<string, any>[]}
+          workCalendars={data.workCalendars as Record<string, any>[]}
           onNavigate={setActiveView}
         />
       );
@@ -2233,6 +2236,7 @@ export default function App() {
         resources={data.resourceMasters as Record<string, any>[]}
         assignments={data.scheduleResourceAssignments as Record<string, any>[]}
         schedules={data.schedules as Record<string, any>[]}
+        workCalendars={data.workCalendars as Record<string, any>[]}
         laborDuty={data.laborDuty as Record<string, any>[]}
         equipment={data.equipment as Record<string, any>[]}
         onNavigate={setActiveView}
@@ -2618,7 +2622,7 @@ export default function App() {
     const viewData = activeView === 'resourceMaster'
       ? (() => {
         const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[]);
-        const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[]);
+        const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[], data.workCalendars as Record<string, any>[]);
         return rawViewData.map((resource: any) => {
           const resourceLoads = loads.filter((load) => load.resourceId === resource.id);
           const resourcePlannedLoads = plannedLoads.filter((load) => load.resourceId === resource.id);
@@ -3243,6 +3247,7 @@ export default function App() {
           calendar_exceptions: calendar.calendar_exceptions || '',
           calendar_working_days: calendar.calendar_working_days || '',
           calendar_hours_per_day: calendar.hours_per_day || 8,
+          shift_definitions: calendar.shift_definitions || '',
         },
       }));
     relationshipOptions.supersedes_document_id = data.documents
@@ -3362,6 +3367,9 @@ export default function App() {
           assertRecordPeriodIsOpen(data.reportingPeriods, row);
         } : tableName === 'resourceMaster' ? (row) => {
           if (row.availability_start_date && row.availability_end_date && String(row.availability_end_date) < String(row.availability_start_date)) throw new Error('Resource availability end cannot be earlier than its availability start.');
+          if (row.calendar_id && !data.workCalendars.some((calendar: any) => calendar.id === row.calendar_id && calendar.status !== 'Inactive')) throw new Error('Select an active Work Calendar for this resource, or leave it blank to inherit the activity calendar.');
+        } : tableName === 'workCalendars' ? (row) => {
+          if (String(row.shift_definitions || '').trim() && calendarShiftHours(row) === null) throw new Error('Shift Definitions must be a JSON list of valid non-overlapping same-day time pairs, for example [{"start":"07:00","end":"12:00"},{"start":"13:00","end":"17:00"}].');
         } : tableName === 'reporting_periods' ? (row) => {
           assertReportingPeriodDefinition(row, data.reportingPeriods);
         } : config.dateRangeColumn && !['project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
@@ -3677,9 +3685,9 @@ export default function App() {
           onClick: (row) => {
             const loads = calculateResourceLoads(data.resourceMasters as Record<string, any>[], data.laborDuty as Record<string, any>[], data.equipment as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
-            const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[])
+            const plannedLoads = calculatePlannedResourceLoads(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[], data.workCalendars as Record<string, any>[])
               .filter((load) => load.resourceId === row.id);
-            const recommendations = suggestResourceLeveling(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[])
+            const recommendations = suggestResourceLeveling(data.resourceMasters as Record<string, any>[], data.scheduleResourceAssignments as Record<string, any>[], data.schedules as Record<string, any>[], data.workCalendars as Record<string, any>[])
               .filter((recommendation) => recommendation.resourceId === row.id);
             if (!loads.length && !plannedLoads.length) {
               window.alert(`${row.resource_code || row.resource_name || 'Resource'} has no planned or recorded allocation.`);

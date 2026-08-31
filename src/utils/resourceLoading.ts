@@ -1,4 +1,4 @@
-import { workingDatesBetween } from './schedulePlanning.ts';
+import { calendarHoursPerDay, workingDatesBetween } from './schedulePlanning.ts';
 import { calculateCpm } from './cpm.ts';
 
 export interface ResourceLoadInput {
@@ -40,22 +40,59 @@ export interface PlannedResourceCostPoint {
   cost: number;
 }
 
+/** A resource can be assigned its own working calendar (for example a
+ * night-shift crew). Without one, the activity's calendar stays authoritative
+ * so legacy and Primavera imports retain their existing behaviour. */
+function resourcePlanningCalendar(
+  resource: Record<string, any>,
+  schedule: Record<string, any> | undefined,
+  calendars: Map<string, Record<string, any>>,
+): Record<string, any> | undefined {
+  const resourceCalendar = resource.calendar_id ? calendars.get(String(resource.calendar_id)) : undefined;
+  if (resourceCalendar) {
+    // Work Calendar Master stores the recognised pattern separately from its
+    // business name. The date engine consumes calendar_name as the pattern.
+    return {
+      ...resourceCalendar,
+      calendar_name: resourceCalendar.working_pattern || resourceCalendar.calendar_name || 'Calendar Days',
+      calendar_hours_per_day: resourceCalendar.hours_per_day ?? resourceCalendar.calendar_hours_per_day,
+    };
+  }
+  return schedule;
+}
+
+function plannedResourceCapacity(
+  resource: Record<string, any>,
+  calendars: Map<string, Record<string, any>>,
+): number {
+  const calendar = resource.calendar_id ? calendars.get(String(resource.calendar_id)) : undefined;
+  // A selected calendar's explicit shifts/hours govern the resource's daily
+  // working capacity. Legacy resources without a calendar preserve their
+  // independently recorded capacity.
+  if (calendar && (calendar.shift_definitions || calendar.hours_per_day != null || calendar.calendar_hours_per_day != null)) {
+    return calendarHoursPerDay(calendar);
+  }
+  return Math.max(0, Number(resource.daily_capacity_hours) || 0);
+}
+
 /** Time-phases the resource plan independently of settled cash.  This is a
  * forward cost exposure used for EVM/forecast review, not a payment posting. */
 export function timePhasedPlannedResourceCost(
   resources: Array<Record<string, any>>,
   assignments: Array<Record<string, any>>,
   schedules: Array<Record<string, any>> = [],
+  workCalendars: Array<Record<string, any>> = [],
 ): PlannedResourceCostPoint[] {
   const resourceById = new Map(resources.map((resource) => [String(resource.id), resource]));
   const scheduleById = new Map(schedules.map((schedule) => [String(schedule.id), schedule]));
+  const calendarById = new Map(workCalendars.map((calendar) => [String(calendar.id), calendar]));
   const totals = new Map<string, number>();
   for (const assignment of assignments) {
     const resource = resourceById.get(String(assignment.resource_id || ''));
     const start = String(assignment.assignment_start || '');
     const end = String(assignment.assignment_end || start);
     if (!resource || !start || !end || end < start) continue;
-    const dates = workingDatesBetween(start, end, scheduleById.get(String(assignment.schedule_id || '')) || assignment)
+    const dates = workingDatesBetween(start, end, resourcePlanningCalendar(resource, scheduleById.get(String(assignment.schedule_id || '')) || assignment, calendarById))
       .filter((date) => (!resource.availability_start_date || date >= String(resource.availability_start_date)) && (!resource.availability_end_date || date <= String(resource.availability_end_date)));
     const hours = Math.max(0, Number(assignment.planned_hours) || 0);
     const directCost = Math.max(0, Number(assignment.planned_cost) || 0);
@@ -80,8 +117,9 @@ export function suggestResourceLeveling(
   resources: Array<Record<string, any>>,
   assignments: Array<Record<string, any>>,
   schedules: Array<Record<string, any>> = [],
+  workCalendars: Array<Record<string, any>> = [],
 ): ResourceLevelingRecommendation[] {
-  const loads = calculatePlannedResourceLoads(resources, assignments, schedules)
+  const loads = calculatePlannedResourceLoads(resources, assignments, schedules, workCalendars)
     .filter((load) => load.overAllocatedHours > 0);
   const cpmByActivity = calculateCpm(schedules.filter((schedule) => String(schedule.activity || '').trim()) as any);
   return loads.map((load) => {
@@ -116,9 +154,11 @@ export function calculatePlannedResourceLoads(
   resources: Array<Record<string, any>>,
   assignments: Array<Record<string, any>>,
   schedules: Array<Record<string, any>> = [],
+  workCalendars: Array<Record<string, any>> = [],
 ): ResourceLoad[] {
-  const capacityByResource = new Map(resources.map((resource) => [String(resource.id), Math.max(0, Number(resource.daily_capacity_hours) || 0)]));
   const scheduleById = new Map(schedules.map((schedule) => [String(schedule.id), schedule]));
+  const calendarById = new Map(workCalendars.map((calendar) => [String(calendar.id), calendar]));
+  const capacityByResource = new Map(resources.map((resource) => [String(resource.id), plannedResourceCapacity(resource, calendarById)]));
   const totals = new Map<string, number>();
   for (const row of assignments) {
     const resourceId = String(row.resource_id || '');
@@ -127,7 +167,7 @@ export function calculatePlannedResourceLoads(
     const capacity = capacityByResource.get(resourceId);
     const resource = resources.find((candidate) => String(candidate.id) === resourceId);
     if (!resourceId || !start || !end || end < start || capacity === undefined || !resource) continue;
-    const dates = workingDatesBetween(start, end, scheduleById.get(String(row.schedule_id || '')) || row)
+    const dates = workingDatesBetween(start, end, resourcePlanningCalendar(resource, scheduleById.get(String(row.schedule_id || '')) || row, calendarById))
       .filter((date) => (!resource.availability_start_date || date >= String(resource.availability_start_date)) && (!resource.availability_end_date || date <= String(resource.availability_end_date)));
     const hours = Math.max(0, Number(row.planned_hours) || 0);
     if (!hours) continue;

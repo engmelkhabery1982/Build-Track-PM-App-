@@ -371,6 +371,7 @@ export interface WorkCalendar {
   calendar_exceptions?: string[] | string | null;
   calendar_working_days?: number[] | string | null;
   hours_per_day?: number | null;
+  shift_definitions?: Array<{ start?: string; end?: string }> | string | null;
   status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
@@ -612,6 +613,7 @@ export interface ResourceMaster {
   daily_capacity_hours: number;
   availability_start_date?: string | null;
   availability_end_date?: string | null;
+  calendar_id?: string | null;
   status: 'Active' | 'Inactive' | string;
   notes: string;
   created_at: string;
