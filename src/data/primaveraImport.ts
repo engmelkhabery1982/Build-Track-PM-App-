@@ -22,6 +22,13 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
     parentId: row.parent_wbs_id || '',
   }]));
   const wbsFor = (id: string) => wbsById.get(id) || { code: id || '', name: id || '', parentId: '' };
+  const wbsHierarchy = (id: string, seen = new Set<string>()): Array<{ code: string; name: string; parentCode: string }> => {
+    if (!id || seen.has(id)) return [];
+    const node = wbsFor(id);
+    const parent = wbsFor(node.parentId);
+    const nextSeen = new Set(seen); nextSeen.add(id);
+    return [...wbsHierarchy(node.parentId, nextSeen), { code: node.code, name: node.name, parentCode: node.parentId ? parent.code : '' }];
+  };
   const tasks = tables.get('TASK') || [];
   const codeCount = new Map<string, number>();
   tasks.forEach((task) => codeCount.set(task.task_code || '', (codeCount.get(task.task_code || '') || 0) + 1));
@@ -51,6 +58,7 @@ export function parsePrimaveraXerTasks(content: string): Record<string, any>[] {
       WBS: wbs.code,
       'WBS Name': wbs.name,
       'WBS Parent': wbs.parentId ? parentWbs.code : '',
+      'WBS Hierarchy': JSON.stringify(wbsHierarchy(task.wbs_id || '')),
       Start: String(task.act_start_date || task.target_start_date || task.early_start_date || '').slice(0, 10),
       Finish: String(task.act_end_date || task.target_end_date || task.early_end_date || '').slice(0, 10),
       'Original Duration': task.target_drtn || task.remain_drtn || '',

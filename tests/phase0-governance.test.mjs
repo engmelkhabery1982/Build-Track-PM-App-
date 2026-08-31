@@ -114,6 +114,7 @@ test('Primavera XER import resolves the P6 WBS code, name and parent', () => {
   assert.equal(row.WBS, 'BLD.10');
   assert.equal(row['WBS Name'], 'Structure');
   assert.equal(row['WBS Parent'], 'BLD');
+  assert.deepEqual(JSON.parse(row['WBS Hierarchy']).map((node) => node.code), ['BLD', 'BLD.10']);
 });
 
 test('approved baselines freeze activity-level schedule scope and require a governed revision', () => {

@@ -1756,7 +1756,7 @@ export function DataTableView({
         Object.assign(labelToKey, {
           'activity id': 'activity_code', 'activity name': 'activity', 'task name': 'activity',
           'source activity id': 'source_activity_code',
-          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'wbs name': '_primavera_wbs_name', 'wbs parent': '_primavera_wbs_parent_code', 'start': 'start_date', 'start date': 'start_date',
+          'wbs': 'wbs_code', 'wbs path': 'wbs_code', 'wbs name': '_primavera_wbs_name', 'wbs parent': '_primavera_wbs_parent_code', 'wbs hierarchy': '_primavera_wbs_hierarchy', 'start': 'start_date', 'start date': 'start_date',
           'finish': 'end_date', 'finish date': 'end_date', 'end date': 'end_date',
           'original duration': 'duration_days', 'planned duration': 'duration_days',
           'remaining duration': 'remaining_duration_days', 'budgeted total cost': 'budget',
@@ -2017,9 +2017,7 @@ export function DataTableView({
       if (tableName === 'schedules') {
         const existingWbsByCode = new Map((relationshipOptions?.wbs_id || []).map((option) => [String(option.data?.wbs_code || '').trim().toLowerCase(), option]));
         const stagedWbsByCode = new Map<string, GovernedImportAuxiliaryRow>();
-        for (const row of mapped) {
-          const wbsCode = String(row.wbs_code || '').trim();
-          if (!wbsCode) continue;
+        const stageWbs = (row: Record<string, any>, wbsCode: string, name: string, parentCode: string): GovernedImportAuxiliaryRow | undefined => {
           const key = wbsCode.toLowerCase();
           const existing = existingWbsByCode.get(key);
           if (existing) {
@@ -2028,9 +2026,7 @@ export function DataTableView({
               || (scope.contract_id && row.contract_id && row.contract_id !== scope.contract_id)) {
               throw new Error(`WBS ${wbsCode} is already assigned outside this Primavera import scope.`);
             }
-            row.wbs_id = existing.value;
-            row.wbs_code = scope.wbs_code || wbsCode;
-            continue;
+            return undefined;
           }
           let staged = stagedWbsByCode.get(key);
           if (!staged) {
@@ -2039,14 +2035,35 @@ export function DataTableView({
               table: 'wbs_nodes',
               row: {
                 id: crypto.randomUUID(), created_at: new Date().toISOString(), project_id: row.project_id, contract_id: row.contract_id,
-                wbs_code: wbsCode, wbs_code_locked: false, name: String(row._primavera_wbs_name || wbsCode),
+                wbs_code: wbsCode, wbs_code_locked: false, name: name || wbsCode,
                 description: 'Imported from Primavera schedule.', parent_wbs_id: null, wbs_level: 1, status: 'Active', notes: 'Created automatically with governed Primavera schedule import.',
-                _primavera_parent_wbs_code: String(row._primavera_wbs_parent_code || '').trim(),
+                _primavera_parent_wbs_code: parentCode,
               },
             };
             stagedWbsByCode.set(key, staged);
             auxiliaryRows.push(staged);
           }
+          return staged;
+        };
+        for (const row of mapped) {
+          const wbsCode = String(row.wbs_code || '').trim();
+          if (!wbsCode) continue;
+          let hierarchy: Array<{ code?: string; name?: string; parentCode?: string }> = [];
+          try {
+            const parsed = typeof row._primavera_wbs_hierarchy === 'string' ? JSON.parse(row._primavera_wbs_hierarchy) : row._primavera_wbs_hierarchy;
+            if (Array.isArray(parsed)) hierarchy = parsed.filter((entry) => String(entry?.code || '').trim());
+          } catch { /* The current activity WBS can still be staged below. */ }
+          for (const node of hierarchy) {
+            stageWbs(row, String(node.code || '').trim(), String(node.name || node.code || '').trim(), String(node.parentCode || '').trim());
+          }
+          const staged = stageWbs(row, wbsCode, String(row._primavera_wbs_name || wbsCode), String(row._primavera_wbs_parent_code || '').trim());
+          const existing = existingWbsByCode.get(wbsCode.toLowerCase());
+          if (existing) {
+            row.wbs_id = existing.value;
+            row.wbs_code = existing.data?.wbs_code || wbsCode;
+            continue;
+          }
+          if (!staged) throw new Error(`WBS ${wbsCode} could not be staged for import.`);
           row.wbs_id = staged.row.id;
           row.wbs_code = wbsCode;
         }
@@ -2105,7 +2122,7 @@ export function DataTableView({
         const createdAt = new Date().toISOString();
         const headerContract = new Map((relationshipOptions?.boq_header_id || []).map((option) => [option.value, option.data?.contract_id]));
         const preparedRows = importPreview.rows.map((source) => {
-          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, ...row } = source;
+          const { _imported_governed_dates, _primavera_predecessor_code, _primavera_predecessor_links, _primavera_wbs_name, _primavera_wbs_parent_code, _primavera_wbs_hierarchy, ...row } = source;
           return { ...row, id: crypto.randomUUID(), created_at: createdAt } as Record<string, any>;
         });
         if (tableName === 'schedules') {
