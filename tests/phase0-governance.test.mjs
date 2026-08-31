@@ -146,6 +146,11 @@ test('calendar additions preserve the ISO date contract', () => {
   assert.equal(schedule.addWorkingDays('2026-01-01', 2, '5-Day Week'), '2026-01-05');
   assert.equal(schedule.subtractWorkingDays('2026-01-05', 2, '5-Day Week'), '2026-01-01');
   assert.equal(schedule.workingDaysBetween('2026-01-01', '2026-01-05', '5-Day Week'), 2);
+  const calendar = { calendar_name: '6-Day Week', calendar_exceptions: '2026-01-04, 2026-01-05' };
+  assert.equal(schedule.workingDaysBetween('2026-01-01', '2026-01-06', calendar), 3);
+  assert.equal(schedule.addWorkingDays('2026-01-01', 3, calendar), '2026-01-06');
+  const activity = { start_date: '2026-01-01', end_date: '2026-01-06', planned_quantity: 100, unit_rate: 10, ...calendar };
+  assert.equal(schedule.schedulePlannedValueToDate(activity, '2026-01-04'), 333.33);
 });
 
 test('CPM respects relationship types and reports dependency cycles', () => {

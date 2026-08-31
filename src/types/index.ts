@@ -339,6 +339,8 @@ export interface Schedule {
   relationship_type?: 'FS' | 'SS' | 'FF' | 'SF' | string;
   lag_days?: number;
   calendar_name?: string;
+  /** Comma-separated or JSON array of explicitly approved non-working ISO dates. */
+  calendar_exceptions?: string[] | string | null;
   critical_path: boolean;
   is_critical_item: boolean;
   responsible: string;
