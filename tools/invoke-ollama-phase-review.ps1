@@ -17,11 +17,22 @@ param(
 
   [string]$Model = 'qwen2.5-coder:7b',
 
+  [ValidateSet('Quality Reviewer', 'Implementation Planner', 'Governance Challenger')]
+  [string]$Role = 'Quality Reviewer',
+
+  [ValidateRange(30, 600)]
+  [int]$TimeoutSeconds = 180,
+
   [switch]$SaveResult
 )
 
 $ErrorActionPreference = 'Stop'
 $maximumFileBytes = 2MB
+# 7B/8B CPU models are useful reviewers, but a whole multi-thousand-line UI
+# file overwhelms the configured 4096-token context and makes a report appear
+# to hang. Callers split a feature into bounded review units; this safeguard
+# preserves opening and closing context and labels the excerpt honestly.
+$maximumReviewCharactersPerFile = 6000
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\', '/')
 $rootPrefix = "$projectRoot$([System.IO.Path]::DirectorySeparatorChar)"
 
@@ -65,24 +76,32 @@ if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
 $reviewInputs = foreach ($pathValue in $ReviewFile) {
   $fullPath = Resolve-ProjectReviewFile -PathValue $pathValue
   $relativePath = $fullPath.Substring($rootPrefix.Length)
+  $content = Get-Content -LiteralPath $fullPath -Raw
+  $wasTrimmed = $content.Length -gt $maximumReviewCharactersPerFile
+  if ($wasTrimmed) {
+    $half = [int]($maximumReviewCharactersPerFile / 2)
+    $content = $content.Substring(0, $half) + "`n`n[... file excerpt omitted; review only the visible portions ...]`n`n" + $content.Substring($content.Length - $half)
+  }
   [pscustomobject]@{
     RelativePath = $relativePath
-    Content = Get-Content -LiteralPath $fullPath -Raw
+    Content = $content
+    WasTrimmed = $wasTrimmed
   }
 }
 
 $fileSections = ($reviewInputs | ForEach-Object {
-  "`n===== FILE: $($_.RelativePath) =====`n$($_.Content)"
+  $excerptNotice = if ($_.WasTrimmed) { ' (excerpt; do not infer omitted content)' } else { '' }
+  "`n===== FILE: $($_.RelativePath)$excerptNotice =====`n$($_.Content)"
 }) -join "`n"
 
 $prompt = @"
-أنت مراجع جودة مستقل، للقراءة فقط، لتطبيق إدارة مشروعات إنشائية.
+أنت تعمل بدور: $Role، ضمن فريق محلي مستقل للقراءة فقط، لتطبيق إدارة مشروعات إنشائية.
 
 اسم المرحلة: $Phase
 
 قواعد إلزامية:
 1) راجع فقط النص المرفق أدناه. لا تفترض وجود ملفات أو بيانات لم تُعرض عليك.
-2) لا تكتب كوداً ولا تقترح أوامر تشغيل أو تعديل أو حذف ملفات.
+2) لا تعدّل أي ملف ولا تشغّل أو تقترح أوامر تغيير أو حذف. إذا كنت Implementation Planner، يمكنك وصف تغيير صغير مقترح كخطوات قابلة للمراجعة، لكن لا تكتب patch أو كوداً كاملاً.
 3) لا تطلب صلاحيات ولا تقرر أن شيئاً صحيح دون دليل صريح من النص.
 4) ركّز على: صحة العلاقات، الحوكمة، الحسابات، الاستيراد، حالات الفشل، وحماية بيانات المستخدم.
 5) أخرج الرد باللغة العربية في الأقسام التالية فقط:
@@ -97,11 +116,19 @@ $fileSections
 "@
 
 Write-Host "Starting local read-only Ollama review for '$Phase' with $Model ..." -ForegroundColor Cyan
-# Send the review body over standard input. Passing it as one command-line
-# argument breaks on Windows once a reviewed source file is moderately large.
-$result = ($prompt | & ollama run $Model 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) {
-  throw "Ollama review failed (exit code $LASTEXITCODE): $result"
+# The HTTP API gives the runner an actual timeout and prevents terminal
+# spinners/interactive state from holding the review gate forever on CPU.
+$request = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 4096; num_predict = 900; temperature = 0.15 } } | ConvertTo-Json -Depth 5
+try {
+  $response = Invoke-RestMethod -Uri 'http://localhost:11434/api/generate' -Method Post -ContentType 'application/json; charset=utf-8' -Body $request -TimeoutSec $TimeoutSeconds
+  $result = [string]$response.response
+  $ollamaExitCode = 0
+} catch {
+  $result = $_.Exception.Message
+  $ollamaExitCode = 1
+}
+if ($ollamaExitCode -ne 0) {
+  throw "Ollama review failed (exit code $ollamaExitCode): $result"
 }
 
 if ([string]::IsNullOrWhiteSpace($result)) {
