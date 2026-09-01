@@ -1706,6 +1706,109 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 45,
+            description: "link_operational_sources_to_control_accounts",
+            sql: r#"
+      -- Source facts remain in their operational tables, but each may now be
+      -- explicitly assigned to exactly one governed Control Account.
+      ALTER TABLE schedules ADD COLUMN control_account_id TEXT REFERENCES control_accounts(id) ON DELETE RESTRICT;
+      ALTER TABLE wir_entries ADD COLUMN control_account_id TEXT REFERENCES control_accounts(id) ON DELETE RESTRICT;
+      ALTER TABLE cost_entries ADD COLUMN control_account_id TEXT REFERENCES control_accounts(id) ON DELETE RESTRICT;
+      ALTER TABLE procurement ADD COLUMN control_account_id TEXT REFERENCES control_accounts(id) ON DELETE RESTRICT;
+      ALTER TABLE procurement_receipts ADD COLUMN control_account_id TEXT REFERENCES control_accounts(id) ON DELETE RESTRICT;
+      CREATE INDEX IF NOT EXISTS idx_schedules_control_account ON schedules(control_account_id);
+      CREATE INDEX IF NOT EXISTS idx_wir_entries_control_account ON wir_entries(control_account_id);
+      CREATE INDEX IF NOT EXISTS idx_cost_entries_control_account ON cost_entries(control_account_id);
+      CREATE INDEX IF NOT EXISTS idx_procurement_control_account ON procurement(control_account_id);
+      CREATE INDEX IF NOT EXISTS idx_procurement_receipts_control_account ON procurement_receipts(control_account_id);
+
+      -- A source may use a subcontract, but that subcontract must belong to
+      -- the Control Account's main contract; child BOQ scope must map back to
+      -- the account's main BOQ item. This prevents cross-project posting.
+      CREATE TRIGGER IF NOT EXISTS control_account_schedule_insert_v1
+      BEFORE INSERT ON schedules
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.wbs_id'),'')=ca.wbs_id
+      ) BEGIN SELECT RAISE(ABORT, 'Schedule is outside its Control Account scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS control_account_schedule_update_v1
+      BEFORE UPDATE OF project_id, contract_id, boq_item_id, control_account_id, payload ON schedules
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.wbs_id'),'')=ca.wbs_id
+      ) BEGIN SELECT RAISE(ABORT, 'Schedule is outside its Control Account scope.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS control_account_wir_insert_v1
+      BEFORE INSERT ON wir_entries
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+      ) BEGIN SELECT RAISE(ABORT, 'WIR is outside its Control Account scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS control_account_wir_update_v1
+      BEFORE UPDATE OF project_id, contract_id, boq_item_id, control_account_id ON wir_entries
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+      ) BEGIN SELECT RAISE(ABORT, 'WIR is outside its Control Account scope.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS control_account_cost_insert_v1
+      BEFORE INSERT ON cost_entries
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.cost_code_id'),'')=ca.cost_code_id
+      ) BEGIN SELECT RAISE(ABORT, 'Cost entry is outside its Control Account scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS control_account_cost_update_v1
+      BEFORE UPDATE OF project_id, contract_id, boq_item_id, control_account_id, payload ON cost_entries
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.cost_code_id'),'')=ca.cost_code_id
+      ) BEGIN SELECT RAISE(ABORT, 'Cost entry is outside its Control Account scope.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS control_account_po_insert_v1
+      BEFORE INSERT ON procurement
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.cost_code_id'),'')=ca.cost_code_id
+      ) BEGIN SELECT RAISE(ABORT, 'Purchase order is outside its Control Account scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS control_account_po_update_v1
+      BEFORE UPDATE OF project_id, contract_id, boq_item_id, control_account_id, payload ON procurement
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+          AND COALESCE(json_extract(NEW.payload,'$.cost_code_id'),'')=ca.cost_code_id
+      ) BEGIN SELECT RAISE(ABORT, 'Purchase order is outside its Control Account scope.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS control_account_receipt_insert_v1
+      BEFORE INSERT ON procurement_receipts
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+      ) BEGIN SELECT RAISE(ABORT, 'Goods receipt is outside its Control Account scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS control_account_receipt_update_v1
+      BEFORE UPDATE OF project_id, contract_id, boq_item_id, control_account_id ON procurement_receipts
+      WHEN NEW.control_account_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM control_accounts ca JOIN contracts c ON c.id=NEW.contract_id JOIN boq_items b ON b.id=NEW.boq_item_id
+        WHERE ca.id=NEW.control_account_id AND ca.project_id=NEW.project_id
+          AND ((c.id=ca.contract_id AND b.id=ca.boq_item_id) OR (c.parent_main_contract_id=ca.contract_id AND json_extract(b.payload,'$.main_boq_item_id')=ca.boq_item_id))
+      ) BEGIN SELECT RAISE(ABORT, 'Goods receipt is outside its Control Account scope.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

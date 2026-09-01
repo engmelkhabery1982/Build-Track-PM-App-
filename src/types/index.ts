@@ -170,6 +170,9 @@ export interface CostEntry {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
+  cost_code_id?: string | null;
   main_contract_id: string | null;
   project_code: string;
   boq_code: string;
@@ -193,6 +196,8 @@ export interface Procurement {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
   cost_code_id?: string | null;
   supplier_party_id?: string | null;
   purchase_order_number?: string;
@@ -217,6 +222,8 @@ export interface ProcurementReceipt {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
   procurement_id: string;
   receipt_number: string;
   receipt_number_locked: boolean;
@@ -332,6 +339,8 @@ export interface Schedule {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
   project_code: string;
   boq_code: string;
   boq_item_code: string;
@@ -836,6 +845,8 @@ export interface WIREntry {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
   /** Optional direct activity assignment for productivity and field traceability. */
   schedule_id?: string | null;
   main_contract_id: string | null;

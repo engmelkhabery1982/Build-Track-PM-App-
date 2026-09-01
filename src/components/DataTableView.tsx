@@ -1066,7 +1066,7 @@ export function DataTableView({
     const allowedFields = new Set([
       ...columns.map((column) => column.key),
       'project_id', 'contract_id', 'boq_header_id', 'boq_item_id', 'schedule_id', 'predecessor_item',
-      'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id', 'procurement_id',
+      'invoice_tracking_id', 'contract_sov_line_id', 'cost_code_id', 'procurement_id', 'control_account_id',
       'wbs_id', 'wbs_code',
       'wbs_id', 'wbs_code',
       'boq_code', 'contract_role', 'contract_number', 'contractor', 'company_name',
@@ -1154,6 +1154,14 @@ export function DataTableView({
       updated.boq_item_id = selected?.data?.boq_item_id || null;
       updated.cost_code_id = selected?.data?.cost_code_id || null;
       updated.description = selected?.data?.description || updated.description || '';
+    }
+    if (['schedules', 'wir_entries', 'cost_entries', 'procurement', 'procurement_receipts'].includes(tableName) && changedKey === 'control_account_id') {
+      updated.project_id = selected?.data?.project_id || updated.project_id || null;
+      updated.contract_id = selected?.data?.contract_id || updated.contract_id || null;
+      updated.wbs_id = selected?.data?.wbs_id || updated.wbs_id || null;
+      updated.boq_item_id = selected?.data?.boq_item_id || updated.boq_item_id || null;
+      updated.cost_code_id = selected?.data?.cost_code_id || updated.cost_code_id || null;
+      updated.contract_sov_line_id = selected?.data?.contract_sov_line_id || updated.contract_sov_line_id || null;
     }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);

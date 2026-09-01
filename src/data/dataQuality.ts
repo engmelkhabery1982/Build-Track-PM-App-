@@ -46,6 +46,7 @@ export interface DataQualitySource {
   resourceMasters?: Record<string, any>[];
   scheduleResourceAssignments?: Record<string, any>[];
   wbsNodes?: Record<string, any>[];
+  controlAccounts?: Record<string, any>[];
 }
 
 function pushIf(findings: DataQualityFinding[], condition: boolean, finding: DataQualityFinding): void {
@@ -100,6 +101,7 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const resourceMasters = data.resourceMasters || [];
   const scheduleResourceAssignments = data.scheduleResourceAssignments || [];
   const wbsNodes = data.wbsNodes || [];
+  const controlAccounts = data.controlAccounts || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));
   pushIf(findings, orphanMainContracts.length > 0, { severity: 'Error', title: 'Main contract without a valid project', detail: `${orphanMainContracts.length} main contract(s) need a generated project relationship.`, view: 'contracts' });
@@ -118,6 +120,34 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const invalidSchedules = data.schedules.filter((row) => { const item = itemById.get(row.boq_item_id); const contract = contractById.get(row.contract_id); return !item || !contract || item.project_id !== row.project_id || contract.project_id !== row.project_id; });
   pushIf(findings, invalidSchedules.length > 0, { severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
   const wbsById = new Map(wbsNodes.map((node) => [node.id, node]));
+  const controlAccountById = new Map(controlAccounts.map((account) => [account.id, account]));
+  const sourceScopeMatchesControlAccount = (row: Record<string, any>, source: string): boolean => {
+    const account = controlAccountById.get(row.control_account_id);
+    if (!account || account.project_id !== row.project_id) return false;
+    const contract = contractById.get(row.contract_id);
+    const item = itemById.get(row.boq_item_id);
+    const mainItemMatches = item?.id === account.boq_item_id;
+    const childItemMatches = item?.main_boq_item_id === account.boq_item_id;
+    if (!contract || !item || !((contract.id === account.contract_id && mainItemMatches) || (contract.parent_main_contract_id === account.contract_id && childItemMatches))) return false;
+    if (source === 'Schedule' && row.wbs_id !== account.wbs_id) return false;
+    if (['Cost', 'PO'].includes(source) && row.cost_code_id !== account.cost_code_id) return false;
+    return true;
+  };
+  const controlAccountSources: Array<[string, Record<string, any>[], string]> = [
+    ['Schedule', data.schedules, 'schedule'], ['WIR', data.wirEntries, 'wir'], ['Cost', data.costEntries, 'costEntries'],
+    ['PO', procurement, 'procurement'], ['GRN', procurementReceipts, 'procurementReceipts'],
+  ];
+  const unassignedControlAccountSources = controlAccountSources.flatMap(([source, rows]) => rows
+    .filter((row) => row.project_id && row.contract_id && row.boq_item_id && !row.control_account_id
+      // A legacy project with no Control Account master cannot yet be assigned;
+      // surface it only once the project has entered the governed rollout.
+      && controlAccounts.some((account) => account.project_id === row.project_id && account.status !== 'Inactive' && account.status !== 'Closed'))
+    .map((row) => ({ source, row })));
+  const invalidControlAccountSources = controlAccountSources.flatMap(([source, rows]) => rows
+    .filter((row) => row.control_account_id && !sourceScopeMatchesControlAccount(row, source))
+    .map((row) => ({ source, row })));
+  pushIf(findings, unassignedControlAccountSources.length > 0, { severity: 'Warning', title: 'Operational facts are unassigned to a Control Account', detail: `${unassignedControlAccountSources.length} scoped Schedule/WIR/Cost/PO/GRN row(s) are not assigned. Assign each source before using Control Account totals.`, view: 'controlAccounts' });
+  pushIf(findings, invalidControlAccountSources.length > 0, { severity: 'Error', title: 'Operational fact is outside its Control Account scope', detail: `${invalidControlAccountSources.length} source row(s) conflict with the assigned project, main contract, BOQ, WBS or Cost Code. Correct the source relationship before reporting.`, view: 'controlAccounts' });
   const invalidScheduleWbs = data.schedules.filter((row) => {
     if (!row.wbs_id) return false;
     const wbs = wbsById.get(row.wbs_id);
