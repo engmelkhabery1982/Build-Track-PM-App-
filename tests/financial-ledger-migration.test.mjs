@@ -357,3 +357,30 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('procurement period lock migration blocks backdated PO and GRN rewrites in SQLite', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*43,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 43 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+for table in ('reporting_periods', 'procurement', 'procurement_receipts'):
+  db.execute(f'CREATE TABLE {table} (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL)')
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO reporting_periods VALUES ('period-1','p-1',?)", (json.dumps({'status':'Closed','start_date':'2026-01-01','end_date':'2026-01-31'}),))
+for table, payload in [('procurement', {'order_date':'2026-01-15'}), ('procurement_receipts', {'receipt_date':'2026-01-15'})]:
+  try:
+    db.execute(f"INSERT INTO {table} VALUES (?, ?, ?)", (f'{table}-locked','p-1',json.dumps(payload)))
+    raise AssertionError(f'{table} insert into a closed period must be rejected')
+  except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO procurement VALUES ('po-open','p-1',?)", (json.dumps({'order_date':'2026-02-01'}),))
+try:
+  db.execute("DELETE FROM procurement WHERE id='po-open'")
+except sqlite3.IntegrityError:
+  raise AssertionError('a PO outside the closed period must remain mutable')
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

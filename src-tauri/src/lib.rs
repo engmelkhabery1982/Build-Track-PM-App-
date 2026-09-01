@@ -1604,6 +1604,58 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 43,
+            description: "enforce_procurement_period_lock_in_sqlite",
+            sql: r#"
+      -- Commitment and GRN dates are financial-control dates too. Their
+      -- history may not be rewritten after the reporting period is locked.
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_procurement_insert_v1
+      BEFORE INSERT ON procurement
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(NEW.payload,'$.order_date'),json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this purchase-order commitment.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_procurement_update_v1
+      BEFORE UPDATE ON procurement
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.order_date'),json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+        OR EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+          AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+          AND substr(COALESCE(json_extract(NEW.payload,'$.order_date'),json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this purchase-order commitment.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_procurement_delete_v1
+      BEFORE DELETE ON procurement
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.order_date'),json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this purchase-order commitment.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_receipts_insert_v1
+      BEFORE INSERT ON procurement_receipts
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(NEW.payload,'$.receipt_date'),json_extract(NEW.payload,'$.accepted_date'),json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this goods receipt.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_receipts_update_v1
+      BEFORE UPDATE ON procurement_receipts
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.receipt_date'),json_extract(OLD.payload,'$.accepted_date'),json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+        OR EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+          AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+          AND substr(COALESCE(json_extract(NEW.payload,'$.receipt_date'),json_extract(NEW.payload,'$.accepted_date'),json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this goods receipt.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_receipts_delete_v1
+      BEFORE DELETE ON procurement_receipts
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.receipt_date'),json_extract(OLD.payload,'$.accepted_date'),json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this goods receipt.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
