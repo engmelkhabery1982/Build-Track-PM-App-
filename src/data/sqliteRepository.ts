@@ -19,7 +19,7 @@ const TABLES = new Set([
   "client_invoice_tracking", "subcontractor_invoice_tracking",
   "parties", "party_contacts", "rate_history",
   "report_templates",
-  "cost_codes", "wbs_nodes", "contract_sov_lines", "payment_certificates",
+  "cost_codes", "wbs_nodes", "contract_sov_lines", "control_accounts", "payment_certificates",
   "cost_changes", "procurement_receipts", "supplier_invoices", "supplier_invoice_lines", "supplier_invoice_payments",
 ]);
 
@@ -33,6 +33,7 @@ type StoredRow = {
   boq_header_id: string | null;
   boq_item_id: string | null;
   contract_sov_line_id?: string | null;
+  control_account_id?: string | null;
   payload: string;
 };
 
@@ -187,6 +188,16 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.boq_header_id), nullableId(record.boq_item_id), nullableId(record.contract_sov_line_id), JSON.stringify(record),
         ],
       );
+    } else if (tableName === "control_accounts") {
+      await database.execute(
+        `INSERT INTO control_accounts (id, created_at, project_id, contract_id, wbs_id, boq_item_id, cost_code_id, contract_sov_line_id, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id), nullableId(record.contract_id),
+          nullableId(record.wbs_id), nullableId(record.boq_item_id), nullableId(record.cost_code_id),
+          nullableId(record.contract_sov_line_id), JSON.stringify(record),
+        ],
+      );
     } else {
       await database.execute(
         `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
@@ -259,6 +270,18 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.parent_main_project_id),
           nullableId(record.parent_main_contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id),
           nullableId(record.contract_sov_line_id), JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "control_accounts") {
+      await database.execute(
+        `UPDATE control_accounts
+         SET project_id = $1, contract_id = $2, wbs_id = $3, boq_item_id = $4, cost_code_id = $5,
+             contract_sov_line_id = $6, payload = $7
+         WHERE id = $8`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.wbs_id),
+          nullableId(record.boq_item_id), nullableId(record.cost_code_id), nullableId(record.contract_sov_line_id),
+          JSON.stringify(record), id,
         ],
       );
     } else {

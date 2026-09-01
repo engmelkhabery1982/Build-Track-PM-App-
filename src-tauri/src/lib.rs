@@ -1656,6 +1656,56 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 44,
+            description: "add_governed_project_control_accounts",
+            sql: r#"
+      -- A control account is the explicit intersection of work (WBS), scope
+      -- (BOQ), cost classification (CBS) and the approved SOV budget.
+      CREATE TABLE IF NOT EXISTS control_accounts (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        contract_id TEXT NOT NULL,
+        wbs_id TEXT NOT NULL,
+        boq_item_id TEXT NOT NULL,
+        cost_code_id TEXT NOT NULL,
+        contract_sov_line_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (wbs_id) REFERENCES wbs_nodes(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT,
+        FOREIGN KEY (cost_code_id) REFERENCES cost_codes(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_sov_line_id) REFERENCES contract_sov_lines(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_control_account_scope
+        ON control_accounts(contract_id, wbs_id, boq_item_id, cost_code_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_control_account_code
+        ON control_accounts(contract_id, lower(json_extract(payload, '$.control_account_code')));
+
+      -- The account must always be on the main contract and all controlling
+      -- references must resolve to that same project/contract scope.
+      CREATE TRIGGER IF NOT EXISTS control_account_scope_insert_v1
+      BEFORE INSERT ON control_accounts
+      WHEN EXISTS (SELECT 1 FROM contracts c WHERE c.id=NEW.contract_id AND c.parent_main_contract_id IS NOT NULL)
+        OR NOT EXISTS (SELECT 1 FROM wbs_nodes w WHERE w.id=NEW.wbs_id AND w.project_id=NEW.project_id AND (w.contract_id IS NULL OR w.contract_id=NEW.contract_id))
+        OR NOT EXISTS (SELECT 1 FROM boq_items b JOIN boq_headers h ON h.id=b.boq_header_id WHERE b.id=NEW.boq_item_id AND b.project_id=NEW.project_id AND h.contract_id=NEW.contract_id)
+        OR NOT EXISTS (SELECT 1 FROM cost_codes c WHERE c.id=NEW.cost_code_id AND (c.project_id IS NULL OR c.project_id=NEW.project_id))
+        OR NOT EXISTS (SELECT 1 FROM contract_sov_lines s WHERE s.id=NEW.contract_sov_line_id AND s.project_id=NEW.project_id AND s.contract_id=NEW.contract_id AND s.boq_item_id=NEW.boq_item_id AND (json_extract(s.payload,'$.cost_code_id') IS NULL OR json_extract(s.payload,'$.cost_code_id')=NEW.cost_code_id))
+      BEGIN SELECT RAISE(ABORT, 'Control Account relationship is outside the main-contract scope.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS control_account_scope_update_v1
+      BEFORE UPDATE ON control_accounts
+      WHEN EXISTS (SELECT 1 FROM contracts c WHERE c.id=NEW.contract_id AND c.parent_main_contract_id IS NOT NULL)
+        OR NOT EXISTS (SELECT 1 FROM wbs_nodes w WHERE w.id=NEW.wbs_id AND w.project_id=NEW.project_id AND (w.contract_id IS NULL OR w.contract_id=NEW.contract_id))
+        OR NOT EXISTS (SELECT 1 FROM boq_items b JOIN boq_headers h ON h.id=b.boq_header_id WHERE b.id=NEW.boq_item_id AND b.project_id=NEW.project_id AND h.contract_id=NEW.contract_id)
+        OR NOT EXISTS (SELECT 1 FROM cost_codes c WHERE c.id=NEW.cost_code_id AND (c.project_id IS NULL OR c.project_id=NEW.project_id))
+        OR NOT EXISTS (SELECT 1 FROM contract_sov_lines s WHERE s.id=NEW.contract_sov_line_id AND s.project_id=NEW.project_id AND s.contract_id=NEW.contract_id AND s.boq_item_id=NEW.boq_item_id AND (json_extract(s.payload,'$.cost_code_id') IS NULL OR json_extract(s.payload,'$.cost_code_id')=NEW.cost_code_id))
+      BEGIN SELECT RAISE(ABORT, 'Control Account relationship is outside the main-contract scope.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

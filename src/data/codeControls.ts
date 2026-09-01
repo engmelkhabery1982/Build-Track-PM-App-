@@ -1,4 +1,4 @@
-export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'supplier_invoices' | 'supplier_invoice_payments' | 'parties' | 'cost_codes' | 'wbs_nodes' | 'contract_sov_lines' | 'cost_changes' | 'procurement' | 'procurement_receipts' | 'payment_certificates' | 'documents' | 'rfi_register' | 'submittals' | 'quality_register' | 'site_daily_reports';
+export type CodeControlledTable = 'projects' | 'contracts' | 'boq_headers' | 'boq_items' | 'schedules' | 'variations' | 'wir_entries' | 'client_invoices' | 'subcontractor_invoices' | 'supplier_invoices' | 'supplier_invoice_payments' | 'parties' | 'cost_codes' | 'wbs_nodes' | 'contract_sov_lines' | 'control_accounts' | 'cost_changes' | 'procurement' | 'procurement_receipts' | 'payment_certificates' | 'documents' | 'rfi_register' | 'submittals' | 'quality_register' | 'site_daily_reports';
 
 export interface CodeControl {
   codeField: string;
@@ -53,6 +53,7 @@ export const CODE_CONTROLS: Record<CodeControlledTable, CodeControl> = {
   cost_codes: { codeField: 'cost_code', lockField: 'cost_code_locked', defaultPrefix: 'CBS', scopeFields: ['project_id'] },
   wbs_nodes: { codeField: 'wbs_code', lockField: 'wbs_code_locked', defaultPrefix: 'WBS', scopeFields: ['project_id'] },
   contract_sov_lines: { codeField: 'sov_line_code', lockField: 'sov_line_code_locked', defaultPrefix: 'SOV', scopeFields: ['contract_id'] },
+  control_accounts: { codeField: 'control_account_code', lockField: 'control_account_code_locked', defaultPrefix: 'CA', scopeFields: ['contract_id'] },
   cost_changes: { codeField: 'cost_change_number', lockField: 'cost_change_number_locked', defaultPrefix: 'CC', scopeFields: ['contract_id'] },
   procurement: { codeField: 'purchase_order_number', lockField: 'purchase_order_number_locked', defaultPrefix: 'PO', scopeFields: ['contract_id'] },
   procurement_receipts: { codeField: 'receipt_number', lockField: 'receipt_number_locked', defaultPrefix: 'GRN', scopeFields: ['procurement_id'] },

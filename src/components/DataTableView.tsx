@@ -1147,6 +1147,14 @@ export function DataTableView({
       updated.boq_item_id = selected?.data?.boq_item_id || null;
       updated.cost_code_id = selected?.data?.cost_code_id || null;
     }
+    if (tableName === 'control_accounts' && changedKey === 'contract_sov_line_id') {
+      updated.project_id = selected?.data?.project_id || updated.project_id || null;
+      updated.contract_id = selected?.data?.contract_id || updated.contract_id || null;
+      updated.boq_header_id = selected?.data?.boq_header_id || null;
+      updated.boq_item_id = selected?.data?.boq_item_id || null;
+      updated.cost_code_id = selected?.data?.cost_code_id || null;
+      updated.description = selected?.data?.description || updated.description || '';
+    }
     if (tableName === 'schedules' && changedKey === 'boq_item_id' && selected?.data?.item_code) {
       const itemCode = String(selected.data.item_code);
       const next = existingRows.filter((activity) => activity.boq_item_id === selectedValue).length + 1;
@@ -1364,6 +1372,17 @@ export function DataTableView({
     if (tableName === 'contract_sov_lines') {
       if (!record.contract_id || !record.project_id) throw new Error('Select a valid contract before saving an SOV line.');
       if (record.boq_item_id && !selectedItem) throw new Error('Select a valid BOQ item for the SOV line.');
+    }
+    if (tableName === 'control_accounts') {
+      if (!record.project_id || !record.contract_id || !record.wbs_id || !record.boq_item_id || !record.cost_code_id || !record.contract_sov_line_id) {
+        throw new Error('A Control Account requires a main contract, WBS, BOQ item, Cost Code and SOV line.');
+      }
+      if (!selectedContract || selectedContract.data?.parent_main_contract_id) throw new Error('A Control Account must be assigned to a valid main contract.');
+      if (!selectedWbs || !selectedItem || !selectedCostCode || !selectedSovLine) throw new Error('Select valid scoped references for the Control Account.');
+      if (selectedWbs.data?.project_id !== record.project_id || (selectedWbs.data?.contract_id && selectedWbs.data.contract_id !== record.contract_id)) throw new Error('The WBS node is outside the selected Control Account scope.');
+      if (selectedItem.data?.project_id !== record.project_id || selectedItem.data?.contract_id !== record.contract_id) throw new Error('The BOQ item is outside the selected Control Account scope.');
+      if (selectedCostCode.data?.project_id && selectedCostCode.data.project_id !== record.project_id) throw new Error('The Cost Code is outside the selected project.');
+      if (selectedSovLine.data?.project_id !== record.project_id || selectedSovLine.data?.contract_id !== record.contract_id || selectedSovLine.data?.boq_item_id !== record.boq_item_id || (selectedSovLine.data?.cost_code_id && selectedSovLine.data.cost_code_id !== record.cost_code_id)) throw new Error('The SOV line does not match the selected Control Account scope.');
     }
     if (tableName === 'procurement') {
       if (!record.contract_id || !record.project_id) throw new Error('Select a valid contract before saving a purchase commitment.');

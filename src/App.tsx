@@ -53,6 +53,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'variations', label: 'Variations', icon: GitBranch, group: 'Commercial & Cash' },
   { key: 'variationLines', label: 'Variation Lines', icon: ListOrdered, group: 'Commercial & Cash' },
   { key: 'contractSov', label: 'Contract SOV', icon: ClipboardList, group: 'Commercial & Cash' },
+  { key: 'controlAccounts', label: 'Control Accounts', icon: Layers, group: 'Planning & Controls' },
   { key: 'costChanges', label: 'Cost Changes', icon: GitBranch, group: 'Commercial & Cash' },
   { key: 'paymentCertificates', label: 'Payment Certificates', icon: ClipboardCheck, group: 'Commercial & Cash' },
   { key: 'supplierInvoices', label: 'Supplier Invoices / AP', icon: Receipt, group: 'Commercial & Cash' },
@@ -517,6 +518,17 @@ const CONTRACT_SOV_COLUMNS: ColumnDef[] = [
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Active', 'Closed'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
+const CONTROL_ACCOUNT_COLUMNS: ColumnDef[] = [
+  { key: 'control_account_code', label: 'Control Account Code', type: 'text', editable: true },
+  { key: 'contract_id', label: 'Main Contract', type: 'select', editable: true },
+  { key: 'wbs_id', label: 'WBS Node', type: 'select', editable: true },
+  { key: 'boq_item_id', label: 'BOQ Item', type: 'select', editable: true },
+  { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
+  { key: 'contract_sov_line_id', label: 'SOV Line', type: 'select', editable: true },
+  { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive', 'Closed'] },
+  { key: 'notes', label: 'Notes', type: 'text', editable: true },
+];
 const COST_CHANGE_COLUMNS: ColumnDef[] = [
   { key: 'cost_change_number', label: 'Cost Change #', type: 'text', editable: true },
   { key: 'contract_id', label: 'Contract', type: 'select', editable: true },
@@ -883,6 +895,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   costCodes: { columns: COST_CODE_COLUMNS, filters: [{ key: 'classification', label: 'Classification', options: ['Labor', 'Material', 'Equipment', 'Subcontract', 'Indirect', 'Other'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
   wbs: { columns: WBS_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }], showProjectFilter: true },
   contractSov: { columns: CONTRACT_SOV_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Active', 'Closed'] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }], showProjectFilter: true },
+  controlAccounts: { columns: CONTROL_ACCOUNT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive', 'Closed'] }], showProjectFilter: true },
   costChanges: { columns: COST_CHANGE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Reversed'] }, { key: 'change_type', label: 'Type', options: ['Budget Transfer', 'Scope Cost', 'Forecast Adjustment', 'Procurement Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid', 'Reversed'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
   costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -920,7 +933,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
 };
 
 const TABLE_NAMES: Record<string, string> = {
-  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', costChanges: 'cost_changes', paymentCertificates: 'payment_certificates',
+  projects: 'projects', baselines: 'project_baselines', reportingPeriods: 'reporting_periods', snapshots: 'pmo_snapshots', users: 'app_users', governance: 'governance_register', approvals: 'approval_requests', auditLog: 'audit_log', rfi: 'rfi_register', submittals: 'submittals', quality: 'quality_register', dailyReports: 'site_daily_reports', tasks: 'tasks', costs: 'costs', costEntries: 'cost_entries', costCodes: 'cost_codes', wbs: 'wbs_nodes', contractSov: 'contract_sov_lines', controlAccounts: 'control_accounts', costChanges: 'cost_changes', paymentCertificates: 'payment_certificates',
   procurement: 'procurement', procurementReceipts: 'procurement_receipts', safety: 'safety', progress: 'progress_entries', scheduleDistributions: 'schedule_distributions', workCalendars: 'work_calendars',
   resourceAssignments: 'schedule_resource_assignments',
   procurementReconciliation: 'procurement',
@@ -934,7 +947,7 @@ const TABLE_NAMES: Record<string, string> = {
 };
 
 const VIEW_TITLES: Record<string, string> = {
-  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', costChanges: 'Cost Changes', paymentCertificates: 'Payment Certificates',
+  projects: 'Projects', baselines: 'Baselines', reportingPeriods: 'Reporting Periods', snapshots: 'PMO Snapshots', users: 'Users & Roles', governance: 'Risk, Issue & Decision Register', approvals: 'Approvals', auditLog: 'Audit Trail', rfi: 'RFI Register', submittals: 'Submittals', quality: 'NCR & Punch Register', dailyReports: 'Site Daily Reports', tasks: 'Tasks', costs: 'Cost Control', costEntries: 'Cost Entries', costCodes: 'Cost Code / CBS Master', wbs: 'WBS Master', contractSov: 'Contract Schedule of Values', controlAccounts: 'Control Accounts', costChanges: 'Cost Changes', paymentCertificates: 'Payment Certificates',
   procurement: 'Procurement', procurementReceipts: 'Goods Receipts', safety: 'Safety Records', progress: 'Progress Entries', scheduleDistributions: 'Planned Quantity Distribution', workCalendars: 'Work Calendar Master',
   resourceAssignments: 'Planned Resource Assignments',
   procurementReconciliation: 'PO Reconciliation',
@@ -2510,6 +2523,8 @@ export default function App() {
               ? data.wbsNodes
               : activeView === 'contractSov'
                 ? data.contractSovLines
+                : activeView === 'controlAccounts'
+                  ? data.controlAccounts
                 : activeView === 'costChanges'
                   ? data.costChanges
           : activeView === 'paymentCertificates'
@@ -3064,6 +3079,7 @@ export default function App() {
         company_name: contract.company || contract.contractor,
         contractor: contract.contractor,
         contract_number: contract.contract_number,
+        parent_main_contract_id: contract.parent_main_contract_id,
         contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
         variation_number: (() => {
           const prefix = `${contract.contract_number || 'CNT'}-VO-`;

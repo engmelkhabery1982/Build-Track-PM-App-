@@ -123,6 +123,24 @@ export interface ContractSOVLine {
   created_at: string;
 }
 
+/** SAP-style control account: the explicit point where scope, schedule and
+ * cost are controlled together. Source postings will be assigned here in A1.2. */
+export interface ControlAccount {
+  id: string;
+  project_id: string;
+  contract_id: string;
+  wbs_id: string;
+  boq_item_id: string;
+  cost_code_id: string;
+  contract_sov_line_id: string;
+  control_account_code: string;
+  control_account_code_locked: boolean;
+  description: string;
+  status: 'Active' | 'Inactive' | 'Closed' | string;
+  notes: string;
+  created_at: string;
+}
+
 /** Approved internal budget movement.  It is separate from a client Variation
  * so commercial revenue and delivery-cost forecast remain independently governed. */
 export interface CostChange {
@@ -918,4 +936,4 @@ export type ViewKey =
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'resourceMaster' | 'laborDuty' | 'equipment' | 'tracking'
-  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'costChanges' | 'paymentCertificates';
+  | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'controlAccounts' | 'costChanges' | 'paymentCertificates';

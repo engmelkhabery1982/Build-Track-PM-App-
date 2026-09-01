@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
-  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, CostChange, WorkCalendar,
+  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -63,6 +63,7 @@ export function useData() {
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
   const [wbsNodes, setWbsNodes] = useState<WBSNode[]>([]);
   const [contractSovLines, setContractSovLines] = useState<ContractSOVLine[]>([]);
+  const [controlAccounts, setControlAccounts] = useState<ControlAccount[]>([]);
   const [costChanges, setCostChanges] = useState<CostChange[]>([]);
   const [paymentCertificates, setPaymentCertificates] = useState<PaymentCertificate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +83,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, ca, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -128,7 +129,7 @@ export function useData() {
         listOptional<PartyContact>('party_contacts'),
         listOptional<RateHistory>('rate_history'),
         listOptional<ReportTemplate>('report_templates'),
-        listOptional<CostCode>('cost_codes'), listOptional<WBSNode>('wbs_nodes'), listOptional<ContractSOVLine>('contract_sov_lines'), listOptional<CostChange>('cost_changes'), listOptional<PaymentCertificate>('payment_certificates'),
+        listOptional<CostCode>('cost_codes'), listOptional<WBSNode>('wbs_nodes'), listOptional<ContractSOVLine>('contract_sov_lines'), listOptional<ControlAccount>('control_accounts'), listOptional<CostChange>('cost_changes'), listOptional<PaymentCertificate>('payment_certificates'),
       ]);
 
       setProjects(p);
@@ -174,6 +175,7 @@ export function useData() {
       setCostCodes(cc);
       setWbsNodes(wn);
       setContractSovLines(sov);
+      setControlAccounts(ca);
       setCostChanges(cchg);
       setPaymentCertificates(pcert);
     } finally {
@@ -251,6 +253,7 @@ export function useData() {
       case 'cost_codes': apply(setCostCodes); break;
       case 'wbs_nodes': apply(setWbsNodes); break;
       case 'contract_sov_lines': apply(setContractSovLines); break;
+      case 'control_accounts': apply(setControlAccounts); break;
       case 'cost_changes': apply(setCostChanges); break;
       case 'payment_certificates': apply(setPaymentCertificates); break;
     }
@@ -266,7 +269,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, scheduleResourceAssignments, workCalendars, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
-    documents, wirEntries, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, costChanges, paymentCertificates, loading,
+    documents, wirEntries, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, controlAccounts, costChanges, paymentCertificates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }
