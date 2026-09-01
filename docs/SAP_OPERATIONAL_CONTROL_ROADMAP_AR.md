@@ -69,7 +69,7 @@
 
 | # | الميزة | الحالة | قبول 8/10 |
 |---:|---|---|---|
-| C1 | Schedule status update: actual start/finish, remaining duration, physical progress, data date | ⬜ لم تبدأ | التحديث ينتج Forecast dates وfloat وcritical path جديدًا بدون تغيير baseline. |
+| C1 | Schedule status update: actual start/finish, remaining duration, physical progress, data date | ✅ مكتمل — قبول 8/10 | CPM status forecast يعتمد Data Date/actuals/remaining duration/retained logic ويكتب Forecast/float/critical منفصلة دون تغيير الخطة أو Baseline. |
 | C2 | Schedule versions/scenarios and baseline comparison | ⬜ لم تبدأ | مقارنة baseline/current/forecast تظهر تغيّر النشاط والتواريخ والمدة والمسار الحرج. |
 | C3 | Delay and time-impact analysis | ⬜ لم تبدأ | يسجل السبب والمالك والأثر، ويربط Variation المعتمد بالنهاية المعدلة. |
 | C4 | Primavera import reconciliation workspace | ⬜ لم تبدأ | map/preview/errors/duplicates ثم commit، مع تقرير فرق بين الملف والبرنامج المحلي. |
