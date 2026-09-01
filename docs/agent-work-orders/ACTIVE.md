@@ -17,6 +17,16 @@
 
 - `src/data/baselineGovernance.ts`
 
+## حقائق المصدر التي يجب إثبات فهمها
+
+- الدالة القائمة هي `compareBaselineActivityDetails`، والـtype الناتج هو
+  `BaselineActivityVariance`.
+- المصدر الحالي يقارن Baseline مع Current فقط؛ لا توجد حقول Forecast في هذا
+  الـtype بعد.
+- `activity_code` هو الـidentity المستقر، و`predecessor_links` يقارن عبر
+  `stableJson`.
+- أي patch لا يذكر هذه الحقائق أو لا يعدل هذا المسار المحدد يعتبر خارج النطاق.
+
 ## مخرجات مطلوبة من الوكيل المحلي
 
 - فهم صريح للمصادر الثلاثة قبل أي patch.

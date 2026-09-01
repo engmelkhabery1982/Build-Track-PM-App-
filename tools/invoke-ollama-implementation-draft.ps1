@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\', '/')
 $rootPrefix = "$projectRoot$([System.IO.Path]::DirectorySeparatorChar)"
-$perFileLimit = 6500
+$perFileLimit = 16000
 
 function Read-ProjectExcerpt {
   param([Parameter(Mandatory)][string]$PathValue)
@@ -64,11 +64,12 @@ $sourceText
 1. اعتمد على النص المعروض فقط، واذكر أي افتراض كـ«غير مثبت».
 2. لا تقترح تعديل قاعدة البيانات أو ملفًا غير معروض إلا إذا ثبت أنه ضروري، وعندها اذكر السبب والمخاطرة.
 3. لا تنفذ أوامر، ولا تدّعِ أن الاختبارات نجحت.
-4. اكتب باللغة العربية وبالترتيب: فهم التغيير، `Scope alignment: APPROVED` أو `BLOCKED`، تصميم صغير، patch موحد مقترح فقط للملفات المعروضة، اختبارات قبول موجبة/سالبة، ومخاطر.
-5. الـpatch مسودة للمراجعة؛ لا يحذف سلوكًا قائمًا ولا يعيد كتابة ملف كامل.
+4. اكتب باللغة العربية وبالترتيب: فهم التغيير مع ذكر أسماء الدوال والـtypes الموجودة حرفياً، `Scope alignment: APPROVED` أو `BLOCKED`، تصميم صغير، patch موحد مقترح فقط للملفات المعروضة، اختبارات قبول موجبة/سالبة، ومخاطر.
+5. يجب أن يحتوي الرد على patch موحد حقيقي (`diff --git` أو `+++`) أو أن يعلن `BLOCKED` مع سبب مثبت؛ لا تكتب قوائم أسماء ملفات أو ادعاءات بتنفيذ/اختبار.
+6. الـpatch مسودة للمراجعة؛ لا يحذف سلوكًا قائمًا ولا يعيد كتابة ملف كامل. لا تذكر أو تستخدم أي مصطلح محظور في بطاقة العمل حتى في الشرح.
 "@
 
-$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 4096; num_predict = 1800; temperature = 0.1 } } | ConvertTo-Json -Depth 5
+$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 6144; num_predict = 1800; temperature = 0.1 } } | ConvertTo-Json -Depth 5
 try {
   $response = Invoke-RestMethod -Uri 'http://localhost:11434/api/generate' -Method Post -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec $TimeoutSeconds
 } catch {

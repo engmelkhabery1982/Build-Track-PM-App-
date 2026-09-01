@@ -11,7 +11,7 @@ sequentially, and writes a run log under tmp\local-agent-runs.
 param(
   [string]$Feature = 'C2 Schedule versions and baseline comparison',
   [string]$TaskFile = 'docs\agent-work-orders\ACTIVE.md',
-  [string[]]$SourceFile = @('src\data\baselineGovernance.ts', 'tests\phase0-governance.test.mjs')
+  [string[]]$SourceFile = @('src\data\baselineGovernance.ts')
 )
 
 $ErrorActionPreference = 'Stop'
