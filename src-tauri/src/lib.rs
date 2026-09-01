@@ -1458,6 +1458,99 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 41,
+            description: "enforce_sov_budget_availability_in_sqlite",
+            sql: r#"
+      -- Availability is enforced where records are persisted, not only in the
+      -- React form. A controlled SOV line consumes its revised budget through
+      -- actual cost plus the unreceived portion of ordered commitments.
+      -- Accepted GRNs reduce their PO's open commitment, so they never count
+      -- twice as both commitment and actual cost.
+      CREATE TRIGGER IF NOT EXISTS sov_budget_cost_entry_insert_v1
+      BEFORE INSERT ON cost_entries
+      WHEN EXISTS (
+        SELECT 1 FROM contract_sov_lines s
+        WHERE s.project_id = NEW.project_id
+          AND s.contract_id = NEW.contract_id
+          AND COALESCE(s.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')
+          AND COALESCE(json_extract(s.payload, '$.status'), 'Active') = 'Active'
+          AND (
+            COALESCE(CAST(json_extract(s.payload, '$.revised_budget') AS REAL), CAST(json_extract(s.payload, '$.original_budget') AS REAL), 0)
+            + 0.000001 <
+            COALESCE((SELECT sum(CAST(COALESCE(json_extract(c.payload, '$.amount'), 0) AS REAL))
+              FROM cost_entries c WHERE c.project_id = NEW.project_id AND c.contract_id = NEW.contract_id
+                AND COALESCE(c.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')), 0)
+            + CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL)
+            + COALESCE((SELECT sum(max(0,
+                CAST(COALESCE(json_extract(p.payload, '$.total_cost'), CAST(COALESCE(json_extract(p.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(p.payload, '$.unit_cost'), 0) AS REAL)) AS REAL)
+                - COALESCE((SELECT sum(CAST(COALESCE(json_extract(r.payload, '$.accepted_quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(r.payload, '$.unit_cost'), 0) AS REAL))
+                    FROM procurement_receipts r WHERE json_extract(r.payload, '$.procurement_id') = p.id AND json_extract(r.payload, '$.status') = 'Accepted'), 0)
+              )) FROM procurement p
+              WHERE p.project_id = NEW.project_id AND p.contract_id = NEW.contract_id
+                AND COALESCE(p.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')
+                AND json_extract(p.payload, '$.status') IN ('Ordered', 'Partially Delivered', 'Delivered', 'Closed')), 0)
+          )
+      )
+      BEGIN SELECT RAISE(ABORT, 'SOV budget availability exceeded by actual cost posting.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS sov_budget_cost_entry_update_v1
+      BEFORE UPDATE ON cost_entries
+      WHEN EXISTS (
+        SELECT 1 FROM contract_sov_lines s
+        WHERE s.project_id = NEW.project_id
+          AND s.contract_id = NEW.contract_id
+          AND COALESCE(s.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')
+          AND COALESCE(json_extract(s.payload, '$.status'), 'Active') = 'Active'
+          AND (
+            COALESCE(CAST(json_extract(s.payload, '$.revised_budget') AS REAL), CAST(json_extract(s.payload, '$.original_budget') AS REAL), 0)
+            + 0.000001 <
+            COALESCE((SELECT sum(CAST(COALESCE(json_extract(c.payload, '$.amount'), 0) AS REAL))
+              FROM cost_entries c WHERE c.project_id = NEW.project_id AND c.contract_id = NEW.contract_id
+                AND COALESCE(c.boq_item_id, '') = COALESCE(NEW.boq_item_id, '') AND c.id <> NEW.id), 0)
+            + CAST(COALESCE(json_extract(NEW.payload, '$.amount'), 0) AS REAL)
+            + COALESCE((SELECT sum(max(0,
+                CAST(COALESCE(json_extract(p.payload, '$.total_cost'), CAST(COALESCE(json_extract(p.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(p.payload, '$.unit_cost'), 0) AS REAL)) AS REAL)
+                - COALESCE((SELECT sum(CAST(COALESCE(json_extract(r.payload, '$.accepted_quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(r.payload, '$.unit_cost'), 0) AS REAL))
+                    FROM procurement_receipts r WHERE json_extract(r.payload, '$.procurement_id') = p.id AND json_extract(r.payload, '$.status') = 'Accepted'), 0)
+              )) FROM procurement p
+              WHERE p.project_id = NEW.project_id AND p.contract_id = NEW.contract_id
+                AND COALESCE(p.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')
+                AND json_extract(p.payload, '$.status') IN ('Ordered', 'Partially Delivered', 'Delivered', 'Closed')), 0)
+          )
+      )
+      BEGIN SELECT RAISE(ABORT, 'SOV budget availability exceeded by actual cost posting.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS sov_budget_procurement_commitment_update_v1
+      BEFORE UPDATE ON procurement
+      WHEN json_extract(NEW.payload, '$.status') IN ('Ordered', 'Partially Delivered', 'Delivered', 'Closed')
+       AND EXISTS (
+        SELECT 1 FROM contract_sov_lines s
+        WHERE s.project_id = NEW.project_id
+          AND s.contract_id = NEW.contract_id
+          AND COALESCE(s.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')
+          AND COALESCE(json_extract(s.payload, '$.status'), 'Active') = 'Active'
+          AND (
+            COALESCE(CAST(json_extract(s.payload, '$.revised_budget') AS REAL), CAST(json_extract(s.payload, '$.original_budget') AS REAL), 0)
+            + 0.000001 <
+            COALESCE((SELECT sum(CAST(COALESCE(json_extract(c.payload, '$.amount'), 0) AS REAL))
+              FROM cost_entries c WHERE c.project_id = NEW.project_id AND c.contract_id = NEW.contract_id
+                AND COALESCE(c.boq_item_id, '') = COALESCE(NEW.boq_item_id, '')), 0)
+            + CAST(COALESCE(json_extract(NEW.payload, '$.total_cost'), CAST(COALESCE(json_extract(NEW.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(NEW.payload, '$.unit_cost'), 0) AS REAL)) AS REAL)
+            + COALESCE((SELECT sum(max(0,
+                CAST(COALESCE(json_extract(p.payload, '$.total_cost'), CAST(COALESCE(json_extract(p.payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(p.payload, '$.unit_cost'), 0) AS REAL)) AS REAL)
+                - COALESCE((SELECT sum(CAST(COALESCE(json_extract(r.payload, '$.accepted_quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(r.payload, '$.unit_cost'), 0) AS REAL))
+                    FROM procurement_receipts r WHERE json_extract(r.payload, '$.procurement_id') = p.id AND json_extract(r.payload, '$.status') = 'Accepted'), 0)
+              )) FROM procurement p
+              WHERE p.project_id = NEW.project_id AND p.contract_id = NEW.contract_id
+                AND COALESCE(p.boq_item_id, '') = COALESCE(NEW.boq_item_id, '') AND p.id <> NEW.id
+                AND json_extract(p.payload, '$.status') IN ('Ordered', 'Partially Delivered', 'Delivered', 'Closed')), 0)
+          )
+      )
+      BEGIN SELECT RAISE(ABORT, 'SOV budget availability exceeded by purchase-order commitment.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

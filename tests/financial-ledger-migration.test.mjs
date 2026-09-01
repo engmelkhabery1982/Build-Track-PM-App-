@@ -292,3 +292,36 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('SOV availability migration blocks backend cost and commitment overruns without double-counting accepted GRNs', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*41,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 41 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+for table in ('contract_sov_lines', 'cost_entries', 'procurement', 'procurement_receipts'):
+  db.execute(f'''CREATE TABLE {table} (
+    id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, boq_item_id TEXT, payload TEXT NOT NULL
+  )''')
+db.executescript(sys.stdin.read())
+scope = ('p-1', 'c-1', 'b-1')
+db.execute("INSERT INTO contract_sov_lines VALUES ('sov-1',?,?,?,?)", (*scope, json.dumps({'status':'Active','original_budget':100})))
+db.execute("INSERT INTO procurement VALUES ('po-1',?,?,?,?)", (*scope, json.dumps({'status':'Draft','total_cost':80})))
+db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Ordered','total_cost':80}),))
+try:
+  db.execute("INSERT INTO cost_entries VALUES ('cost-1',?,?,?,?)", (*scope, json.dumps({'amount':25})))
+  raise AssertionError('actual posting must be blocked when actual plus open PO exceeds budget')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO procurement_receipts VALUES ('grn-1',?,?,?,?)", (*scope, json.dumps({'procurement_id':'po-1','status':'Accepted','accepted_quantity':4,'unit_cost':20})))
+db.execute("INSERT INTO cost_entries VALUES ('cost-accepted-grn',?,?,?,?)", (*scope, json.dumps({'amount':80,'source_type':'procurement_receipt'})))
+assert db.execute("SELECT count(*) FROM cost_entries").fetchone()[0] == 1
+try:
+  db.execute("UPDATE procurement SET payload=? WHERE id='po-1'", (json.dumps({'status':'Ordered','total_cost':130}),))
+  raise AssertionError('PO amendment must be blocked when it exceeds SOV availability')
+except sqlite3.IntegrityError: pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});
