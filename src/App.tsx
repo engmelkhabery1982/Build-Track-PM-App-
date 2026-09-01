@@ -15,7 +15,7 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
 import type { ViewKey, Project } from '@/types';
-import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
+import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, reconcileScheduleDistributions, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
@@ -3584,6 +3584,22 @@ export default function App() {
             }
             if (cycleCount) window.alert(`CPM forecast updated for ${updatedCount} activities. ${cycleCount} cyclic activity/activities were not updated; correct the predecessor logic first.`);
             else window.alert(`CPM forecast updated for ${updatedCount} activities. Planned dates and baselines were not changed.`);
+          },
+        } : tableName === 'schedule_distributions' ? {
+          label: 'Reconcile Profiles',
+          title: 'Read-only reconciliation of each activity time-phased quantity and value against its governed activity plan.',
+          onClick: () => {
+            const activities = data.schedules.filter((row: any) => String(row.activity || '').trim());
+            const profiles = activities.map((activity: any) => ({
+              activity,
+              result: reconcileScheduleDistributions(activity, data.scheduleDistributions as Record<string, any>[]),
+            }));
+            const exceptions = profiles.filter(({ result }) => !result.isComplete);
+            const lines = (exceptions.length ? exceptions : profiles).map(({ activity, result }) => {
+              const state = result.isOverAllocated ? 'OVER-ALLOCATED' : result.isComplete ? 'Reconciled' : 'Incomplete';
+              return `${activity.activity_code || activity.id} — ${activity.activity || 'Activity'}\n${state}: planned ${result.plannedQuantity.toLocaleString()} / ${result.plannedValue.toLocaleString()} | allocated ${result.distributedQuantity.toLocaleString()} / ${result.distributedValue.toLocaleString()} | remaining ${result.remainingQuantity.toLocaleString()} / ${result.remainingValue.toLocaleString()}`;
+            });
+            window.alert(`Time-phased profile reconciliation\n${exceptions.length} exception(s) across ${profiles.length} activity/activities. No records were changed.\n\n${lines.join('\n\n')}`);
           },
         } : tableName === 'parties' ? {
           label: 'Migrate Existing Parties',
