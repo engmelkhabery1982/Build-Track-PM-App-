@@ -17,7 +17,7 @@ param(
 
   [string]$Model = 'qwen2.5-coder:7b',
 
-  [ValidateSet('Quality Reviewer', 'Implementation Planner', 'Governance Challenger')]
+  [ValidateSet('Quality Reviewer', 'Implementation Planner', 'Governance Challenger', 'Lightweight Draft Reviewer')]
   [string]$Role = 'Quality Reviewer',
 
   [ValidateRange(30, 600)]

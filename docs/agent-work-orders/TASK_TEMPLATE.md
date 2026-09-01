@@ -20,10 +20,22 @@
 2. <حالة سلبية أو فشل يجب منعه>.
 3. <تأثير تكامل محدد على جدول/تقرير/داشبورد إن وجد>.
 
-## Source files
+## Target Files
 
 - `src/path/to/target.ts`
 - `tests/path/to/relevant.test.mjs`
+
+## Source anchors
+
+- `src/path/to/target.ts::functionNameOrExactType`
+- `tests/path/to/relevant.test.mjs::relevant test name`
+
+> يرسل المشغّل فقط المقاطع المحيطة بهذه الرموز من الملفات المستهدفة؛ لا يرسل
+> المشروع أو الملف كاملاً. اكتب المسار النسبي ثم `::` ثم الرمز القابل للبحث حرفيًا.
+
+## Acceptance test commands
+
+- `node --experimental-strip-types --test tests/path/to/relevant.test.mjs`
 
 ## Required scope terms
 
@@ -38,3 +50,4 @@
 - Patch صغير في الملفات المعروضة فقط.
 - لا تعديل قاعدة بيانات أو migrations أو بيانات اختبار إلا إذا نصت البطاقة صراحة.
 - لا اعتماد أو دمج أو ادعاء نجاح الاختبارات من الوكيل المحلي.
+- أي مسودة لا تحتوي على patch موحّد قابل للتطبيق ترفض تلقائيًا.
