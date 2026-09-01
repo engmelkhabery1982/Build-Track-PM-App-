@@ -49,6 +49,7 @@
 |---|---|---|
 | A1.1 نموذج البيانات | ✅ مكتمل: كيان SQLite حقيقي يحفظ المشروع والعقد الرئيسي وWBS وBOQ وCost Code وSOV line، مع uniqueness يمنع الحساب المكرر داخل العقد. | لا يمكن إنشاء حساب خارج نطاق مشروعه أو بعقد باطن أو بمرجع BOQ/WBS/CBS خاطئ. |
 | A1.2 ربط الحقائق | ✅ مكتمل: لكل Cost Entry وPO/GRN/WIR/Schedule حقل SQLite صريح للحساب الرقابي مع منع SQLite لخلط المشروع/العقد الرئيسي أو الباطن/BOQ/WBS/Cost Code. الصفوف غير المعيّنة أو غير المتسقة تظهر كاستثناءات في Data Quality؛ لا يتم توزيع مبلغ أو كمية تلقائيًا. | كل total في الحساب يساوي مجموع صفوف المصدر القابلة للعرض. |
+| A1.3 عرض التحكم | ✅ مكتمل: جدول Control Accounts يعرض Scope Qty وBudget وPV وEV وAC وOpen Commitment وETC وFAC وعدد الصفوف ومسار التتبع؛ وتوجد فلترة بالحساب داخل النشاط وWIR والتكلفة وPO وGRN للمراجعة التفصيلية. | لا يوجد roll-up يدوي أو تكرار لقيمة الاستلام كتكلفة. |
 | A1.3 حسابات التحكم | Scope quantity، planned quantity، accepted quantity، remaining quantity، PV، EV، AC، commitment، ETC وFAC حسب Data Date. | تعرض `Unavailable` عند غياب baseline أو تعيين وليس رقمًا تقديريًا. |
 | A1.4 تجربة المدير | جدول قابل للفلترة حسب WBS/CBS/عقد وحالة، مع drill-down للمصادر والتنبيه عن records غير المعينة. | مدير المشروع يصل من الحساب إلى كل WIR/PO/GRN/Cost/Activity مؤثر. |
 | A1.5 قبول | سيناريو عقد رئيسي + بند + WBS + Cost Code + باطن + WIR + PO + GRN + Cost، إضافة إلى حالات النطاق الخطأ والتعيين المكرر/الناقص. | اختبارات آلية، build، Tauri check، مراجعة محلية؛ عندها فقط تُعلّم A1 ✅. |

@@ -530,6 +530,16 @@ const CONTROL_ACCOUNT_COLUMNS: ColumnDef[] = [
   { key: 'cost_code_id', label: 'Cost Code', type: 'select', editable: true },
   { key: 'contract_sov_line_id', label: 'SOV Line', type: 'select', editable: true },
   { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'scope_quantity', label: 'Scope Qty', type: 'number', editable: false },
+  { key: 'control_budget', label: 'Control Budget', type: 'money', editable: false },
+  { key: 'planned_value', label: 'PV', type: 'money', editable: false },
+  { key: 'earned_value', label: 'EV', type: 'money', editable: false },
+  { key: 'actual_cost', label: 'AC', type: 'money', editable: false },
+  { key: 'open_commitment', label: 'Open Commitment', type: 'money', editable: false },
+  { key: 'cost_to_complete', label: 'ETC', type: 'money', editable: false },
+  { key: 'forecast_at_completion', label: 'FAC', type: 'money', editable: false },
+  { key: 'source_count', label: 'Linked Source Rows', type: 'number', editable: false },
+  { key: 'source_summary', label: 'Traceability', type: 'text', editable: false },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Active', 'Inactive', 'Closed'] },
   { key: 'notes', label: 'Notes', type: 'text', editable: true },
 ];
@@ -903,16 +913,16 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   controlAccounts: { columns: CONTROL_ACCOUNT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive', 'Closed'] }], showProjectFilter: true },
   costChanges: { columns: COST_CHANGE_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Reversed'] }, { key: 'change_type', label: 'Type', options: ['Budget Transfer', 'Scope Cost', 'Forecast Adjustment', 'Procurement Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   paymentCertificates: { columns: PAYMENT_CERTIFICATE_COLUMNS, filters: [{ key: 'certificate_type', label: 'Type', options: ['Client', 'Subcontractor'] }, { key: 'status', label: 'Status', options: ['Draft', 'Submitted', 'Approved', 'Rejected', 'Paid', 'Reversed'] }], showProjectFilter: true, dateRangeColumn: 'certificate_date' },
-  costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
-  procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
+  costEntries: { columns: COST_ENTRY_COLUMNS, filters: [{ key: 'control_account_id', label: 'Control Account', options: [] }, { key: 'cost_type', label: 'Cost Type', options: COST_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
+  procurement: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'control_account_id', label: 'Control Account', options: [] }, { key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
   procurementReconciliation: { columns: PROCUREMENT_COLUMNS, filters: [{ key: 'status', label: 'Commitment Status', options: PROC_STATUSES }], showProjectFilter: true, dateRangeColumn: 'order_date' },
-  procurementReceipts: { columns: PROCUREMENT_RECEIPT_COLUMNS, filters: [{ key: 'status', label: 'Receipt Status', options: ['Draft', 'Received', 'Accepted', 'Rejected'] }], showProjectFilter: true, dateRangeColumn: 'receipt_date' },
+  procurementReceipts: { columns: PROCUREMENT_RECEIPT_COLUMNS, filters: [{ key: 'control_account_id', label: 'Control Account', options: [] }, { key: 'status', label: 'Receipt Status', options: ['Draft', 'Received', 'Accepted', 'Rejected'] }], showProjectFilter: true, dateRangeColumn: 'receipt_date' },
   supplierInvoices: { columns: SUPPLIER_INVOICE_COLUMNS, filters: [{ key: 'status', label: 'AP Status', options: ['Draft', 'Submitted', 'Matched', 'Exception', 'Approved', 'Partially Paid', 'Paid', 'Rejected', 'Cancelled'] }, { key: 'supplier', label: 'Supplier', options: [] }], showProjectFilter: true, dateRangeColumn: 'invoice_date' },
   supplierInvoiceLines: { columns: SUPPLIER_INVOICE_LINE_COLUMNS, showProjectFilter: true },
   supplierInvoicePayments: { columns: SUPPLIER_INVOICE_PAYMENT_COLUMNS, filters: [{ key: 'status', label: 'Payment Status', options: ['Draft', 'Settled', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'payment_date' },
   safety: { columns: SAFETY_COLUMNS, filters: [{ key: 'status', label: 'Status', options: SAFETY_STATUSES }, { key: 'severity', label: 'Severity', options: SAFETY_SEVERITIES }, { key: 'type', label: 'Type', options: SAFETY_TYPES }], showProjectFilter: true, dateRangeColumn: 'date' },
   progress: { columns: PROGRESS_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }], showProjectFilter: true, dateRangeColumn: 'date' },
-  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
+  schedule: { columns: SCHEDULE_COLUMNS, filters: [{ key: 'control_account_id', label: 'Control Account', options: [] }, { key: 'boq_item_name', label: 'BOQ Item', options: [] }, { key: 'is_critical_item', label: 'Critical', options: ['true', 'false'] }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   workCalendars: { columns: WORK_CALENDAR_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }, { key: 'working_pattern', label: 'Working Pattern', options: [...WORK_CALENDARS] }] },
   scheduleDistributions: { columns: SCHEDULE_DISTRIBUTION_COLUMNS, filters: [{ key: 'activity_name', label: 'Activity', options: [] }], showProjectFilter: true, dateRangeColumn: 'period_start' },
   resourceAssignments: { columns: RESOURCE_ASSIGNMENT_COLUMNS, filters: [{ key: 'resource_type', label: 'Type', options: ['Labor', 'Equipment'] }], showProjectFilter: true, dateRangeColumn: 'assignment_start' },
@@ -930,7 +940,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   variations: { columns: VARIATION_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: VARIATION_STATUSES }], showProjectFilter: true, dateRangeColumn: 'approved_date' },
   variationLines: { columns: VARIATION_LINE_COLUMNS, filters: [{ key: 'change_type', label: 'Change Type', options: ['New Item', 'Quantity Change', 'Rate Change', 'Quantity & Rate Change'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   documents: { columns: DOC_COLUMNS, filters: [{ key: 'status', label: 'Status', options: DOC_STATUSES }, { key: 'document_type', label: 'Type', options: DOC_TYPES }], showProjectFilter: true, dateRangeColumn: 'upload_date' },
-  wir: { columns: WIR_COLUMNS, filters: [{ key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
+  wir: { columns: WIR_COLUMNS, filters: [{ key: 'control_account_id', label: 'Control Account', options: [] }, { key: 'company_name', label: 'Contractor', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'result', label: 'Result', options: WIR_RESULTS }], showProjectFilter: true, dateRangeColumn: 'inspection_date' },
   laborDuty: { columns: LABOR_DUTY_COLUMNS, filters: [{ key: 'role', label: 'Role', options: ['Mason', 'Carpenter', 'Steel Fixer', 'Electrician', 'Plumber', 'Painter', 'Laborer', 'Welder', 'Operator', 'Foreman', 'Supervisor'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   resourceMaster: { columns: RESOURCE_MASTER_COLUMNS, filters: [{ key: 'resource_type', label: 'Type', options: ['Labor', 'Equipment'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   equipment: { columns: EQUIPMENT_COLUMNS, filters: [{ key: 'equipment_type', label: 'Type', options: ['Excavator', 'Crane', 'Bulldozer', 'Concrete Mixer', 'Dump Truck', 'Forklift', 'Generator', 'Welding Machine', 'Air Compressor', 'Scaffolding', 'Other'] }], showProjectFilter: true, dateRangeColumn: 'date' },
@@ -2529,7 +2539,39 @@ export default function App() {
               : activeView === 'contractSov'
                 ? data.contractSovLines
                 : activeView === 'controlAccounts'
-                  ? data.controlAccounts
+                  ? data.controlAccounts.map((account: any) => {
+                    const sources = (rows: Record<string, any>[]) => rows.filter((row) => row.control_account_id === account.id);
+                    const schedules = sources(data.schedules as Record<string, any>[]);
+                    const wirs = sources(data.wirEntries as Record<string, any>[]);
+                    const costs = sources(data.costEntries as Record<string, any>[]);
+                    const orders = sources(data.procurement as Record<string, any>[]);
+                    const receipts = sources(data.procurementReceipts as Record<string, any>[]);
+                    const boq = (data.boqItems as Record<string, any>[]).find((row) => row.id === account.boq_item_id);
+                    const sov = (data.contractSovLines as Record<string, any>[]).find((row) => row.id === account.contract_sov_line_id);
+                    const controlBudget = Number(sov?.revised_budget ?? sov?.original_budget) || 0;
+                    const plannedValue = schedules.reduce((sum, row) => sum + (Number(row.planned_value) || 0), 0);
+                    const earnedValue = wirs.filter((row) => ['Pass', 'Conditional Pass'].includes(String(row.result || '')) || row.status === 'Approved')
+                      .reduce((sum, row) => sum + (Number(row.item_amount) || ((Number(row.quantity) || 0) * (Number(row.unit_price) || 0))), 0);
+                    const directActual = costs.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+                    const receiptActual = receipts.filter((row) => row.status === 'Accepted').reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
+                    // Generated receipt-cost entries use source_id and are already in directActual.
+                    const receiptAlreadyPosted = new Set(costs.filter((row) => row.source_type === 'procurement_receipt').map((row) => row.source_id));
+                    const missingReceiptActual = receipts.filter((row) => row.status === 'Accepted' && !receiptAlreadyPosted.has(row.id)).reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
+                    const actualCost = directActual + missingReceiptActual;
+                    const committed = orders.filter((row) => procurementPostingState(row).isCommitment)
+                      .reduce((sum, row) => sum + (Number(row.total_cost) || ((Number(row.quantity) || 0) * (Number(row.unit_cost) || 0))), 0);
+                    const openCommitment = Math.max(0, committed - receiptActual);
+                    const forecastAtCompletion = Math.max(controlBudget, actualCost + openCommitment);
+                    return {
+                      ...account, scope_quantity: Number(boq?.quantity) || 0, control_budget: controlBudget,
+                      planned_value: Math.round(plannedValue * 100) / 100, earned_value: Math.round(earnedValue * 100) / 100,
+                      actual_cost: Math.round(actualCost * 100) / 100, open_commitment: Math.round(openCommitment * 100) / 100,
+                      cost_to_complete: Math.round(Math.max(0, forecastAtCompletion - actualCost) * 100) / 100,
+                      forecast_at_completion: Math.round(forecastAtCompletion * 100) / 100,
+                      source_count: schedules.length + wirs.length + costs.length + orders.length + receipts.length,
+                      source_summary: `Activities ${schedules.length} · WIR ${wirs.length} · Costs ${costs.length} · PO ${orders.length} · GRN ${receipts.length}`,
+                    };
+                  })
                 : activeView === 'costChanges'
                   ? data.costChanges
           : activeView === 'paymentCertificates'
