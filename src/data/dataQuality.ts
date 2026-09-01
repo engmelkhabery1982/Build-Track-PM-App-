@@ -385,6 +385,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const approvedVariationsMissingForecast = variations.filter((variation) => variation.status === 'Approved' && Math.abs(Number(variation.cost_impact) || 0) > 0.000001
     && !cashFlow.some((entry) => entry.source_type === 'variation_cash_forecast' && entry.source_id === variation.id && entry.status === 'Open'));
   pushIf(findings, approvedVariationsMissingForecast.length > 0, { severity: 'Warning', title: 'Approved variation missing commercial cash forecast', detail: `${approvedVariationsMissingForecast.length} approved variation(s) have a financial impact but no governed forecast movement.`, view: 'variations' });
+  const approvedVariationsPendingBaseline = variations.filter((variation) => variation.status === 'Approved' && (variation.baseline_revision_required || variation.baseline_revision_status === 'Pending'));
+  pushIf(findings, approvedVariationsPendingBaseline.length > 0, { severity: 'Warning', title: 'Approved variation awaits baseline revision', detail: `${approvedVariationsPendingBaseline.length} approved variation(s) have not yet been incorporated into a governed baseline revision.`, view: 'baselines' });
   const approvedNewVariationLinesWithoutSov = variationLines.filter((line) => {
     const variation = variations.find((candidate) => candidate.id === line.variation_id);
     return variation?.status === 'Approved' && line.change_type === 'New Item' && line.boq_item_id

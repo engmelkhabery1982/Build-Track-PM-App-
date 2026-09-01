@@ -5,6 +5,26 @@ const commercial = await import('../src/utils/commercialControl.ts');
 const hierarchy = await import('../src/data/hierarchyRules.ts');
 const codeControls = await import('../src/data/codeControls.ts');
 const quality = await import('../src/data/dataQuality.ts');
+const variationPackage = await import('../src/utils/variationPackage.ts');
+
+test('variation package preview is line-derived and blocks incomplete scope before approval', () => {
+  const ready = variationPackage.previewVariationPackage({ id: 'v1', time_impact_days: 4 }, [
+    { id: 'new', variation_id: 'v1', change_type: 'New Item', boq_header_id: 'h1', item_code: 'VO-1', value_impact: 100 },
+    { id: 'rate', variation_id: 'v1', change_type: 'Rate Change', boq_item_id: 'b1', value_impact: -20 },
+  ]);
+  assert.deepEqual(ready, { line_count: 2, preview_value_impact: 80, preview_time_impact_days: 4, new_item_count: 1, quantity_change_count: 0, rate_change_count: 1, combined_change_count: 0, posting_readiness: 'Ready to Submit', posting_errors: '' });
+  const blocked = variationPackage.previewVariationPackage({ id: 'v2' }, [{ id: 'bad', variation_id: 'v2', change_type: 'New Item', value_impact: 20 }]);
+  assert.equal(blocked.posting_readiness, 'Needs Correction');
+  assert.match(blocked.posting_errors, /BOQ header and item code/);
+});
+
+test('data quality makes an approved variation pending baseline revision visible', () => {
+  const findings = quality.runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1', parent_main_contract_id: null }], boqHeaders: [], boqItems: [], schedules: [], wirEntries: [], costEntries: [], reportingPeriods: [], baselines: [], cashFlow: [{ source_type: 'variation_cash_forecast', source_id: 'v1', status: 'Open' }],
+    variations: [{ id: 'v1', project_id: 'p1', contract_id: 'c1', status: 'Approved', cost_impact: 0, baseline_revision_required: true }], variationLines: [], contractSovLines: [], procurement: [], procurementReceipts: [],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Approved variation awaits baseline revision' && finding.view === 'baselines'));
+});
 
 test('Cost Change is allocated once to its selected SOV line only', () => {
   const change = { status: 'Approved', contract_sov_line_id: 'sov-1', amount: 500 };

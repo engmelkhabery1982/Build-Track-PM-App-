@@ -26,6 +26,7 @@ import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateBudgetAvailability, calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import { buildQuantityLedger } from '@/utils/quantityLedger';
+import { previewVariationPackage } from '@/utils/variationPackage';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -765,6 +766,10 @@ const VARIATION_COLUMNS: ColumnDef[] = [
   { key: 'description', label: 'Description', type: 'text', editable: true },
   { key: 'cost_impact', label: 'Cost Impact', type: 'money', editable: true },
   { key: 'time_impact_days', label: 'Time Impact (days)', type: 'number', editable: true },
+  { key: 'line_count', label: 'Package Lines', type: 'number', editable: false },
+  { key: 'preview_value_impact', label: 'Line Impact Preview', type: 'money', editable: false },
+  { key: 'posting_readiness', label: 'Posting Readiness', type: 'status', editable: false, options: ['Ready to Submit', 'Needs Correction'] },
+  { key: 'baseline_revision_status', label: 'Baseline Revision', type: 'status', editable: false, options: ['Pending', 'Included'] },
   { key: 'status', label: 'Status', type: 'status', editable: true, options: VARIATION_STATUSES },
   { key: 'approved_by', label: 'Approved By', type: 'text', editable: true },
   { key: 'approved_date', label: 'Approved Date', type: 'date', editable: true },
@@ -2555,6 +2560,8 @@ export default function App() {
     // look as if they had disappeared.
     const rawViewData = activeView === 'boq'
       ? data.boqHeaders
+      : activeView === 'variations'
+        ? data.variations.map((variation: any) => ({ ...variation, ...previewVariationPackage(variation, data.variationLines as Record<string, any>[]) }))
       : activeView === 'quantityLedger'
         ? buildQuantityLedger({ boqItems: data.boqItems as Record<string, any>[], schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], progressCorrections: data.progressCorrections as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[] })
       : activeView === 'progressCorrections'
@@ -3948,6 +3955,10 @@ export default function App() {
           for (const predecessor of approvedPredecessors) {
             const superseded = await dataRepository.update<Record<string, any>>('project_baselines', predecessor.id, { status: 'Superseded' });
             data.applyLocalMutation('project_baselines', { type: 'update', row: superseded });
+          }
+          for (const variation of approvedVariations.filter((row: any) => row.baseline_revision_required && String(row.approved_date || '') <= String(inserted.baseline_date || baselineDraft.baseline_date || '9999-12-31'))) {
+            const updatedVariation = await dataRepository.update<Record<string, any>>('variations', variation.id, { baseline_revision_status: 'Included', baseline_revision_id: inserted.id, baseline_revision_required: false });
+            data.applyLocalMutation('variations', { type: 'update', row: updatedVariation });
           }
           return inserted;
         } : tableName === 'pmo_snapshots' ? async (snapshotDraft) => {
