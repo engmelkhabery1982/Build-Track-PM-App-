@@ -6,6 +6,7 @@ import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '
 import { cashForecastAt } from '@/utils/cashForecast';
 import { deriveForecastHorizon } from '@/utils/forecastHorizon';
 import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/resourceLoading';
+import { calculateEvmAtDataDate } from '@/utils/evm';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -134,6 +135,11 @@ export function Dashboard({
   const fQuality = pid === 'all' ? quality : quality.filter((entry) => entry.project_id === pid);
 
   const selectedProject = pid !== 'all' ? projects.find((p) => p.id === pid) : null;
+  const evm = useMemo(() => calculateEvmAtDataDate({
+    contractIds: primaryContracts.map((contract) => contract.id), dataDate: reportDate,
+    schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
+    wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+  }), [primaryContracts, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fBOQ, fCostEntries]);
 
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
@@ -173,26 +179,14 @@ export function Dashboard({
     // Cost-control rows are live aggregates. Dashboard/report AC must be
     // reconstructed from dated cost entries so future costs never appear in
     // an "as of today" figure.
-    const totalActualCosts = fCostEntries.filter((entry) => datedThroughToday(entry.date)).reduce((s, entry) => s + (Number(entry.amount) || 0), 0);
+    const totalActualCosts = evm.AC;
     const totalCommittedCosts = fCosts.reduce((s, c) => s + (c.committed || 0), 0);
     // EVM has authoritative sources: PV from Schedule and EV from the
     // WIR-derived committed value in Cost Control. Project progress is a
     // presentation percentage and must not be used to calculate money.
-    const totalPlannedWork = fSchedules
-      .filter((schedule) => !(!String(schedule.activity || '').trim() && fSchedules
-        .some((candidate) => candidate.boq_item_id === schedule.boq_item_id && String(candidate.activity || '').trim())))
-      .reduce((s, schedule) => {
-        const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
-        return s + distributedPlannedValueToDate(plan.activity, plan.distributions, reportDate);
-      }, 0);
-    const totalEarnedWork = fWirs
-      .filter((wir) => datedThroughToday(wir.inspection_date) && (wir.status === 'Approved' || wir.result === 'Pass' || wir.result === 'Conditional Pass'))
-      .reduce((sum, wir) => {
-        const item = boqItems.find((boqItem) => boqItem.id === wir.boq_item_id);
-        const mainItem = item?.main_boq_item_id ? boqItems.find((boqItem) => boqItem.id === item.main_boq_item_id) : item;
-        return sum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
-      }, 0);
-    const costVariance = totalPlannedCosts - totalActualCosts;
+    const totalPlannedWork = evm.PV;
+    const totalEarnedWork = evm.EV;
+    const costVariance = evm.CV;
 
     const openSafety = fSafety.filter((s) => s.status === 'Open').length;
     const closedSafety = fSafety.filter((s) => s.status === 'Closed').length;
@@ -283,23 +277,7 @@ export function Dashboard({
       openRfis, pendingSubmittals, openQualityItems,
       currentDocs, underReviewDocs, approvedDocs, docsByType,
     };
-  }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, boqItems, scheduleDistributions, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate]);
-
-  const evm = useMemo(() => {
-    const BAC = stats.totalBudget || stats.totalPlannedWork || 0;
-    const PV = stats.totalPlannedWork;
-    const EV = stats.totalEarnedWork;
-    const AC = stats.totalActualCosts > 0 ? stats.totalActualCosts : stats.totalSpent;
-    const CV = EV - AC;
-    const SV = EV - PV;
-    const CPI = AC > 0 ? EV / AC : 0;
-    const SPI = PV > 0 ? EV / PV : 0;
-    const EAC = CPI > 0 ? BAC / CPI : BAC;
-    const ETC = EAC - AC;
-    const VAC = BAC - EAC;
-    const TCPI = (BAC - AC) > 0 && (BAC - EV) > 0 ? (BAC - EV) / (BAC - AC) : 0;
-    return { BAC, PV, EV, AC, CV, SV, CPI, SPI, EAC, ETC, VAC, TCPI };
-  }, [stats]);
+  }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate, evm]);
 
   const healthScore = useMemo(() => {
     let score = 100;
