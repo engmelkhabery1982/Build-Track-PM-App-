@@ -947,6 +947,7 @@ export type ViewKey =
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
+  | 'quantityLedger'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'resourceMaster' | 'laborDuty' | 'equipment' | 'tracking'
   | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'controlAccounts' | 'costChanges' | 'paymentCertificates';

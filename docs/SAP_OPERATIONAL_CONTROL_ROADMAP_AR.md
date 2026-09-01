@@ -60,7 +60,7 @@
 
 | # | الميزة | الحالة | قبول 8/10 |
 |---:|---|---|---|
-| B1 | Quantity ledger: أصل/Variation/مخطط/منفذ/مقبول/متبقٍ لكل BOQ وWBS | ⬜ لم تبدأ | تصحيح أو WIR أو Variation يعيد كل الأرصدة بدون ازدواج أو تجاوز. |
+| B1 | Quantity ledger: أصل/Variation/مخطط/منفذ/مقبول/متبقٍ لكل BOQ وWBS | ✅ مكتمل — قبول 8/10 | التصحيح أو WIR أو Variation يعيد كل الأرصدة بدون ازدواج أو تجاوز؛ عقد الباطن يحمّل مرة واحدة على البند الرئيسي. |
 | B2 | Measurement methods: quantity, weighted milestone, % complete, 0/100, 50/50 | ⬜ لم تبدأ | EV يصدر من rule معلن لكل activity/WBS ولا يتغير بتخمين واجهة. |
 | B3 | Progress period and correction workflow | ⬜ لم تبدأ | إقفال فترة يمنع التعديل المباشر؛ التصحيح يسجل حركة عكسية مرجعية. |
 | B4 | Change package موحّد لأثر Variation | ⬜ لم تبدأ | New item/qty/rate/time change يعرض أثره قبل الاعتماد ويربط BOQ/SOV/Baseline/Cash. |

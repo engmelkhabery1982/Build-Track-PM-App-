@@ -4,6 +4,7 @@ import { calculateCertificateBalances, calculateCertificateValues, calculateSovC
 import { calculateCpm } from '../utils/cpm.ts';
 import { calculatePlannedResourceLoads, calculateResourceLoads } from '../utils/resourceLoading.ts';
 import { calendarShiftHours } from '../utils/schedulePlanning.ts';
+import { buildQuantityLedger } from '../utils/quantityLedger.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -101,6 +102,11 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const resourceMasters = data.resourceMasters || [];
   const scheduleResourceAssignments = data.scheduleResourceAssignments || [];
   const wbsNodes = data.wbsNodes || [];
+  const quantityLedger = buildQuantityLedger({ boqItems: data.boqItems, schedules: data.schedules, wirEntries: data.wirEntries, variations, variationLines });
+  const overPlannedLedger = quantityLedger.filter((row) => row.quantity_status === 'Over Planned');
+  const overMeasuredLedger = quantityLedger.filter((row) => row.quantity_status === 'Over Measured');
+  pushIf(findings, overPlannedLedger.length > 0, { severity: 'Error', title: 'Planned quantities exceed revised BOQ scope', detail: `${overPlannedLedger.length} main BOQ item(s) have activity quantities above original plus approved variation quantity. Re-plan or approve a quantity change.`, view: 'quantityLedger' });
+  pushIf(findings, overMeasuredLedger.length > 0, { severity: 'Error', title: 'Accepted quantities exceed revised BOQ scope', detail: `${overMeasuredLedger.length} main BOQ item(s) have accepted WIR quantity above original plus approved variation quantity. Correct the record or approve a quantity change.`, view: 'quantityLedger' });
   const controlAccounts = data.controlAccounts || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));

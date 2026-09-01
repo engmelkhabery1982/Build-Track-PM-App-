@@ -25,6 +25,7 @@ import { calculatePlannedResourceLoads, calculateResourceLoads, suggestResourceL
 import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateBudgetAvailability, calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
+import { buildQuantityLedger } from '@/utils/quantityLedger';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -45,6 +46,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'users', label: 'Users & Roles', icon: Building2, group: 'Executive' },
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
+  { key: 'quantityLedger', label: 'Quantity Ledger', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'workCalendars', label: 'Work Calendar Master', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'scheduleDistributions', label: 'Planned Quantity Distribution', icon: CalendarClock, group: 'Planning & Controls' },
@@ -639,6 +641,12 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'planned_end_date', label: 'Current Plan Finish', type: 'date', editable: true },
   { key: 'variance_reason', label: 'Schedule Variance Reason', type: 'text', editable: true },
 ];
+const QUANTITY_LEDGER_COLUMNS: ColumnDef[] = [
+  { key: 'item_code', label: 'Main BOQ Item', type: 'text', editable: false }, { key: 'item_name', label: 'Description', type: 'text', editable: false }, { key: 'unit', label: 'Unit', type: 'text', editable: false },
+  { key: 'original_quantity', label: 'Original Qty', type: 'number', editable: false }, { key: 'approved_variation_quantity', label: 'Approved Variation Qty', type: 'number', editable: false }, { key: 'revised_quantity', label: 'Revised Qty', type: 'number', editable: false },
+  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: false }, { key: 'inspected_quantity', label: 'Inspected Qty', type: 'number', editable: false }, { key: 'accepted_quantity', label: 'Accepted Qty', type: 'number', editable: false },
+  { key: 'remaining_quantity', label: 'Remaining Qty', type: 'number', editable: false }, { key: 'over_measured_quantity', label: 'Over-measured Qty', type: 'number', editable: false }, { key: 'quantity_status', label: 'Control Status', type: 'status', editable: false, options: ['Within Scope', 'Over Planned', 'Over Measured'] },
+];
 
 const PARTY_COLUMNS: ColumnDef[] = [
   { key: 'party_code', label: 'Party Code', type: 'text', editable: true },
@@ -932,6 +940,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   contracts: { columns: CONTRACT_COLUMNS, filters: [{ key: 'contractor', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'status', label: 'Status', options: CONTRACT_STATUSES }], showProjectFilter: true, dateRangeColumn: 'start_date' },
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
+  quantityLedger: { columns: QUANTITY_LEDGER_COLUMNS, filters: [{ key: 'quantity_status', label: 'Control Status', options: ['Within Scope', 'Over Planned', 'Over Measured'] }], showProjectFilter: true },
   cashflow: { columns: CASHFLOW_COLUMNS, filters: [{ key: 'movement_type', label: 'Movement Type', options: ['Forecast', 'Actual', 'Manual'] }, { key: 'status', label: 'Status', options: ['Open', 'Settled', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Contractor', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   partyContacts: { columns: PARTY_CONTACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
@@ -956,7 +965,7 @@ const TABLE_NAMES: Record<string, string> = {
   resourceAssignments: 'schedule_resource_assignments',
   procurementReconciliation: 'procurement',
   supplierInvoices: 'supplier_invoices', supplierInvoiceLines: 'supplier_invoice_lines', supplierInvoicePayments: 'supplier_invoice_payments',
-  schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items',
+  schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items', quantityLedger: 'boq_items',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', variationLines: 'variation_lines', documents: 'documents', wir: 'wir_entries',
@@ -970,7 +979,7 @@ const VIEW_TITLES: Record<string, string> = {
   resourceAssignments: 'Planned Resource Assignments',
   procurementReconciliation: 'PO Reconciliation',
   supplierInvoices: 'Supplier Invoices / AP', supplierInvoiceLines: 'Supplier Invoice Match Lines', supplierInvoicePayments: 'Supplier Payments',
-  schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items',
+  schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items', quantityLedger: 'Quantity Ledger',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', variationLines: 'Variation Lines', documents: 'Documents', wir: 'Work Inspection Reports',
@@ -2531,6 +2540,8 @@ export default function App() {
     // look as if they had disappeared.
     const rawViewData = activeView === 'boq'
       ? data.boqHeaders
+      : activeView === 'quantityLedger'
+        ? buildQuantityLedger({ boqItems: data.boqItems as Record<string, any>[], schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[] })
       : activeView === 'baselines'
         ? data.baselines
       : activeView === 'reportingPeriods'
@@ -3631,8 +3642,8 @@ export default function App() {
         autoFillOptions={autoFillOptions}
         relationshipOptions={relationshipOptions}
         relationshipAutoFillFields={projectCodeBackedTables.has(tableName) ? ['project_code'] : undefined}
-        canAdd={!roleReadOnly && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
-        readOnly={roleReadOnly}
+        canAdd={!roleReadOnly && activeView !== 'quantityLedger' && tableName !== 'projects' && tableName !== 'progress_entries' && tableName !== 'audit_log'}
+        readOnly={roleReadOnly || activeView === 'quantityLedger'}
         progressWirs={data.wirEntries}
         scheduleResourceAssignments={data.scheduleResourceAssignments as Record<string, any>[]}
         toolbarAction={tableName === 'schedule' ? {

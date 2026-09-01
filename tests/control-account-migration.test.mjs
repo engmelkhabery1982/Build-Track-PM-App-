@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { runDataQualityChecks } from '../src/data/dataQuality.ts';
 import { calculateControlAccountSummary } from '../src/utils/controlAccountSummary.ts';
+import { buildQuantityLedger } from '../src/utils/quantityLedger.ts';
 
 test('Control Account migration enforces one scoped main-contract account', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
@@ -129,4 +130,26 @@ test('Control Account total is traceable and does not double-count an accepted G
     open_commitment: 400, cost_to_complete: 650, forecast_at_completion: 1000, source_count: 10,
     data_date: '2026-06-30', control_status: 'Ready', source_summary: 'Activities 1 · WIR 2 · Costs 3 · PO 2 · GRN 2',
   });
+});
+
+test('Quantity ledger rolls subcontract work to its main BOQ once and applies approved variations only', () => {
+  const rows = buildQuantityLedger({
+    boqItems: [{ id: 'main-item', project_id: 'p1', quantity: 100, item_code: 'B-1' }, { id: 'sub-item', project_id: 'p1', main_boq_item_id: 'main-item', quantity: 70 }],
+    variations: [{ id: 'approved', status: 'Approved' }, { id: 'draft', status: 'Draft' }],
+    variationLines: [{ variation_id: 'approved', boq_item_id: 'main-item', quantity_change: 20 }, { variation_id: 'draft', boq_item_id: 'main-item', quantity_change: 100 }],
+    schedules: [{ boq_item_id: 'main-item', activity: 'Main activity', planned_quantity: 60 }, { boq_item_id: 'sub-item', activity: 'Sub activity', planned_quantity: 40 }, { boq_item_id: 'main-item', activity: '', planned_quantity: 100 }],
+    wirEntries: [{ boq_item_id: 'main-item', result: 'Pass', quantity: 30 }, { boq_item_id: 'sub-item', result: 'Conditional Pass', quantity: 25 }, { boq_item_id: 'sub-item', result: 'Fail', quantity: 10 }],
+  });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], { id: 'quantity-ledger:main-item', project_id: 'p1', contract_id: null, boq_item_id: 'main-item', item_code: 'B-1', item_name: '', unit: '', original_quantity: 100, approved_variation_quantity: 20, revised_quantity: 120, planned_quantity: 100, inspected_quantity: 65, accepted_quantity: 55, remaining_quantity: 65, over_measured_quantity: 0, quantity_status: 'Within Scope' });
+});
+
+test('Data Quality escalates a Quantity Ledger over-plan against revised scope', () => {
+  const findings = runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'main', project_id: 'p1', parent_main_contract_id: null }],
+    boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'main' }], boqItems: [{ id: 'b1', project_id: 'p1', boq_header_id: 'h1', quantity: 10 }],
+    schedules: [{ id: 'a1', project_id: 'p1', contract_id: 'main', boq_item_id: 'b1', activity: 'Activity', planned_quantity: 11 }], wirEntries: [], costEntries: [], variations: [], variationLines: [],
+    reportingPeriods: [], baselines: [], wbsNodes: [], procurement: [], procurementReceipts: [],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Planned quantities exceed revised BOQ scope' && finding.view === 'quantityLedger'));
 });
