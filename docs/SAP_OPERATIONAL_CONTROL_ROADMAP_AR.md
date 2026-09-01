@@ -62,7 +62,7 @@
 |---:|---|---|---|
 | B1 | Quantity ledger: أصل/Variation/مخطط/منفذ/مقبول/متبقٍ لكل BOQ وWBS | ✅ مكتمل — قبول 8/10 | التصحيح أو WIR أو Variation يعيد كل الأرصدة بدون ازدواج أو تجاوز؛ عقد الباطن يحمّل مرة واحدة على البند الرئيسي. |
 | B2 | Measurement methods: quantity, weighted milestone, % complete, 0/100, 50/50 | ✅ مكتمل — قبول 8/10 | EV يصدر من rule معلن لكل activity: Quantity أو 0/100 أو 50/50 أو Weighted Milestone؛ WIR المرتبط بنشاط Quantity لا يتكرر. |
-| B3 | Progress period and correction workflow | ⬜ لم تبدأ | إقفال فترة يمنع التعديل المباشر؛ التصحيح يسجل حركة عكسية مرجعية. |
+| B3 | Progress period and correction workflow | ✅ مكتمل — قبول 8/10 | إقفال الفترة مفروض داخل SQLite على WIR؛ التصحيح سجل مستقل مرجعي بحركة عكسية/إعادة إثبات مؤرخة، مع منع تجاوز الأصل، وانعكاس مؤرخ على Quantity Ledger وEV ولوحة البيانات ولقطات PMO. |
 | B4 | Change package موحّد لأثر Variation | ⬜ لم تبدأ | New item/qty/rate/time change يعرض أثره قبل الاعتماد ويربط BOQ/SOV/Baseline/Cash. |
 
 ### البوابة C — برنامج زمني للتحكم لا للاستعراض

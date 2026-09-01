@@ -7,6 +7,7 @@ export function calculatePmoSnapshot(input: {
   schedules: Record<string, any>[];
   scheduleDistributions: Record<string, any>[];
   wirEntries: Record<string, any>[];
+  progressCorrections?: Record<string, any>[];
   boqItems: Record<string, any>[];
   costEntries: Record<string, any>[];
   /** Subcontract records that are operationally loaded to this main contract. */
@@ -26,7 +27,7 @@ export function calculatePmoSnapshot(input: {
   const evm = calculateEvmAtDataDate({
     contractIds: [input.contract.id], performanceContractIds: input.performanceContractIds, dataDate,
     schedules: input.schedules, scheduleDistributions: input.scheduleDistributions,
-    baselines: input.baselines || [], wirEntries: input.wirEntries,
+    baselines: input.baselines || [], wirEntries: input.wirEntries, progressCorrections: input.progressCorrections || [],
     boqItems: input.boqItems, costEntries: input.costEntries,
   });
   return {

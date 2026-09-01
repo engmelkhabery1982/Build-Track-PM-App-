@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
-  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar,
+  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar, ProgressCorrection,
 } from '@/types';
 
 export type LocalDataMutation =
@@ -52,6 +52,7 @@ export function useData() {
   const [variationLines, setVariationLines] = useState<VariationLine[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [wirEntries, setWirEntries] = useState<WIREntry[]>([]);
+  const [progressCorrections, setProgressCorrections] = useState<ProgressCorrection[]>([]);
   const [laborDuty, setLaborDuty] = useState<LaborDuty[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [resourceMasters, setResourceMasters] = useState<ResourceMaster[]>([]);
@@ -83,7 +84,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, ca, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, pcor, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, ca, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -121,6 +122,7 @@ export function useData() {
         listOptional<VariationLine>('variation_lines'),
         dataRepository.list<DocumentEntry>('documents'),
         dataRepository.list<WIREntry>('wir_entries'),
+        listOptional<ProgressCorrection>('progress_corrections'),
         dataRepository.list<LaborDuty>('labor_duty'),
         dataRepository.list<Equipment>('equipment'),
         listOptional<ResourceMaster>('resource_masters'),
@@ -166,6 +168,7 @@ export function useData() {
       setVariationLines(vl);
       setDocuments(dc);
       setWirEntries(wr);
+      setProgressCorrections(pcor);
       setLaborDuty(ld);
       setEquipment(eq);
       setResourceMasters(rm);
@@ -242,6 +245,7 @@ export function useData() {
       case 'variation_lines': apply(setVariationLines); break;
       case 'documents': apply(setDocuments); break;
       case 'wir_entries': apply(setWirEntries); break;
+      case 'progress_corrections': apply(setProgressCorrections); break;
       case 'labor_duty': apply(setLaborDuty); break;
       case 'equipment': apply(setEquipment); break;
       case 'resource_masters': apply(setResourceMasters); break;
@@ -269,7 +273,7 @@ export function useData() {
     projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, scheduleResourceAssignments, workCalendars, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
-    documents, wirEntries, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, controlAccounts, costChanges, paymentCertificates, loading,
+    documents, wirEntries, progressCorrections, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, controlAccounts, costChanges, paymentCertificates, loading,
     reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
   };
 }

@@ -10,7 +10,7 @@ import { calculateEvmAtDataDate } from '@/utils/evm';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
-  Variation, DocumentEntry, WIREntry, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, RFIEntry, SubmittalEntry, QualityEntry,
+  Variation, DocumentEntry, WIREntry, ProgressCorrection, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, RFIEntry, SubmittalEntry, QualityEntry,
 } from '@/types';
 
 interface DashboardProps {
@@ -31,6 +31,7 @@ interface DashboardProps {
   variations: Variation[];
   documents: DocumentEntry[];
   wirEntries: WIREntry[];
+  progressCorrections: ProgressCorrection[];
   baselines: ProjectBaseline[];
   reportingPeriods: ReportingPeriod[];
   governanceRegister: GovernanceRegisterEntry[];
@@ -85,7 +86,7 @@ type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety'
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
+  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -127,6 +128,7 @@ export function Dashboard({
   const fVariations = pid === 'all' ? variations : variations.filter((v) => v.project_id === pid);
   const fDocuments = pid === 'all' ? documents : documents.filter((d) => d.project_id === pid);
   const fWirs = pid === 'all' ? wirEntries : wirEntries.filter((wir) => wir.project_id === pid);
+  const fProgressCorrections = pid === 'all' ? progressCorrections : progressCorrections.filter((row) => row.project_id === pid);
   const fBaselines = pid === 'all' ? baselines : baselines.filter((baseline) => baseline.project_id === pid);
   const fReportingPeriods = pid === 'all' ? reportingPeriods : reportingPeriods.filter((period) => period.project_id === pid);
   const fGovernance = pid === 'all' ? governanceRegister : governanceRegister.filter((entry) => entry.project_id === pid);
@@ -141,8 +143,8 @@ export function Dashboard({
   const evm = useMemo(() => calculateEvmAtDataDate({
     contractIds: primaryContracts.map((contract) => contract.id), performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
     schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
-    wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
-  }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fBOQ, fCostEntries]);
+    wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+  }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fProgressCorrections, fBOQ, fCostEntries]);
 
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
@@ -400,7 +402,7 @@ export function Dashboard({
     const dataDateEvm = calculateEvmAtDataDate({
       contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
       schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
-      wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+      wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
     });
     const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; resourceForecast: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
@@ -411,7 +413,7 @@ export function Dashboard({
       const pointEvm = calculateEvmAtDataDate({
         contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: dateStr,
         schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
-        wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+        wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
       });
       const planned = pointEvm.PV;
       const earned = pointEvm.EV;
@@ -427,7 +429,7 @@ export function Dashboard({
       points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, resourceForecast: plannedResourceCostAt(resourceForecast, dateStr), date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, fCostEntries, fBOQ, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
+  }, [fSchedules, fWirs, fProgressCorrections, fCostEntries, fBOQ, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {

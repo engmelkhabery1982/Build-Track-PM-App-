@@ -21,6 +21,8 @@ export function calculateEvmAtDataDate(input: {
   scheduleDistributions: Record<string, any>[];
   baselines: Record<string, any>[];
   wirEntries: Record<string, any>[];
+  /** Posted corrections are signed movements against their original WIR. */
+  progressCorrections?: Record<string, any>[];
   boqItems: Record<string, any>[];
   costEntries: Record<string, any>[];
 }) {
@@ -32,6 +34,16 @@ export function calculateEvmAtDataDate(input: {
   const bac = money(plans.reduce((sum, plan) => sum + scheduleBudget(plan.activity), 0));
   const pv = money(plans.reduce((sum, plan) => sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dataDate), 0));
   const boqById = new Map(input.boqItems.map((item) => [String(item.id), item]));
+  const wirById = new Map(input.wirEntries.map((wir) => [String(wir.id), wir]));
+  const correctionValue = (correction: Record<string, any>) => {
+    if (correction.status !== 'Posted' || !datedThrough(correction.effective_date, dataDate)) return 0;
+    const original = wirById.get(String(correction.original_wir_id || ''));
+    if (!original || !performanceContractIds.has(String(original.contract_id || ''))) return 0;
+    const item = boqById.get(String(original.boq_item_id || ''));
+    const mainItem = item?.main_boq_item_id ? boqById.get(String(item.main_boq_item_id)) : item;
+    const amount = (Number(correction.quantity) || 0) * (Number(mainItem?.unit_rate ?? original.unit_price) || 0);
+    return String(correction.correction_type) === 'Reinstatement' ? amount : -amount;
+  };
   const explicitActivities = new Map(activities.filter((activity) => String(activity.measurement_method || '').trim()).map((activity) => [String(activity.id), activity]));
   const explicitEv = [...explicitActivities.values()].reduce((sum, activity) => {
     const method = String(activity.measurement_method);
@@ -58,7 +70,8 @@ export function calculateEvmAtDataDate(input: {
       const mainItem = item?.main_boq_item_id ? boqById.get(String(item.main_boq_item_id)) : item;
       return sum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
     }, 0);
-  const ev = money(explicitEv + legacyEv);
+  const correctionEv = (input.progressCorrections || []).reduce((sum, correction) => sum + correctionValue(correction), 0);
+  const ev = money(Math.max(0, explicitEv + legacyEv + correctionEv));
   const ac = money(input.costEntries
     .filter((entry) => performanceContractIds.has(String(entry.contract_id || '')) && datedThrough(entry.date, dataDate))
     .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0));

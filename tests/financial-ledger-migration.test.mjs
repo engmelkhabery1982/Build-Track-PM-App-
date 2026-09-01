@@ -384,3 +384,39 @@ print('ok')
   const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
+
+test('progress correction migration protects locked WIR history and requires an approved scoped original', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const match = rust.match(/version:\s*46,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
+  assert.ok(match, 'migration 46 must exist');
+  const sqliteAcceptance = String.raw`
+import json, sqlite3, sys
+db = sqlite3.connect(':memory:')
+db.execute('PRAGMA foreign_keys=ON')
+for table, ddl in {
+ 'projects':'id TEXT PRIMARY KEY', 'contracts':'id TEXT PRIMARY KEY', 'boq_items':'id TEXT PRIMARY KEY',
+ 'reporting_periods':'id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL',
+ 'wir_entries':'id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL'
+}.items(): db.execute(f'CREATE TABLE {table} ({ddl})')
+db.execute("INSERT INTO projects VALUES ('p1')"); db.execute("INSERT INTO contracts VALUES ('c1')"); db.execute("INSERT INTO boq_items VALUES ('b1')")
+db.executescript(sys.stdin.read())
+db.execute("INSERT INTO reporting_periods VALUES ('jan','p1',?)", (json.dumps({'status':'Locked','start_date':'2026-01-01','end_date':'2026-01-31'}),))
+try:
+ db.execute("INSERT INTO wir_entries VALUES ('locked','t','p1','c1',NULL,'b1',NULL,NULL,?)", (json.dumps({'inspection_date':'2026-01-15','status':'Approved'}),)); raise AssertionError('locked WIR must be rejected')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO wir_entries VALUES ('wir1','t','p1','c1',NULL,'b1',NULL,NULL,?)", (json.dumps({'inspection_date':'2026-02-01','status':'Approved','quantity':1}),))
+try:
+ db.execute("INSERT INTO progress_corrections VALUES ('bad','t','p1','c1',NULL,'b1','missing',?)", (json.dumps({'quantity':1,'effective_date':'2026-02-02','reason':'test','correction_type':'Reversal','status':'Posted'}),)); raise AssertionError('missing original must be rejected')
+except sqlite3.IntegrityError: pass
+db.execute("INSERT INTO progress_corrections VALUES ('ok','t','p1','c1',NULL,'b1','wir1',?)", (json.dumps({'quantity':1,'effective_date':'2026-02-02','reason':'test','correction_type':'Reversal','status':'Posted'}),))
+try:
+ db.execute("INSERT INTO progress_corrections VALUES ('over','t','p1','c1',NULL,'b1','wir1',?)", (json.dumps({'quantity':2,'effective_date':'2026-02-02','reason':'over-reversal','correction_type':'Reversal','status':'Posted'}),)); raise AssertionError('total correction cannot exceed original WIR quantity')
+except sqlite3.IntegrityError: pass
+try:
+ db.execute("UPDATE progress_corrections SET payload=? WHERE id='ok'", (json.dumps({'quantity':2,'effective_date':'2026-02-02','reason':'rewrite','correction_type':'Reversal','status':'Posted'}),)); raise AssertionError('posted correction must be immutable')
+except sqlite3.IntegrityError: pass
+print('ok')
+`;
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  assert.equal(result, 'ok');
+});

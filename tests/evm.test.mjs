@@ -45,3 +45,20 @@ test('EVM honors explicit activity measurement rules without double-counting lin
   });
   assert.equal(result.EV, 500);
 });
+
+test('EVM applies posted progress reversals in their effective reporting period without rewriting the WIR', () => {
+  const beforeCorrection = evm.calculateEvmAtDataDate({
+    contractIds: ['c1'], dataDate: '2026-02-10', schedules: [], scheduleDistributions: [], baselines: [],
+    boqItems: [{ id: 'b1', unit_rate: 10 }],
+    wirEntries: [{ id: 'wir1', contract_id: 'c1', boq_item_id: 'b1', quantity: 40, inspection_date: '2026-01-20', status: 'Approved' }],
+    progressCorrections: [{ original_wir_id: 'wir1', correction_type: 'Reversal', quantity: 15, effective_date: '2026-02-15', status: 'Posted' }], costEntries: [],
+  });
+  const afterCorrection = evm.calculateEvmAtDataDate({
+    contractIds: ['c1'], dataDate: '2026-02-20', schedules: [], scheduleDistributions: [], baselines: [],
+    boqItems: [{ id: 'b1', unit_rate: 10 }],
+    wirEntries: [{ id: 'wir1', contract_id: 'c1', boq_item_id: 'b1', quantity: 40, inspection_date: '2026-01-20', status: 'Approved' }],
+    progressCorrections: [{ original_wir_id: 'wir1', correction_type: 'Reversal', quantity: 15, effective_date: '2026-02-15', status: 'Posted' }], costEntries: [],
+  });
+  assert.equal(beforeCorrection.EV, 400);
+  assert.equal(afterCorrection.EV, 250);
+});

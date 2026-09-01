@@ -21,6 +21,7 @@ const TABLES = new Set([
   "report_templates",
   "cost_codes", "wbs_nodes", "contract_sov_lines", "control_accounts", "payment_certificates",
   "cost_changes", "procurement_receipts", "supplier_invoices", "supplier_invoice_lines", "supplier_invoice_payments",
+  "progress_corrections",
 ]);
 
 const CONTROL_ACCOUNT_SOURCE_TABLES = new Set([
@@ -202,6 +203,15 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.contract_sov_line_id), JSON.stringify(record),
         ],
       );
+    } else if (tableName === "progress_corrections") {
+      await database.execute(
+        `INSERT INTO progress_corrections (id, created_at, project_id, contract_id, boq_header_id, boq_item_id, original_wir_id, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          record.id, record.created_at, nullableId(record.project_id), nullableId(record.contract_id),
+          nullableId(record.boq_header_id), nullableId(record.boq_item_id), nullableId(record.original_wir_id), JSON.stringify(record),
+        ],
+      );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {
       await database.execute(
         `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, control_account_id, payload)
@@ -296,6 +306,16 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.wbs_id),
           nullableId(record.boq_item_id), nullableId(record.cost_code_id), nullableId(record.contract_sov_line_id),
           JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "progress_corrections") {
+      await database.execute(
+        `UPDATE progress_corrections
+         SET project_id = $1, contract_id = $2, boq_header_id = $3, boq_item_id = $4, original_wir_id = $5, payload = $6
+         WHERE id = $7`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.boq_header_id),
+          nullableId(record.boq_item_id), nullableId(record.original_wir_id), JSON.stringify(record), id,
         ],
       );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {

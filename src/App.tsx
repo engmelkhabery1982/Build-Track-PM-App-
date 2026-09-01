@@ -47,6 +47,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'boq', label: 'BOQ Headers', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'boqItems', label: 'BOQ Items', icon: ListOrdered, group: 'Planning & Controls' },
   { key: 'quantityLedger', label: 'Quantity Ledger', icon: ClipboardList, group: 'Planning & Controls' },
+  { key: 'progressCorrections', label: 'Progress Corrections', icon: ClipboardList, group: 'Planning & Controls' },
   { key: 'schedule', label: 'Schedule & Activities', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'workCalendars', label: 'Work Calendar Master', icon: CalendarClock, group: 'Planning & Controls' },
   { key: 'scheduleDistributions', label: 'Planned Quantity Distribution', icon: CalendarClock, group: 'Planning & Controls' },
@@ -646,8 +647,18 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
 const QUANTITY_LEDGER_COLUMNS: ColumnDef[] = [
   { key: 'item_code', label: 'Main BOQ Item', type: 'text', editable: false }, { key: 'item_name', label: 'Description', type: 'text', editable: false }, { key: 'unit', label: 'Unit', type: 'text', editable: false },
   { key: 'original_quantity', label: 'Original Qty', type: 'number', editable: false }, { key: 'approved_variation_quantity', label: 'Approved Variation Qty', type: 'number', editable: false }, { key: 'revised_quantity', label: 'Revised Qty', type: 'number', editable: false },
-  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: false }, { key: 'inspected_quantity', label: 'Inspected Qty', type: 'number', editable: false }, { key: 'accepted_quantity', label: 'Accepted Qty', type: 'number', editable: false },
+  { key: 'planned_quantity', label: 'Planned Qty', type: 'number', editable: false }, { key: 'inspected_quantity', label: 'Inspected Qty', type: 'number', editable: false }, { key: 'corrected_quantity', label: 'Posted Corrections', type: 'number', editable: false }, { key: 'accepted_quantity', label: 'Accepted Qty', type: 'number', editable: false },
   { key: 'remaining_quantity', label: 'Remaining Qty', type: 'number', editable: false }, { key: 'over_measured_quantity', label: 'Over-measured Qty', type: 'number', editable: false }, { key: 'quantity_status', label: 'Control Status', type: 'status', editable: false, options: ['Within Scope', 'Over Planned', 'Over Measured'] },
+];
+
+const PROGRESS_CORRECTION_COLUMNS: ColumnDef[] = [
+  { key: 'correction_number', label: 'Correction #', type: 'text', editable: true },
+  { key: 'original_wir_id', label: 'Original Approved WIR', type: 'select', editable: true },
+  { key: 'correction_type', label: 'Movement', type: 'status', editable: true, options: ['Reversal', 'Reinstatement'] },
+  { key: 'effective_date', label: 'Effective Date', type: 'date', editable: true },
+  { key: 'quantity', label: 'Quantity', type: 'number', editable: true },
+  { key: 'reason', label: 'Reason', type: 'text', editable: true },
+  { key: 'status', label: 'Status', type: 'status', editable: true, options: ['Draft', 'Posted', 'Cancelled'] },
 ];
 
 const PARTY_COLUMNS: ColumnDef[] = [
@@ -943,6 +954,7 @@ const VIEW_CONFIGS: Record<string, { columns: ColumnDef[]; filters?: FilterDef[]
   boq: { columns: BOQ_HEADER_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'classification', label: 'Classification', options: BOQ_CLASSIFICATIONS }], showProjectFilter: true },
   boqItems: { columns: BOQ_ITEM_COLUMNS, filters: [{ key: 'company_name', label: 'Company', options: [] }, { key: 'contract_role', label: 'Contract Role', options: ['Main Contract', 'Subcontract'] }, { key: 'category', label: 'Category', options: ['Earthworks', 'Concrete', 'Steel', 'Masonry', 'Finishes', 'MEP', 'Other'] }], showProjectFilter: true },
   quantityLedger: { columns: QUANTITY_LEDGER_COLUMNS, filters: [{ key: 'quantity_status', label: 'Control Status', options: ['Within Scope', 'Over Planned', 'Over Measured'] }], showProjectFilter: true },
+  progressCorrections: { columns: PROGRESS_CORRECTION_COLUMNS, filters: [{ key: 'correction_type', label: 'Movement', options: ['Reversal', 'Reinstatement'] }, { key: 'status', label: 'Status', options: ['Draft', 'Posted', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'effective_date' },
   cashflow: { columns: CASHFLOW_COLUMNS, filters: [{ key: 'movement_type', label: 'Movement Type', options: ['Forecast', 'Actual', 'Manual'] }, { key: 'status', label: 'Status', options: ['Open', 'Settled', 'Cancelled'] }], showProjectFilter: true, dateRangeColumn: 'date' },
   parties: { columns: PARTY_COLUMNS, filters: [{ key: 'party_type', label: 'Type', options: ['Client', 'Supplier', 'Contractor', 'Subcontractor', 'Consultant'] }, { key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
   partyContacts: { columns: PARTY_CONTACT_COLUMNS, filters: [{ key: 'status', label: 'Status', options: ['Active', 'Inactive'] }] },
@@ -967,7 +979,7 @@ const TABLE_NAMES: Record<string, string> = {
   resourceAssignments: 'schedule_resource_assignments',
   procurementReconciliation: 'procurement',
   supplierInvoices: 'supplier_invoices', supplierInvoiceLines: 'supplier_invoice_lines', supplierInvoicePayments: 'supplier_invoice_payments',
-  schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items', quantityLedger: 'boq_items',
+  schedule: 'schedules', contracts: 'contracts', boq: 'boq_headers', boqItems: 'boq_items', quantityLedger: 'boq_items', progressCorrections: 'progress_corrections',
   cashflow: 'cash_flow', subinvoices: 'subcontractor_invoices', clientinvoices: 'client_invoices',
   clientInvoiceTracking: 'client_invoice_tracking', subcontractorInvoiceTracking: 'subcontractor_invoice_tracking',
   variations: 'variations', variationLines: 'variation_lines', documents: 'documents', wir: 'wir_entries',
@@ -981,7 +993,7 @@ const VIEW_TITLES: Record<string, string> = {
   resourceAssignments: 'Planned Resource Assignments',
   procurementReconciliation: 'PO Reconciliation',
   supplierInvoices: 'Supplier Invoices / AP', supplierInvoiceLines: 'Supplier Invoice Match Lines', supplierInvoicePayments: 'Supplier Payments',
-  schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items', quantityLedger: 'Quantity Ledger',
+  schedule: 'Schedule', contracts: 'Contracts', boq: 'BOQ Headers', boqItems: 'BOQ Items', quantityLedger: 'Quantity Ledger', progressCorrections: 'Progress Corrections',
   cashflow: 'Cash Flow', subinvoices: 'Subcontractor Invoices', clientinvoices: 'Client Invoices',
   clientInvoiceTracking: 'Client Invoice Tracking', subcontractorInvoiceTracking: 'Subcontractor Invoice Tracking',
   variations: 'Variations', variationLines: 'Variation Lines', documents: 'Documents', wir: 'Work Inspection Reports',
@@ -2264,6 +2276,7 @@ export default function App() {
           variations={data.variations}
           documents={data.documents}
           wirEntries={data.wirEntries}
+          progressCorrections={data.progressCorrections}
           baselines={data.baselines}
           reportingPeriods={data.reportingPeriods}
           governanceRegister={data.governanceRegister}
@@ -2322,7 +2335,7 @@ export default function App() {
     if (activeView === 'dataQuality') {
       const checks = runDataQualityChecks({
         projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], scheduleResourceAssignments: data.scheduleResourceAssignments as Record<string, any>[], workCalendars: data.workCalendars as Record<string, any>[], resourceMasters: data.resourceMasters as Record<string, any>[], wbsNodes: data.wbsNodes as Record<string, any>[], controlAccounts: data.controlAccounts as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], laborDuty: data.laborDuty as Record<string, any>[], equipment: data.equipment as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
+        schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], scheduleResourceAssignments: data.scheduleResourceAssignments as Record<string, any>[], workCalendars: data.workCalendars as Record<string, any>[], resourceMasters: data.resourceMasters as Record<string, any>[], wbsNodes: data.wbsNodes as Record<string, any>[], controlAccounts: data.controlAccounts as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], progressCorrections: data.progressCorrections as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], laborDuty: data.laborDuty as Record<string, any>[], equipment: data.equipment as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
       });
       const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
@@ -2543,7 +2556,9 @@ export default function App() {
     const rawViewData = activeView === 'boq'
       ? data.boqHeaders
       : activeView === 'quantityLedger'
-        ? buildQuantityLedger({ boqItems: data.boqItems as Record<string, any>[], schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[] })
+        ? buildQuantityLedger({ boqItems: data.boqItems as Record<string, any>[], schedules: data.schedules as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], progressCorrections: data.progressCorrections as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[] })
+      : activeView === 'progressCorrections'
+        ? data.progressCorrections
       : activeView === 'baselines'
         ? data.baselines
       : activeView === 'reportingPeriods'
@@ -3132,6 +3147,16 @@ export default function App() {
         })(),
       },
     }));
+    relationshipOptions.original_wir_id = data.wirEntries
+      .filter((wir: any) => wir.status === 'Approved' || ['Pass', 'Conditional Pass'].includes(String(wir.result || '')))
+      .map((wir: any) => ({
+        value: wir.id,
+        label: `${wir.wir_number || wir.id} — ${wir.item_code || wir.boq_item_id || 'BOQ item'}`,
+        data: {
+          project_id: wir.project_id, contract_id: wir.contract_id, boq_header_id: wir.boq_header_id,
+          boq_item_id: wir.boq_item_id, unit: wir.unit, original_wir_number: wir.wir_number,
+        },
+      }));
     relationshipOptions.procurement_id = data.procurement
       .filter((po: any) => !['Draft', 'Cancelled'].includes(String(po.status || 'Draft')))
       .map((po: any) => ({
@@ -3393,6 +3418,7 @@ export default function App() {
       boq_items: ['contract_id', 'boq_header_id', 'item_name', 'description', 'category', 'unit', 'quantity', 'unit_rate', 'planned_start_date', 'planned_end_date', 'notes'],
       schedules: ['contract_id', 'boq_item_id', 'activity', 'predecessor_item', 'relationship_type', 'lag_days', 'start_date', 'end_date', 'duration_days', 'activity_status', 'status_data_date', 'actual_start_date', 'actual_finish_date', 'remaining_duration_days', 'planned_quantity', 'calendar_name', 'critical_path', 'responsible', 'status', 'notes'],
       wir_entries: ['contract_id', 'boq_item_id', 'inspection_date', 'area', 'work_type', 'quantity', 'inspector', 'result', 'remarks', 'status'],
+      progress_corrections: ['original_wir_id', 'correction_type', 'effective_date', 'quantity', 'reason', 'status'],
       cost_entries: ['contract_id', 'boq_item_id', 'date', 'cost_type', 'invoice_number', 'payment_order_number', 'amount'],
     };
     const tailoredFormColumns = tailoredFormKeys[tableName]
@@ -3498,6 +3524,15 @@ export default function App() {
           if (String(row.shift_definitions || '').trim() && calendarShiftHours(row) === null) throw new Error('Shift Definitions must be a JSON list of valid non-overlapping same-day time pairs, for example [{"start":"07:00","end":"12:00"},{"start":"13:00","end":"17:00"}].');
         } : tableName === 'reporting_periods' ? (row) => {
           assertReportingPeriodDefinition(row, data.reportingPeriods);
+        } : tableName === 'progress_corrections' ? (row) => {
+          const original = data.wirEntries.find((wir: any) => wir.id === row.original_wir_id) as any;
+          if (!original || !(original.status === 'Approved' || ['Pass', 'Conditional Pass'].includes(String(original.result || '')))) throw new Error('Select an approved original WIR to correct.');
+          if (original.project_id !== row.project_id || original.contract_id !== row.contract_id || original.boq_item_id !== row.boq_item_id) throw new Error('The correction must keep the original WIR project, contract and BOQ scope.');
+          if (!(Number(row.quantity) > 0)) throw new Error('Correction quantity must be greater than zero.');
+          if (!String(row.reason || '').trim()) throw new Error('A correction reason is required.');
+          if (!String(row.effective_date || '').slice(0, 10)) throw new Error('An effective date is required.');
+          if (!['Reversal', 'Reinstatement'].includes(String(row.correction_type || ''))) throw new Error('Select Reversal or Reinstatement.');
+          assertRecordPeriodIsOpen(data.reportingPeriods, row);
         } : config.dateRangeColumn && !['project_baselines', 'audit_log', 'approval_requests'].includes(tableName) ? (row) => {
           const governedRow = tableName === 'projects' ? { ...row, project_id: row.id } : row;
           assertRecordPeriodIsOpen(data.reportingPeriods, governedRow);
@@ -3923,7 +3958,7 @@ export default function App() {
           if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
           const status = snapshotDraft.status || 'Draft';
           if (status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, progressCorrections: data.progressCorrections, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
           return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
             ...snapshotDraft, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost,
             cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id,
@@ -4048,7 +4083,7 @@ export default function App() {
           const period = data.reportingPeriods.find((row: any) => row.project_id === contract.project_id && dataDate >= String(row.start_date || '') && dataDate <= String(row.end_date || '')) as any;
           if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
           if (next.status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, progressCorrections: data.progressCorrections, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
           return dataRepository.update<Record<string, any>>('pmo_snapshots', id, { ...patch, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost, cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id });
         } : tableName === 'project_baselines' ? async (id, baselinePatch) => {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;

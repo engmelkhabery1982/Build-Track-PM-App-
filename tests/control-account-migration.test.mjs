@@ -141,7 +141,7 @@ test('Quantity ledger rolls subcontract work to its main BOQ once and applies ap
     wirEntries: [{ boq_item_id: 'main-item', result: 'Pass', quantity: 30 }, { boq_item_id: 'sub-item', result: 'Conditional Pass', quantity: 25 }, { boq_item_id: 'sub-item', result: 'Fail', quantity: 10 }],
   });
   assert.equal(rows.length, 1);
-  assert.deepEqual(rows[0], { id: 'quantity-ledger:main-item', project_id: 'p1', contract_id: null, boq_item_id: 'main-item', item_code: 'B-1', item_name: '', unit: '', original_quantity: 100, approved_variation_quantity: 20, revised_quantity: 120, planned_quantity: 100, inspected_quantity: 65, accepted_quantity: 55, remaining_quantity: 65, over_measured_quantity: 0, quantity_status: 'Within Scope' });
+  assert.deepEqual(rows[0], { id: 'quantity-ledger:main-item', project_id: 'p1', contract_id: null, boq_item_id: 'main-item', item_code: 'B-1', item_name: '', unit: '', original_quantity: 100, approved_variation_quantity: 20, revised_quantity: 120, planned_quantity: 100, inspected_quantity: 65, corrected_quantity: 0, accepted_quantity: 55, remaining_quantity: 65, over_measured_quantity: 0, quantity_status: 'Within Scope' });
 });
 
 test('Data Quality escalates a Quantity Ledger over-plan against revised scope', () => {
@@ -152,4 +152,18 @@ test('Data Quality escalates a Quantity Ledger over-plan against revised scope',
     reportingPeriods: [], baselines: [], wbsNodes: [], procurement: [], procurementReceipts: [],
   });
   assert.ok(findings.some((finding) => finding.title === 'Planned quantities exceed revised BOQ scope' && finding.view === 'quantityLedger'));
+});
+
+test('Posted progress correction reverses accepted quantity and invalid corrections are surfaced', () => {
+  const rows = buildQuantityLedger({
+    boqItems: [{ id: 'b1', project_id: 'p1', quantity: 100 }], schedules: [], variations: [], variationLines: [],
+    wirEntries: [{ id: 'wir1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 60, status: 'Approved' }],
+    progressCorrections: [{ id: 'pc1', original_wir_id: 'wir1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', correction_type: 'Reversal', quantity: 20, effective_date: '2026-02-01', reason: 'measurement correction', status: 'Posted' }],
+  });
+  assert.equal(rows[0].accepted_quantity, 40);
+  assert.equal(rows[0].corrected_quantity, -20);
+  const findings = runDataQualityChecks({
+    projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1', parent_main_contract_id: null }], boqHeaders: [{ id: 'h1', project_id: 'p1', contract_id: 'c1' }], boqItems: [{ id: 'b1', project_id: 'p1', boq_header_id: 'h1', quantity: 100 }], schedules: [], wirEntries: [{ id: 'wir1', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', quantity: 60, status: 'Approved' }], progressCorrections: [{ id: 'bad', original_wir_id: 'missing', project_id: 'p1', contract_id: 'c1', boq_item_id: 'b1', correction_type: 'Reversal', quantity: 0, effective_date: '', reason: '', status: 'Posted' }], costEntries: [], variations: [], variationLines: [], reportingPeriods: [], baselines: [], wbsNodes: [], procurement: [], procurementReceipts: [],
+  });
+  assert.ok(findings.some((finding) => finding.title === 'Invalid progress correction'));
 });

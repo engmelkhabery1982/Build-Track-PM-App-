@@ -881,6 +881,24 @@ export interface WIREntry {
   created_at: string;
 }
 
+/** A dated, governed correction to an approved inspection record.  The WIR
+ * remains untouched; the correction is a separate audit fact. */
+export interface ProgressCorrection {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  original_wir_id: string;
+  correction_number: string;
+  correction_type: 'Reversal' | 'Reinstatement' | string;
+  quantity: number;
+  effective_date: string | null;
+  reason: string;
+  status: 'Draft' | 'Posted' | 'Cancelled' | string;
+  created_at: string;
+}
+
 export interface Party {
   id: string;
   party_code: string;
@@ -951,6 +969,7 @@ export type ViewKey =
   | 'supplierInvoices' | 'supplierInvoiceLines' | 'supplierInvoicePayments'
   | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
   | 'quantityLedger'
+  | 'progressCorrections'
   | 'clientInvoiceTracking' | 'subcontractorInvoiceTracking'
   | 'variations' | 'variationLines' | 'documents' | 'wir' | 'resourceMaster' | 'laborDuty' | 'equipment' | 'tracking'
   | 'parties' | 'partyContacts' | 'rateHistory' | 'reportTemplates' | 'costCodes' | 'wbs' | 'contractSov' | 'controlAccounts' | 'costChanges' | 'paymentCertificates';

@@ -1809,6 +1809,100 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 46,
+            description: "govern_progress_period_corrections_in_sqlite",
+            sql: r#"
+      -- Progress is a reporting fact.  A locked period must protect WIRs in
+      -- SQLite as well as in the React repository; otherwise a direct plugin
+      -- write could silently restate EV and quantity history.
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_wir_insert_v1
+      BEFORE INSERT ON wir_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(NEW.payload,'$.inspection_date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this inspection progress record.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_wir_update_v1
+      BEFORE UPDATE ON wir_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.inspection_date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+        OR EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+          AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+          AND substr(COALESCE(json_extract(NEW.payload,'$.inspection_date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this inspection progress record. Use a progress correction in an open period.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_wir_delete_v1
+      BEFORE DELETE ON wir_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.inspection_date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this inspection progress record. Use a progress correction in an open period.'); END;
+
+      -- Corrections retain the original approved WIR and post a dated,
+      -- traceable reversal/reinstatement in a later open reporting period.
+      CREATE TABLE IF NOT EXISTS progress_corrections (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT NOT NULL,
+        contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT,
+        original_wir_id TEXT NOT NULL, payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE RESTRICT,
+        FOREIGN KEY (original_wir_id) REFERENCES wir_entries(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_progress_corrections_original_wir ON progress_corrections(original_wir_id);
+      CREATE INDEX IF NOT EXISTS idx_progress_corrections_scope ON progress_corrections(project_id, contract_id, boq_item_id);
+
+      CREATE TRIGGER IF NOT EXISTS progress_correction_scope_v1
+      BEFORE INSERT ON progress_corrections
+      WHEN NOT EXISTS (
+        SELECT 1 FROM wir_entries w WHERE w.id=NEW.original_wir_id
+          AND w.project_id=NEW.project_id AND COALESCE(w.contract_id,'')=COALESCE(NEW.contract_id,'')
+          AND COALESCE(w.boq_item_id,'')=COALESCE(NEW.boq_item_id,'')
+          AND (json_extract(w.payload,'$.status')='Approved' OR json_extract(w.payload,'$.result') IN ('Pass','Conditional Pass'))
+      )
+      BEGIN SELECT RAISE(ABORT, 'Progress correction must reference an approved WIR in the same project, contract and BOQ scope.'); END;
+      CREATE TRIGGER IF NOT EXISTS progress_correction_quantity_v1
+      BEFORE INSERT ON progress_corrections
+      WHEN CAST(COALESCE(json_extract(NEW.payload,'$.quantity'),0) AS REAL) <= 0
+        OR COALESCE(json_extract(NEW.payload,'$.reason'),'') = ''
+        OR COALESCE(json_extract(NEW.payload,'$.effective_date'),'') = ''
+        OR COALESCE(json_extract(NEW.payload,'$.correction_type'),'') NOT IN ('Reversal','Reinstatement')
+      BEGIN SELECT RAISE(ABORT, 'Progress correction requires a positive quantity, effective date, reason and valid correction type.'); END;
+      CREATE TRIGGER IF NOT EXISTS progress_correction_balance_insert_v1
+      BEFORE INSERT ON progress_corrections
+      WHEN json_extract(NEW.payload,'$.status')='Posted' AND (
+        (SELECT COALESCE(sum(CASE json_extract(pc.payload,'$.correction_type') WHEN 'Reinstatement' THEN CAST(COALESCE(json_extract(pc.payload,'$.quantity'),0) AS REAL) ELSE -CAST(COALESCE(json_extract(pc.payload,'$.quantity'),0) AS REAL) END),0)
+          FROM progress_corrections pc WHERE pc.original_wir_id=NEW.original_wir_id AND json_extract(pc.payload,'$.status')='Posted')
+        + CASE json_extract(NEW.payload,'$.correction_type') WHEN 'Reinstatement' THEN CAST(json_extract(NEW.payload,'$.quantity') AS REAL) ELSE -CAST(json_extract(NEW.payload,'$.quantity') AS REAL) END
+        NOT BETWEEN -CAST(COALESCE((SELECT json_extract(w.payload,'$.quantity') FROM wir_entries w WHERE w.id=NEW.original_wir_id),0) AS REAL) AND 0
+      )
+      BEGIN SELECT RAISE(ABORT, 'Posted progress corrections cannot reverse more than the original WIR or reinstate more than previously reversed quantity.'); END;
+      CREATE TRIGGER IF NOT EXISTS progress_correction_balance_update_v1
+      BEFORE UPDATE ON progress_corrections
+      WHEN json_extract(NEW.payload,'$.status')='Posted' AND (
+        (SELECT COALESCE(sum(CASE json_extract(pc.payload,'$.correction_type') WHEN 'Reinstatement' THEN CAST(COALESCE(json_extract(pc.payload,'$.quantity'),0) AS REAL) ELSE -CAST(COALESCE(json_extract(pc.payload,'$.quantity'),0) AS REAL) END),0)
+          FROM progress_corrections pc WHERE pc.original_wir_id=NEW.original_wir_id AND pc.id<>NEW.id AND json_extract(pc.payload,'$.status')='Posted')
+        + CASE json_extract(NEW.payload,'$.correction_type') WHEN 'Reinstatement' THEN CAST(json_extract(NEW.payload,'$.quantity') AS REAL) ELSE -CAST(json_extract(NEW.payload,'$.quantity') AS REAL) END
+        NOT BETWEEN -CAST(COALESCE((SELECT json_extract(w.payload,'$.quantity') FROM wir_entries w WHERE w.id=NEW.original_wir_id),0) AS REAL) AND 0
+      )
+      BEGIN SELECT RAISE(ABORT, 'Posted progress corrections cannot reverse more than the original WIR or reinstate more than previously reversed quantity.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_progress_correction_v1
+      BEFORE INSERT ON progress_corrections
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(json_extract(NEW.payload,'$.effective_date'),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this progress correction. Post it in an open period.'); END;
+      CREATE TRIGGER IF NOT EXISTS progress_correction_immutable_v1
+      BEFORE UPDATE ON progress_corrections
+      WHEN COALESCE(json_extract(OLD.payload,'$.status'),'Draft')='Posted'
+      BEGIN SELECT RAISE(ABORT, 'Posted progress corrections are immutable; create a linked counter-correction.'); END;
+      CREATE TRIGGER IF NOT EXISTS progress_correction_delete_v1
+      BEFORE DELETE ON progress_corrections
+      WHEN COALESCE(json_extract(OLD.payload,'$.status'),'Draft')='Posted'
+      BEGIN SELECT RAISE(ABORT, 'Posted progress corrections cannot be deleted; create a linked counter-correction.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

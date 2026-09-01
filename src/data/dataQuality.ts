@@ -23,6 +23,7 @@ export interface DataQualitySource {
   scheduleDistributions?: Record<string, any>[];
   workCalendars?: Record<string, any>[];
   wirEntries: Record<string, any>[];
+  progressCorrections?: Record<string, any>[];
   costEntries: Record<string, any>[];
   reportingPeriods: Record<string, any>[];
   baselines: Record<string, any>[];
@@ -102,7 +103,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const resourceMasters = data.resourceMasters || [];
   const scheduleResourceAssignments = data.scheduleResourceAssignments || [];
   const wbsNodes = data.wbsNodes || [];
-  const quantityLedger = buildQuantityLedger({ boqItems: data.boqItems, schedules: data.schedules, wirEntries: data.wirEntries, variations, variationLines });
+  const progressCorrections = data.progressCorrections || [];
+  const quantityLedger = buildQuantityLedger({ boqItems: data.boqItems, schedules: data.schedules, wirEntries: data.wirEntries, progressCorrections, variations, variationLines });
   const overPlannedLedger = quantityLedger.filter((row) => row.quantity_status === 'Over Planned');
   const overMeasuredLedger = quantityLedger.filter((row) => row.quantity_status === 'Over Measured');
   pushIf(findings, overPlannedLedger.length > 0, { severity: 'Error', title: 'Planned quantities exceed revised BOQ scope', detail: `${overPlannedLedger.length} main BOQ item(s) have activity quantities above original plus approved variation quantity. Re-plan or approve a quantity change.`, view: 'quantityLedger' });
@@ -275,6 +277,20 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
 
   const invalidWirs = data.wirEntries.filter((row) => !contractById.has(row.contract_id) || !itemById.has(row.boq_item_id));
   pushIf(findings, invalidWirs.length > 0, { severity: 'Error', title: 'Inspection request missing scope', detail: `${invalidWirs.length} WIR record(s) are missing a valid contract or BOQ item.`, view: 'wir' });
+  const wirById = new Map(data.wirEntries.map((row) => [row.id, row]));
+  const invalidProgressCorrections = progressCorrections.filter((row) => {
+    const original = wirById.get(row.original_wir_id);
+    return !original || !(original.status === 'Approved' || ['Pass', 'Conditional Pass'].includes(String(original.result || '')))
+      || original.project_id !== row.project_id || original.contract_id !== row.contract_id || original.boq_item_id !== row.boq_item_id
+      || !(Number(row.quantity) > 0) || !String(row.reason || '').trim() || !String(row.effective_date || '').slice(0, 10);
+  });
+  pushIf(findings, invalidProgressCorrections.length > 0, { severity: 'Error', title: 'Invalid progress correction', detail: `${invalidProgressCorrections.length} correction record(s) do not reference an approved WIR with matching scope, date, quantity and reason.`, view: 'progressCorrections' });
+  const overCorrectedWirs = [...wirById.values()].filter((wir) => {
+    const net = progressCorrections.filter((row) => row.status === 'Posted' && row.original_wir_id === wir.id)
+      .reduce((sum, row) => sum + (row.correction_type === 'Reinstatement' ? 1 : -1) * (Number(row.quantity) || 0), 0);
+    return net < -(Number(wir.quantity) || 0) - 0.000001 || net > 0.000001;
+  });
+  pushIf(findings, overCorrectedWirs.length > 0, { severity: 'Error', title: 'Progress correction balance exceeds original WIR', detail: `${overCorrectedWirs.length} WIR record(s) are reversed beyond their original quantity or reinstated beyond a prior reversal.`, view: 'progressCorrections' });
   const overMeasuredItems = data.boqItems.filter((item) => data.wirEntries.filter((row) => row.boq_item_id === item.id && row.result !== 'Fail').reduce((sum, row) => sum + (Number(row.quantity) || 0), 0) > (Number(item.quantity) || 0) + 0.000001);
   pushIf(findings, overMeasuredItems.length > 0, { severity: 'Error', title: 'Measured quantities exceed BOQ', detail: `${overMeasuredItems.length} BOQ item(s) have accepted inspection quantities above their contractual quantity.`, view: 'wir' });
   const unscopedCosts = data.costEntries.filter((row) => !row.project_id || !row.contract_id || !row.boq_item_id);
