@@ -35,8 +35,12 @@ try {
     foreach ($file in $readyFiles) {
       if (-not (Test-StableFile $file.FullName)) { continue }
       Write-WatcherLog "Dispatching $($file.Name)"
-      & (Join-Path $PSScriptRoot 'run-local-agent-work-order.ps1') -TaskFile $file.FullName >> $logPath 2>&1
-      Write-WatcherLog "Dispatch returned for $($file.Name) with exit code $LASTEXITCODE"
+      try {
+        & (Join-Path $PSScriptRoot 'run-local-agent-work-order.ps1') -TaskFile $file.FullName >> $logPath 2>&1
+        Write-WatcherLog "Dispatch returned for $($file.Name) with exit code $LASTEXITCODE"
+      } catch {
+        Write-WatcherLog "Dispatch failed for $($file.Name): $($_.Exception.Message)"
+      }
     }
     # Windows file events wake this call immediately; this timeout is only a recovery scan.
     $event = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 5000)
