@@ -1551,6 +1551,59 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 42,
+            description: "enforce_financial_period_lock_in_sqlite",
+            sql: r#"
+      -- Financial history is protected in the database after the PMO locks
+      -- or closes its reporting period. This is deliberately below the UI
+      -- repository layer so direct plugin writes cannot rewrite past actuals.
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cost_entries_insert_v1
+      BEFORE INSERT ON cost_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this actual-cost posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cost_entries_update_v1
+      BEFORE UPDATE ON cost_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+        OR EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+          AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+          AND substr(COALESCE(json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this actual-cost posting.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cost_entries_delete_v1
+      BEFORE DELETE ON cost_entries
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this actual-cost posting.'); END;
+
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cash_flow_insert_v1
+      BEFORE INSERT ON cash_flow
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this cash movement.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cash_flow_update_v1
+      BEFORE UPDATE ON cash_flow
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+        OR EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=NEW.project_id
+          AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+          AND substr(COALESCE(json_extract(NEW.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this cash movement.'); END;
+      CREATE TRIGGER IF NOT EXISTS reporting_lock_cash_flow_delete_v1
+      BEFORE DELETE ON cash_flow
+      WHEN EXISTS (SELECT 1 FROM reporting_periods p WHERE p.project_id=OLD.project_id
+        AND json_extract(p.payload,'$.status') IN ('Locked','Closed')
+        AND substr(COALESCE(json_extract(OLD.payload,'$.date'),''),1,10) BETWEEN json_extract(p.payload,'$.start_date') AND json_extract(p.payload,'$.end_date'))
+      BEGIN SELECT RAISE(ABORT, 'Reporting period is locked for this cash movement.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
