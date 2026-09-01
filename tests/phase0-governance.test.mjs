@@ -37,6 +37,18 @@ test('PMO Snapshot uses only dated PV, approved WIR and actual-cost facts throug
   assert.ok(snapshot.plannedValue > 0 && snapshot.plannedValue < 1000);
 });
 
+test('governed PMO Snapshot requires a frozen approved baseline when requested', () => {
+  const input = {
+    contract: { id: 'c1', project_id: 'p1' }, dataDate: '2026-01-10',
+    schedules: [{ id: 'a1', contract_id: 'c1', activity: 'Install', start_date: '2026-01-01', end_date: '2026-01-11', planned_quantity: 100, unit_rate: 10 }], scheduleDistributions: [], boqItems: [], wirEntries: [], costEntries: [], baselines: [], requireApprovedBaseline: true,
+  };
+  assert.throws(() => pmoSnapshot.calculatePmoSnapshot(input), /approved baseline/i);
+  const activity = input.schedules[0];
+  const snapshot = pmoSnapshot.calculatePmoSnapshot({ ...input, baselines: [{ id: 'bl-1', contract_id: 'c1', status: 'Approved', revision_number: 2, activity_snapshot: [activity], distribution_snapshot: [] }] });
+  assert.equal(snapshot.baselineId, 'bl-1');
+  assert.equal(snapshot.baselineRevision, 2);
+});
+
 test('financial and date governance catches invalid data', () => {
   assert.throws(() => governance.assertRecordGovernance('cost_entries', { amount: -1 }), /cannot be negative/i);
   assert.throws(() => governance.assertRecordGovernance('contracts', { contract_value: -1 }), /cannot be negative/i);

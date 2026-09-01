@@ -11,10 +11,18 @@ export function calculatePmoSnapshot(input: {
   boqItems: Record<string, any>[];
   costEntries: Record<string, any>[];
   baselines?: Record<string, any>[];
+  /** Executive reporting may require an approved frozen baseline. */
+  requireApprovedBaseline?: boolean;
 }) {
   const dataDate = String(input.dataDate || '').slice(0, 10);
   if (!dataDate) throw new Error('A PMO Snapshot requires a governed Data Date.');
   const activities = input.schedules.filter((row) => row.contract_id === input.contract.id && String(row.activity || '').trim());
+  const approvedBaseline = (input.baselines || [])
+    .filter((row) => row.status === 'Approved' && row.contract_id === input.contract.id)
+    .sort((left, right) => Number(right.revision_number || 0) - Number(left.revision_number || 0) || String(right.baseline_date || '').localeCompare(String(left.baseline_date || '')))[0];
+  if (input.requireApprovedBaseline && (!approvedBaseline || !Array.isArray(approvedBaseline.activity_snapshot) || !approvedBaseline.activity_snapshot.length || !Array.isArray(approvedBaseline.distribution_snapshot))) {
+    throw new Error('A governed PMO Snapshot requires an approved baseline with frozen activities and time-phased distribution.');
+  }
   const plannedValue = activities.reduce((sum, activity) => {
     const plan = approvedBaselinePlanForActivity(activity, input.scheduleDistributions, input.baselines || []);
     return sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dataDate);
@@ -35,5 +43,5 @@ export function calculatePmoSnapshot(input: {
     .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
   const cpi = actualCost > 0 ? earnedValue / actualCost : null;
   const spi = plannedValue > 0 ? earnedValue / plannedValue : null;
-  return { plannedValue, earnedValue, actualCost, budgetAtCompletion, cpi, spi, estimateAtCompletion: cpi && cpi > 0 ? budgetAtCompletion / cpi : budgetAtCompletion };
+  return { plannedValue, earnedValue, actualCost, budgetAtCompletion, cpi, spi, estimateAtCompletion: cpi && cpi > 0 ? budgetAtCompletion / cpi : budgetAtCompletion, baselineId: approvedBaseline?.id || null, baselineRevision: Number(approvedBaseline?.revision_number) || null };
 }

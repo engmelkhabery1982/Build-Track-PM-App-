@@ -3855,10 +3855,14 @@ export default function App() {
           const dataDate = String(snapshotDraft.data_date || '').slice(0, 10);
           const contract = data.contracts.find((row: any) => row.id === snapshotDraft.contract_id) as any;
           if (!contract || contract.parent_main_contract_id) throw new Error('Select a valid main contract for the PMO Snapshot.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries });
+          const period = data.reportingPeriods.find((row: any) => row.project_id === contract.project_id && dataDate >= String(row.start_date || '') && dataDate <= String(row.end_date || '')) as any;
+          if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
+          const status = snapshotDraft.status || 'Draft';
+          if (status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
           return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
             ...snapshotDraft, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost,
-            cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion,
+            cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id,
           });
         } : tableName === 'schedules' ? async (scheduleRow) => {
           const contract = data.contracts.find((item: any) => item.id === scheduleRow.contract_id) as any;
@@ -3970,6 +3974,18 @@ export default function App() {
           if (password.length < 8) throw new Error('Reset password must contain at least 8 characters.');
           const secured = await hashPassword(password);
           return dataRepository.update<Record<string, any>>('app_users', id, { ...safePatch, password_hash: secured.hash, password_salt: secured.salt });
+        } : tableName === 'pmo_snapshots' ? async (id, patch) => {
+          const existing = data.snapshots.find((snapshot: any) => snapshot.id === id) as any;
+          if (existing?.status === 'Approved') throw new Error('An approved PMO Snapshot is frozen. Archive it and create a new snapshot for a later Data Date.');
+          const next = { ...existing, ...patch } as any;
+          const contract = data.contracts.find((row: any) => row.id === next.contract_id) as any;
+          if (!contract || contract.parent_main_contract_id) throw new Error('Select a valid main contract for the PMO Snapshot.');
+          const dataDate = String(next.data_date || '').slice(0, 10);
+          const period = data.reportingPeriods.find((row: any) => row.project_id === contract.project_id && dataDate >= String(row.start_date || '') && dataDate <= String(row.end_date || '')) as any;
+          if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
+          if (next.status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
+          return dataRepository.update<Record<string, any>>('pmo_snapshots', id, { ...patch, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost, cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id });
         } : tableName === 'project_baselines' ? async (id, baselinePatch) => {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;
           if (existing?.status === 'Approved') throw new Error('An approved baseline is frozen. Create a new revision instead of changing it.');
