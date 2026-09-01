@@ -13,6 +13,7 @@ const baselines = await import('../src/data/baselineGovernance.ts');
 const productivity = await import('../src/utils/resourceProductivity.ts');
 const resourceLoading = await import('../src/utils/resourceLoading.ts');
 const cashForecast = await import('../src/utils/cashForecast.ts');
+const forecastHorizon = await import('../src/utils/forecastHorizon.ts');
 const paymentTerms = await import('../src/utils/paymentTerms.ts');
 const pmoSnapshot = await import('../src/utils/pmoSnapshot.ts');
 
@@ -321,6 +322,13 @@ test('cash forecast separates settled cash from open forecast and excludes cance
     { id: 'cancelled', date: '2026-01-12', movement_type: 'Forecast', status: 'Cancelled', inflow: 0, outflow: 999 },
   ], '2026-01-31');
   assert.deepEqual(point, { actualNet: 800, openForecastNet: -300, forecastNet: 500 });
+});
+
+test('executive forecast horizon includes CPM, cash and resource dates beyond the original plan', () => {
+  assert.deepEqual(forecastHorizon.deriveForecastHorizon({
+    schedules: [{ start_date: '2026-01-01', end_date: '2026-02-01', forecast_end_date: '2026-03-15' }],
+    cashFlow: [{ date: '2026-04-10' }], resourceForecast: [{ date: '2026-05-01' }], reportDate: '2026-02-10',
+  }), { startDate: '2026-01-01', endDate: '2026-05-01' });
 });
 
 test('payment terms produce a governed invoice due date', () => {

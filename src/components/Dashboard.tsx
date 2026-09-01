@@ -4,6 +4,7 @@ import { SCurveChart } from './SCurveChart';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
+import { deriveForecastHorizon } from '@/utils/forecastHorizon';
 import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/resourceLoading';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
@@ -396,15 +397,17 @@ export function Dashboard({
     const activityRows = fSchedules.filter((schedule: any) => String(schedule.activity || '').trim());
     const datedSchedules = activityRows.length > 0 ? activityRows : fSchedules;
     const dates = [
-      ...datedSchedules.flatMap((schedule) => [schedule.start_date, schedule.end_date]),
+      ...datedSchedules.flatMap((schedule) => [schedule.forecast_start_date || schedule.start_date, schedule.forecast_end_date || schedule.end_date]),
       ...fWirs.map((wir) => wir.inspection_date),
       ...costEntries.filter((entry) => pid === 'all' || entry.project_id === pid).map((entry) => entry.date),
       ...fCashFlow.map((entry) => entry.date),
+      ...resourceForecast.map((point) => point.date),
       reportDate,
     ].filter((date): date is string => Boolean(date)).sort();
     if (dates.length === 0) return [];
-    const projectStart = dates[0];
-    const projectEnd = dates[dates.length - 1];
+    const horizon = deriveForecastHorizon({ schedules: datedSchedules as Record<string, any>[], cashFlow: fCashFlow as Record<string, any>[], resourceForecast, reportDate });
+    const projectStart = horizon.startDate || dates[0];
+    const projectEnd = horizon.endDate || dates[dates.length - 1];
 
     const startMs = new Date(projectStart).getTime();
     const endMs = new Date(projectEnd).getTime();
