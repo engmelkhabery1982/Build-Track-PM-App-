@@ -414,6 +414,8 @@ const SCHEDULE_COLUMNS: ColumnDef[] = [
   { key: 'wbs_code', label: 'WBS Code', type: 'text', editable: true },
   { key: 'activity_code', label: 'Activity Code', type: 'text', editable: true },
   { key: 'activity', label: 'Activity', type: 'text', editable: true },
+  { key: 'measurement_method', label: 'EV Measurement Method', type: 'select', editable: true, options: ['Quantity', '0/100', '50/50', 'Weighted Milestone'] },
+  { key: 'measurement_weight_pct', label: 'Milestone Complete %', type: 'number', editable: true },
   { key: 'start_date', label: 'Start', type: 'date', editable: true },
   { key: 'end_date', label: 'End', type: 'date', editable: true },
   { key: 'duration_days', label: 'Duration (days)', type: 'number' },

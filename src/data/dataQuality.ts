@@ -125,6 +125,8 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
 
   const invalidSchedules = data.schedules.filter((row) => { const item = itemById.get(row.boq_item_id); const contract = contractById.get(row.contract_id); return !item || !contract || item.project_id !== row.project_id || contract.project_id !== row.project_id; });
   pushIf(findings, invalidSchedules.length > 0, { severity: 'Error', title: 'Schedule relationship mismatch', detail: `${invalidSchedules.length} activity row(s) have invalid project, contract or BOQ references.`, view: 'schedule' });
+  const invalidMeasurementRules = data.schedules.filter((row) => String(row.activity || '').trim() && row.measurement_method && (!['Quantity', '0/100', '50/50', 'Weighted Milestone'].includes(String(row.measurement_method)) || (row.measurement_method === 'Weighted Milestone' && (Number(row.measurement_weight_pct) <= 0 || Number(row.measurement_weight_pct) > 100))));
+  pushIf(findings, invalidMeasurementRules.length > 0, { severity: 'Error', title: 'Activity earned-value measurement rule is invalid', detail: `${invalidMeasurementRules.length} activity row(s) use an unsupported measurement method or a missing/invalid weighted-milestone percentage.`, view: 'schedule' });
   const wbsById = new Map(wbsNodes.map((node) => [node.id, node]));
   const controlAccountById = new Map(controlAccounts.map((account) => [account.id, account]));
   const sourceScopeMatchesControlAccount = (row: Record<string, any>, source: string): boolean => {

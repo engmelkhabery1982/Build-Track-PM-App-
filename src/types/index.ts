@@ -351,6 +351,9 @@ export interface Schedule {
   wbs_code?: string;
   activity_code?: string;
   activity: string;
+  /** Declared earned-value rule; never infer progress from a visual percentage. */
+  measurement_method?: 'Quantity' | '0/100' | '50/50' | 'Weighted Milestone' | string;
+  measurement_weight_pct?: number;
   start_date: string | null;
   end_date: string | null;
   duration_days: number;

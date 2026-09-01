@@ -32,13 +32,33 @@ export function calculateEvmAtDataDate(input: {
   const bac = money(plans.reduce((sum, plan) => sum + scheduleBudget(plan.activity), 0));
   const pv = money(plans.reduce((sum, plan) => sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dataDate), 0));
   const boqById = new Map(input.boqItems.map((item) => [String(item.id), item]));
-  const ev = money(input.wirEntries
-    .filter((wir) => performanceContractIds.has(String(wir.contract_id || '')) && datedThrough(wir.inspection_date, dataDate) && approvedWir(wir))
+  const explicitActivities = new Map(activities.filter((activity) => String(activity.measurement_method || '').trim()).map((activity) => [String(activity.id), activity]));
+  const explicitEv = [...explicitActivities.values()].reduce((sum, activity) => {
+    const method = String(activity.measurement_method);
+    const budget = scheduleBudget(activity);
+    if (method === 'Quantity') {
+      return sum + input.wirEntries.filter((wir) => String(wir.schedule_id || '') === String(activity.id) && datedThrough(wir.inspection_date, dataDate) && approvedWir(wir)).reduce((activitySum, wir) => {
+        const item = boqById.get(String(wir.boq_item_id || ''));
+        const mainItem = item?.main_boq_item_id ? boqById.get(String(item.main_boq_item_id)) : item;
+        return activitySum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
+      }, 0);
+    }
+    if (method === '0/100') return sum + (activity.activity_status === 'Completed' && datedThrough(activity.actual_finish_date || activity.status_data_date, dataDate) ? budget : 0);
+    if (method === '50/50') {
+      if (activity.activity_status === 'Completed' && datedThrough(activity.actual_finish_date || activity.status_data_date, dataDate)) return sum + budget;
+      return sum + (datedThrough(activity.actual_start_date || activity.status_data_date, dataDate) ? budget * 0.5 : 0);
+    }
+    if (method === 'Weighted Milestone') return sum + (budget * Math.max(0, Math.min(100, Number(activity.measurement_weight_pct) || 0)) / 100);
+    return sum;
+  }, 0);
+  const legacyEv = input.wirEntries
+    .filter((wir) => performanceContractIds.has(String(wir.contract_id || '')) && datedThrough(wir.inspection_date, dataDate) && approvedWir(wir) && !explicitActivities.has(String(wir.schedule_id || '')))
     .reduce((sum, wir) => {
       const item = boqById.get(String(wir.boq_item_id || ''));
       const mainItem = item?.main_boq_item_id ? boqById.get(String(item.main_boq_item_id)) : item;
       return sum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
-    }, 0));
+    }, 0);
+  const ev = money(explicitEv + legacyEv);
   const ac = money(input.costEntries
     .filter((entry) => performanceContractIds.has(String(entry.contract_id || '')) && datedThrough(entry.date, dataDate))
     .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0));

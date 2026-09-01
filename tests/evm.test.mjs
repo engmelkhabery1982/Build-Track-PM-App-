@@ -32,3 +32,16 @@ test('EVM rolls subcontract execution and cost to its main-contract plan once', 
   assert.equal(result.EV, 200, 'subcontract quantity is valued at the linked main BOQ rate');
   assert.equal(result.AC, 90, 'subcontract actual cost rolls to the main contract');
 });
+
+test('EVM honors explicit activity measurement rules without double-counting linked WIR', () => {
+  const result = evm.calculateEvmAtDataDate({
+    contractIds: ['c1'], dataDate: '2026-01-10',
+    schedules: [
+      { id: 'q', contract_id: 'c1', activity: 'Quantity', measurement_method: 'Quantity', start_date: '2026-01-01', end_date: '2026-01-11', planned_quantity: 10, unit_rate: 10 },
+      { id: 'half', contract_id: 'c1', activity: 'Start milestone', measurement_method: '50/50', actual_start_date: '2026-01-05', status_data_date: '2026-01-10', budget: 200, start_date: '2026-01-01', end_date: '2026-01-11' },
+      { id: 'done', contract_id: 'c1', activity: 'Done', measurement_method: '0/100', activity_status: 'Completed', actual_finish_date: '2026-01-09', budget: 300, start_date: '2026-01-01', end_date: '2026-01-11' },
+    ], scheduleDistributions: [], baselines: [], boqItems: [{ id: 'b1', unit_rate: 10 }],
+    wirEntries: [{ contract_id: 'c1', schedule_id: 'q', boq_item_id: 'b1', quantity: 10, inspection_date: '2026-01-09', status: 'Approved' }], costEntries: [],
+  });
+  assert.equal(result.EV, 500);
+});
