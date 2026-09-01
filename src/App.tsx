@@ -21,7 +21,7 @@ import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculatePlannedResourceLoads, calculateResourceLoads, suggestResourceLeveling } from '@/utils/resourceLoading';
 import { dueDateFromTerms } from '@/utils/paymentTerms';
-import { calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
+import { calculateBudgetAvailability, calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -502,6 +502,9 @@ const CONTRACT_SOV_COLUMNS: ColumnDef[] = [
   { key: 'committed_cost', label: 'Committed Cost', type: 'money', editable: false },
   { key: 'actual_cost', label: 'Actual Cost', type: 'money', editable: false },
   { key: 'open_commitment', label: 'Open Commitment', type: 'money', editable: false },
+  { key: 'assigned_value', label: 'Budget Consumed', type: 'money', editable: false },
+  { key: 'available_budget', label: 'Available Budget', type: 'money', editable: false },
+  { key: 'availability_status', label: 'Availability Control', type: 'status', editable: false, options: ['Available', 'At Risk', 'Blocked'] },
   { key: 'forecast_override', label: 'Manual FAC Override', type: 'money', editable: true },
   { key: 'forecast_at_completion', label: 'Forecast at Completion', type: 'money', editable: false },
   { key: 'cost_to_complete', label: 'Cost to Complete', type: 'money', editable: false },
@@ -2771,6 +2774,7 @@ export default function App() {
             otherActual,
             manualForecastOverride: Number(line.forecast_override) || 0,
           });
+          const availability = calculateBudgetAvailability({ revisedBudget: forecast.revisedBudget, actualCost: forecast.actualCost, openCommitment: forecast.openCommitment });
           return {
             ...line,
             contract_role: contract?.contract_role || 'Main Contract',
@@ -2781,6 +2785,9 @@ export default function App() {
             committed_cost: forecast.procurementCommitment,
             actual_cost: forecast.actualCost,
             open_commitment: forecast.openCommitment,
+            assigned_value: availability.assignedValue,
+            available_budget: availability.availableBudget,
+            availability_status: availability.status,
             forecast_at_completion: forecast.forecastAtCompletion,
             cost_to_complete: forecast.costToComplete,
             forecast_variance: forecast.forecastVariance,
@@ -3328,6 +3335,55 @@ export default function App() {
       ? config.columns.filter((column) => tailoredFormKeys[tableName].includes(column.key))
       : undefined;
 
+    /** Controlled financial posting check. It intentionally applies only to a
+     * mapped SOV line: unmapped/indirect spend is surfaced by Data Quality,
+     * while a budget-carrying line receives a hard stop before posting. */
+    const assertSovAvailabilityForPosting = (row: Record<string, any>, postingType: 'commitment' | 'actual') => {
+      const matchingLines = data.contractSovLines.filter((line: any) => line.contract_id === row.contract_id
+        && line.boq_item_id === row.boq_item_id && line.status !== 'Closed'
+        && (!row.cost_code_id || !line.cost_code_id || line.cost_code_id === row.cost_code_id));
+      const line = matchingLines.find((candidate: any) => candidate.cost_code_id === row.cost_code_id) || matchingLines[0];
+      if (!line) return;
+      const approvedVariationValue = data.variationLines
+        .filter((variationLine: any) => {
+          const variation = data.variations.find((candidate: any) => candidate.id === variationLine.variation_id);
+          return variation?.status === 'Approved' && variationLine.contract_id === line.contract_id && variationLine.boq_item_id === line.boq_item_id;
+        }).reduce((sum: number, variationLine: any) => sum + (Number(variationLine.value_impact) || 0), 0);
+      const approvedCostChangeValue = data.costChanges
+        .filter((change: any) => change.contract_id === line.contract_id && costChangeAppliesToSovLine(change, line as Record<string, any>))
+        .reduce((sum: number, change: any) => sum + (Number(change.amount) || 0), 0);
+      const priorCommitment = data.procurement
+        .filter((entry: any) => entry.id !== row.id && entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
+          && (!line.cost_code_id || !entry.cost_code_id || entry.cost_code_id === line.cost_code_id)
+          && procurementPostingState(entry).isCommitment)
+        .reduce((sum: number, entry: any) => sum + (Number(entry.total_cost) || ((Number(entry.quantity) || 0) * (Number(entry.unit_cost) || 0))), 0);
+      const procurementActual = data.costEntries
+        .filter((entry: any) => entry.id !== row.id && entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
+          && (!line.cost_code_id || !entry.cost_code_id || entry.cost_code_id === line.cost_code_id)
+          && String(entry.source_type || '') === 'procurement_receipt')
+        .reduce((sum: number, entry: any) => sum + (Number(entry.amount) || 0), 0);
+      const otherActual = data.costEntries
+        .filter((entry: any) => entry.id !== row.id && entry.contract_id === line.contract_id && entry.boq_item_id === line.boq_item_id
+          && (!line.cost_code_id || !entry.cost_code_id || entry.cost_code_id === line.cost_code_id)
+          && String(entry.source_type || '') !== 'procurement_receipt')
+        .reduce((sum: number, entry: any) => sum + (Number(entry.amount) || 0), 0);
+      const forecast = calculateSovCostForecast({
+        originalBudget: Number(line.original_budget) || 0,
+        approvedVariations: approvedVariationValue,
+        approvedCostChanges: approvedCostChangeValue,
+        procurementCommitment: priorCommitment,
+        procurementActual,
+        otherActual,
+      });
+      const proposedAmount = postingType === 'commitment'
+        ? Number(row.total_cost) || ((Number(row.quantity) || 0) * (Number(row.unit_cost) || 0))
+        : (String(row.source_type || '') === 'procurement_receipt' ? Math.max(0, (Number(row.amount) || 0) - Math.min(Number(row.amount) || 0, forecast.openCommitment)) : Number(row.amount) || 0);
+      const availability = calculateBudgetAvailability({ revisedBudget: forecast.revisedBudget, actualCost: forecast.actualCost, openCommitment: forecast.openCommitment, proposedAmount });
+      if (availability.exceedsBudget) {
+        throw new Error(`Budget availability control blocked this ${postingType}: SOV ${line.sov_line_code || line.id} has ${availability.availableBudget.toLocaleString()} available; this posting would exceed the approved budget by ${Math.abs(availability.projectedAvailableBudget).toLocaleString()}. Approve a Cost Change or reduce the posting first.`);
+      }
+    };
+
     return (
       <DataTableView
         tableName={tableName}
@@ -3357,7 +3413,13 @@ export default function App() {
             ? `Activity finish ${activity.end_date} is later than the revised contract finish ${revisedEnd}.`
             : null;
         } : undefined}
-        validateRecord={tableName === 'resourceAssignments' ? (row) => {
+        validateRecord={tableName === 'procurement' ? (row) => {
+          if (procurementPostingState(row).isCommitment) assertSovAvailabilityForPosting(row, 'commitment');
+          assertRecordPeriodIsOpen(data.reportingPeriods, row);
+        } : tableName === 'cost_entries' ? (row) => {
+          assertSovAvailabilityForPosting(row, 'actual');
+          assertRecordPeriodIsOpen(data.reportingPeriods, row);
+        } : tableName === 'resourceAssignments' ? (row) => {
           const resource = data.resourceMasters.find((candidate: any) => candidate.id === row.resource_id) as any;
           const start = String(row.assignment_start || ''); const end = String(row.assignment_end || '');
           if (!resource) throw new Error('Select a valid active Resource Master record.');

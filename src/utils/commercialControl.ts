@@ -118,3 +118,35 @@ export function calculateSovCostForecast(input: SovCostForecastInput) {
     overrideBelowGovernedFloor: requestedOverride > 0 && requestedOverride < governedForecastFloor,
   };
 }
+
+export interface BudgetAvailabilityInput {
+  revisedBudget: number;
+  /** Actuals already posted to the controlled SOV line. */
+  actualCost: number;
+  /** Only unconsumed commitments; accepted receipt cost must not appear here. */
+  openCommitment: number;
+  /** The proposed new posting or commitment, evaluated before it is saved. */
+  proposedAmount?: number;
+}
+
+/** SAP-style availability control basis for the local SOV: actual cost plus
+ * open commitment consumes budget. A receipt converts commitment to actual;
+ * it therefore does not double-consume availability. */
+export function calculateBudgetAvailability(input: BudgetAvailabilityInput) {
+  const revisedBudget = money(Math.max(0, Number(input.revisedBudget) || 0));
+  const actualCost = money(Math.max(0, Number(input.actualCost) || 0));
+  const openCommitment = money(Math.max(0, Number(input.openCommitment) || 0));
+  const assignedValue = money(actualCost + openCommitment);
+  const proposedAmount = money(Math.max(0, Number(input.proposedAmount) || 0));
+  const projectedAssignedValue = money(assignedValue + proposedAmount);
+  const availableBudget = money(revisedBudget - assignedValue);
+  const projectedAvailableBudget = money(revisedBudget - projectedAssignedValue);
+  const status = projectedAvailableBudget < -0.01 ? 'Blocked'
+    : projectedAvailableBudget <= Math.max(0.01, revisedBudget * 0.1) ? 'At Risk'
+      : 'Available';
+  return {
+    revisedBudget, actualCost, openCommitment, assignedValue, proposedAmount,
+    projectedAssignedValue, availableBudget, projectedAvailableBudget, status,
+    exceedsBudget: projectedAvailableBudget < -0.01,
+  };
+}

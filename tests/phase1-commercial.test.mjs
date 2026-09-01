@@ -95,6 +95,22 @@ test('SOV forecast rejects a manual override that hides actual cost or open PO c
   assert.equal(forecast.overrideBelowGovernedFloor, true);
 });
 
+test('budget availability consumes actuals plus open commitment without double-counting accepted procurement', () => {
+  const within = commercial.calculateBudgetAvailability({ revisedBudget: 1000, actualCost: 300, openCommitment: 400, proposedAmount: 200 });
+  assert.deepEqual(within, {
+    revisedBudget: 1000, actualCost: 300, openCommitment: 400, assignedValue: 700, proposedAmount: 200,
+    projectedAssignedValue: 900, availableBudget: 300, projectedAvailableBudget: 100, status: 'At Risk', exceedsBudget: false,
+  });
+  const blocked = commercial.calculateBudgetAvailability({ revisedBudget: 1000, actualCost: 300, openCommitment: 400, proposedAmount: 301 });
+  assert.equal(blocked.exceedsBudget, true);
+  assert.equal(blocked.status, 'Blocked');
+  // A receipt up to the existing commitment changes its classification from
+  // open commitment to actual; it does not require a second budget amount.
+  const receipt = commercial.calculateBudgetAvailability({ revisedBudget: 1000, actualCost: 700, openCommitment: 0, proposedAmount: 0 });
+  assert.equal(receipt.assignedValue, 700);
+  assert.equal(receipt.availableBudget, 300);
+});
+
 test('data quality exposes missing and unreconciled SOV coverage instead of hiding it', () => {
   const findings = quality.runDataQualityChecks({
     projects: [{ id: 'p1' }], contracts: [{ id: 'c1', project_id: 'p1' }],
