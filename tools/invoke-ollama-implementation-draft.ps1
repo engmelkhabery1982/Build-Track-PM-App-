@@ -12,6 +12,7 @@ param(
   [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Feature,
   [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TaskFile,
   [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string[]]$SourceFile,
+  [string]$ProjectCharterFile = 'docs\\agent-work-orders\\PROJECT_CHARTER_AR.md',
   [string]$Model = 'qwen2.5-coder:7b',
   [ValidateRange(60, 900)][int]$TimeoutSeconds = 600
 )
@@ -38,6 +39,7 @@ function Read-ProjectExcerpt {
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Ollama is not available.' }
 $task = Read-ProjectExcerpt $TaskFile
+$charter = Read-ProjectExcerpt $ProjectCharterFile
 $sources = @($SourceFile | ForEach-Object { Read-ProjectExcerpt $_ })
 $sourceText = ($sources | ForEach-Object { "`n===== SOURCE: $($_.Path) =====`n$($_.Content)" }) -join "`n"
 
@@ -46,6 +48,10 @@ $prompt = @"
 
 المهمة: $Feature
 الهدف الثابت: تنفيذ وظيفة تشغيلية تقارب SAP PS بدرجة 8/10 على الأقل، مع عدم اختراع أرقام أو تجاوز حوكمة البيانات.
+
+ميثاق المشروع:
+===== $($charter.Path) =====
+$($charter.Content)
 
 أمر العمل:
 ===== $($task.Path) =====
@@ -58,7 +64,7 @@ $sourceText
 1. اعتمد على النص المعروض فقط، واذكر أي افتراض كـ«غير مثبت».
 2. لا تقترح تعديل قاعدة البيانات أو ملفًا غير معروض إلا إذا ثبت أنه ضروري، وعندها اذكر السبب والمخاطرة.
 3. لا تنفذ أوامر، ولا تدّعِ أن الاختبارات نجحت.
-4. اكتب باللغة العربية وبالترتيب: فهم التغيير، تصميم صغير، patch موحد مقترح فقط للملفات المعروضة، اختبارات قبول موجبة/سالبة، ومخاطر.
+4. اكتب باللغة العربية وبالترتيب: فهم التغيير، `Scope alignment: APPROVED` أو `BLOCKED`، تصميم صغير، patch موحد مقترح فقط للملفات المعروضة، اختبارات قبول موجبة/سالبة، ومخاطر.
 5. الـpatch مسودة للمراجعة؛ لا يحذف سلوكًا قائمًا ولا يعيد كتابة ملف كامل.
 "@
 
