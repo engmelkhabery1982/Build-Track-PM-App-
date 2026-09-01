@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Runs a local, read-only Ollama QA review for explicitly named project files.
 
