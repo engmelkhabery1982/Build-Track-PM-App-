@@ -372,12 +372,15 @@ export function Dashboard({
 
   const sCurve = useMemo(() => {
     if (fSchedules.length === 0) return [];
-    const activityRows = fSchedules.filter((schedule: any) => String(schedule.activity || '').trim());
+    const evmContractIds = primaryContracts.map((contract) => contract.id);
+    const evmContractIdSet = new Set(evmContractIds);
+    const evmSchedules = fSchedules.filter((schedule: any) => evmContractIdSet.has(String(schedule.contract_id || '')));
+    const activityRows = evmSchedules.filter((schedule: any) => String(schedule.activity || '').trim());
     const datedSchedules = activityRows.length > 0 ? activityRows : fSchedules;
     const dates = [
       ...datedSchedules.flatMap((schedule) => [schedule.forecast_start_date || schedule.start_date, schedule.forecast_end_date || schedule.end_date]),
-      ...fWirs.map((wir) => wir.inspection_date),
-      ...costEntries.filter((entry) => pid === 'all' || entry.project_id === pid).map((entry) => entry.date),
+      ...fWirs.filter((wir) => evmContractIdSet.has(String(wir.contract_id || ''))).map((wir) => wir.inspection_date),
+      ...fCostEntries.filter((entry) => evmContractIdSet.has(String(entry.contract_id || ''))).map((entry) => entry.date),
       ...fCashFlow.map((entry) => entry.date),
       ...resourceForecast.map((point) => point.date),
       reportDate,
@@ -390,43 +393,37 @@ export function Dashboard({
     const startMs = new Date(projectStart).getTime();
     const endMs = new Date(projectEnd).getTime();
     const totalDays = Math.max(Math.ceil((endMs - startMs) / 86400000), 1);
-    const rateForWir = (wir: WIREntry) => {
-      const item = boqItems.find((candidate) => candidate.id === wir.boq_item_id);
-      const mainItem = item?.main_boq_item_id ? boqItems.find((candidate) => candidate.id === item.main_boq_item_id) : item;
-      return Number(mainItem?.unit_rate) || Number(wir.unit_price) || 0;
-    };
-    const totalBudget = datedSchedules.reduce((sum, schedule) => {
-      const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
-      return sum + scheduleBudget(plan.activity);
-    }, 0);
-    const earnedAtDataDate = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= reportDate).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
-    const actualAtDataDate = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= reportDate).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-    const cpiAtDataDate = actualAtDataDate > 0 ? earnedAtDataDate / actualAtDataDate : 0;
-    const estimateAtCompletion = cpiAtDataDate > 0 ? totalBudget / cpiAtDataDate : totalBudget;
+    const dataDateEvm = calculateEvmAtDataDate({
+      contractIds: evmContractIds, dataDate: reportDate,
+      schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
+      wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+    });
     const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; resourceForecast: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
     for (let i = 0; i <= numPoints; i++) {
       const dayOffset = (i / numPoints) * totalDays;
       const currentDate = new Date(startMs + dayOffset * 86400000);
       const dateStr = currentDate.toISOString().slice(0, 10);
-      const planned = datedSchedules.reduce((sum, schedule) => {
-        const plan = approvedBaselinePlanForActivity(schedule as Record<string, any>, scheduleDistributions, fBaselines as Record<string, any>[]);
-        return sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dateStr);
-      }, 0);
-      const earned = fWirs.filter((wir) => (wir.result === 'Pass' || wir.result === 'Conditional Pass' || wir.status === 'Approved') && String(wir.inspection_date || '') <= dateStr).reduce((sum, wir) => sum + (Number(wir.quantity) || 0) * rateForWir(wir), 0);
-      const actual = costEntries.filter((entry) => (pid === 'all' || entry.project_id === pid) && String(entry.date || '') <= dateStr).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+      const pointEvm = calculateEvmAtDataDate({
+        contractIds: evmContractIds, dataDate: dateStr,
+        schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
+        wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+      });
+      const planned = pointEvm.PV;
+      const earned = pointEvm.EV;
+      const actual = pointEvm.AC;
       const cashPosition = cashForecastAt(fCashFlow as Record<string, any>[], dateStr);
       const dateEstimate = dateStr <= reportDate
         ? actual
         : (() => {
           const forecastDays = Math.max(1, Math.ceil((endMs - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
           const elapsedForecastDays = Math.max(0, Math.ceil((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
-          return Math.min(estimateAtCompletion, actualAtDataDate + Math.max(0, estimateAtCompletion - actualAtDataDate) * Math.min(1, elapsedForecastDays / forecastDays));
+          return Math.min(dataDateEvm.EAC, dataDateEvm.AC + Math.max(0, dataDateEvm.EAC - dataDateEvm.AC) * Math.min(1, elapsedForecastDays / forecastDays));
         })();
       points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, resourceForecast: plannedResourceCostAt(resourceForecast, dateStr), date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, costEntries, boqItems, pid, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
+  }, [fSchedules, fWirs, fCostEntries, fBOQ, primaryContracts, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
