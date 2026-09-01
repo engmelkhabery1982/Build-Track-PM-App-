@@ -13,8 +13,9 @@ param(
   [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TaskFile,
   [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string[]]$SourceFile,
   [string]$ProjectCharterFile = 'docs\\agent-work-orders\\PROJECT_CHARTER_AR.md',
+  [string]$RevisionFeedback = '',
   [string]$Model = 'qwen2.5-coder:7b',
-  [ValidateRange(60, 900)][int]$TimeoutSeconds = 600
+  [ValidateRange(60, 900)][int]$TimeoutSeconds = 240
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,10 +39,32 @@ function Read-ProjectExcerpt {
 }
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Ollama is not available.' }
+function Assert-OllamaReady {
+  $state = (& ollama ps 2>&1 | Out-String)
+  if ($state -match "(?im)^$([regex]::Escape($Model))\s+.*Stopping") {
+    & ollama stop $Model 2>$null | Out-Null
+    Start-Sleep -Seconds 2
+    $state = (& ollama ps 2>&1 | Out-String)
+    if ($state -match "(?im)^$([regex]::Escape($Model))\s+.*Stopping") {
+      throw "Ollama model '$Model' is stuck in Stopping state. The work order was not sent; retry after Ollama is healthy."
+    }
+  }
+  # The local-agent queue is strictly serial. More than one Ollama inference
+  # server is stale contention, not useful parallelism on this CPU-only device.
+  $servers = @(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | Where-Object { $_.Path -match '[\\/]Ollama[\\/]' })
+  if ($servers.Count -gt 1) {
+    $servers | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    $remaining = @(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | Where-Object { $_.Path -match '[\\/]Ollama[\\/]' })
+    if ($remaining.Count) { throw "Ollama has $($remaining.Count) stale inference server(s). The work order was not sent." }
+  }
+}
+Assert-OllamaReady
 $task = Read-ProjectExcerpt $TaskFile
 $charter = Read-ProjectExcerpt $ProjectCharterFile
 $sources = @($SourceFile | ForEach-Object { Read-ProjectExcerpt $_ })
 $sourceText = ($sources | ForEach-Object { "`n===== SOURCE: $($_.Path) =====`n$($_.Content)" }) -join "`n"
+$revisionInstruction = if ([string]::IsNullOrWhiteSpace($RevisionFeedback)) { '' } else { "`nهذه محاولة تصحيح واحدة. سبب رفض المسودة الأولى: $RevisionFeedback`nصحح السبب في patch ضيق، ولا تدّعِ تنفيذًا أو اختبارًا.`n" }
 
 $prompt = @"
 أنت وكيل تنفيذ محلي لتطبيق BuildTrack. أنت لا تملك صلاحية تعديل أي ملف حقيقي.
@@ -59,6 +82,7 @@ $($task.Content)
 
 الملفات المتاحة:
 $sourceText
+$revisionInstruction
 
 قواعد إلزامية:
 1. اعتمد على النص المعروض فقط، واذكر أي افتراض كـ«غير مثبت».
@@ -69,7 +93,7 @@ $sourceText
 6. الـpatch مسودة للمراجعة؛ لا يحذف سلوكًا قائمًا ولا يعيد كتابة ملف كامل. لا تذكر أو تستخدم أي مصطلح محظور في بطاقة العمل حتى في الشرح.
 "@
 
-$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 6144; num_predict = 1800; temperature = 0.1 } } | ConvertTo-Json -Depth 5
+$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 6144; num_predict = 650; temperature = 0.1 } } | ConvertTo-Json -Depth 5
 try {
   $response = Invoke-RestMethod -Uri 'http://localhost:11434/api/generate' -Method Post -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec $TimeoutSeconds
 } catch {

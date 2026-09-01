@@ -29,3 +29,10 @@ src-tauri/target/
 *.sln
 *.sw?
 .env
+
+# Local agent work queue state and generated review artifacts
+tmp/
+docs/agent-work-orders/inbox/*.ready.md
+docs/agent-work-orders/processing/*.ready.md
+docs/agent-work-orders/ready/*.ready.md
+docs/agent-work-orders/rejected/*.ready.md
