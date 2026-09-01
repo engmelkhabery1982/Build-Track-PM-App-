@@ -136,6 +136,8 @@ export interface ControlAccount {
   control_account_code: string;
   control_account_code_locked: boolean;
   description: string;
+  /** Report cut-off used for this account's PV/EV/AC/forecast view. */
+  data_date?: string | null;
   status: 'Active' | 'Inactive' | 'Closed' | string;
   notes: string;
   created_at: string;

@@ -24,6 +24,7 @@ import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculatePlannedResourceLoads, calculateResourceLoads, suggestResourceLeveling } from '@/utils/resourceLoading';
 import { dueDateFromTerms } from '@/utils/paymentTerms';
 import { calculateBudgetAvailability, calculateCertificateValues, calculateSovCostForecast, certificateCashDirection, certificateCashStatus, costChangeAppliesToSovLine, procurementPostingState } from '@/utils/commercialControl';
+import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 
 type IconType = React.ComponentType<{ size?: number | string; className?: string }>;
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[] = [
@@ -275,6 +276,8 @@ const COST_COLUMNS: ColumnDef[] = [
   { key: 'boq_item_name', label: 'BOQ Item Name', type: 'text' },
   { key: 'category', label: 'Category', type: 'text', editable: true, options: ['Labor', 'Materials', 'Equipment', 'Subcontractor', 'Overhead', 'Other'] },
   { key: 'description', label: 'Description', type: 'text', editable: true },
+  { key: 'data_date', label: 'Control Data Date', type: 'date', editable: true },
+  { key: 'control_status', label: 'Control Readiness', type: 'status', editable: false, options: ['Ready', 'Data Date Required', 'Approved Baseline Required'] },
   { key: 'budget', label: 'Budget', type: 'money', editable: false },
   { key: 'planned', label: 'Planned Value', type: 'money', editable: false },
   { key: 'actual', label: 'Actual', type: 'money', editable: false },
@@ -2539,39 +2542,7 @@ export default function App() {
               : activeView === 'contractSov'
                 ? data.contractSovLines
                 : activeView === 'controlAccounts'
-                  ? data.controlAccounts.map((account: any) => {
-                    const sources = (rows: Record<string, any>[]) => rows.filter((row) => row.control_account_id === account.id);
-                    const schedules = sources(data.schedules as Record<string, any>[]);
-                    const wirs = sources(data.wirEntries as Record<string, any>[]);
-                    const costs = sources(data.costEntries as Record<string, any>[]);
-                    const orders = sources(data.procurement as Record<string, any>[]);
-                    const receipts = sources(data.procurementReceipts as Record<string, any>[]);
-                    const boq = (data.boqItems as Record<string, any>[]).find((row) => row.id === account.boq_item_id);
-                    const sov = (data.contractSovLines as Record<string, any>[]).find((row) => row.id === account.contract_sov_line_id);
-                    const controlBudget = Number(sov?.revised_budget ?? sov?.original_budget) || 0;
-                    const plannedValue = schedules.reduce((sum, row) => sum + (Number(row.planned_value) || 0), 0);
-                    const earnedValue = wirs.filter((row) => ['Pass', 'Conditional Pass'].includes(String(row.result || '')) || row.status === 'Approved')
-                      .reduce((sum, row) => sum + (Number(row.item_amount) || ((Number(row.quantity) || 0) * (Number(row.unit_price) || 0))), 0);
-                    const directActual = costs.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-                    const receiptActual = receipts.filter((row) => row.status === 'Accepted').reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
-                    // Generated receipt-cost entries use source_id and are already in directActual.
-                    const receiptAlreadyPosted = new Set(costs.filter((row) => row.source_type === 'procurement_receipt').map((row) => row.source_id));
-                    const missingReceiptActual = receipts.filter((row) => row.status === 'Accepted' && !receiptAlreadyPosted.has(row.id)).reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
-                    const actualCost = directActual + missingReceiptActual;
-                    const committed = orders.filter((row) => procurementPostingState(row).isCommitment)
-                      .reduce((sum, row) => sum + (Number(row.total_cost) || ((Number(row.quantity) || 0) * (Number(row.unit_cost) || 0))), 0);
-                    const openCommitment = Math.max(0, committed - receiptActual);
-                    const forecastAtCompletion = Math.max(controlBudget, actualCost + openCommitment);
-                    return {
-                      ...account, scope_quantity: Number(boq?.quantity) || 0, control_budget: controlBudget,
-                      planned_value: Math.round(plannedValue * 100) / 100, earned_value: Math.round(earnedValue * 100) / 100,
-                      actual_cost: Math.round(actualCost * 100) / 100, open_commitment: Math.round(openCommitment * 100) / 100,
-                      cost_to_complete: Math.round(Math.max(0, forecastAtCompletion - actualCost) * 100) / 100,
-                      forecast_at_completion: Math.round(forecastAtCompletion * 100) / 100,
-                      source_count: schedules.length + wirs.length + costs.length + orders.length + receipts.length,
-                      source_summary: `Activities ${schedules.length} · WIR ${wirs.length} · Costs ${costs.length} · PO ${orders.length} · GRN ${receipts.length}`,
-                    };
-                  })
+                  ? data.controlAccounts.map((account: any) => ({ ...account, ...calculateControlAccountSummary({ account, boqItems: data.boqItems as Record<string, any>[], sovLines: data.contractSovLines as Record<string, any>[], schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[] }) }))
                 : activeView === 'costChanges'
                   ? data.costChanges
           : activeView === 'paymentCertificates'

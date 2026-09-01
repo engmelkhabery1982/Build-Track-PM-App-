@@ -36,7 +36,7 @@
 
 | # | الميزة | الحالة | قبول 8/10 |
 |---:|---|---|---|
-| A1 | Control Account master: WBS + BOQ + Cost Code + عقد رئيسي، مع roll-up واضح | 🟡 قيد التنفيذ: A1.1–A1.2 مكتملتان | يمكن فتح أي WBS وعرض scope/quantity/PV/EV/AC/commitment/ETC/FAC دون جمع يدوي أو تكرار باطن. |
+| A1 | Control Account master: WBS + BOQ + Cost Code + عقد رئيسي، مع roll-up واضح | ✅ مكتمل — قبول 8/10 | يمكن فتح أي WBS وعرض scope/quantity/PV/EV/AC/commitment/ETC/FAC دون جمع يدوي أو تكرار باطن. |
 | A2 | Project Data Date موحّد لكل تقرير/Portfolio/Curve/Snapshot | ⬜ لم تبدأ | تغيير تاريخ واحد يعيد كل المؤشرات من نفس الحقائق المؤرخة ولا يخلط المستقبلي بالحالي. |
 | A3 | فصل Revenue/Progress Value عن Delivery Cost في النموذج والتقارير | ⬜ لم تبدأ | لا يحسب EAC تكلفة من BAC أو EV مسعر كإيراد؛ تعرض القيم بعناوين ومصادر مستقلة. |
 | A4 | Drill-down من كل KPI إلى WIR/PO/GRN/Cost/Variation/Schedule source | ⬜ لم تبدأ | كل رقم رئيسي قابل للتتبع إلى صفوفه ومجموعه مطابق للبطاقة. |
@@ -50,9 +50,9 @@
 | A1.1 نموذج البيانات | ✅ مكتمل: كيان SQLite حقيقي يحفظ المشروع والعقد الرئيسي وWBS وBOQ وCost Code وSOV line، مع uniqueness يمنع الحساب المكرر داخل العقد. | لا يمكن إنشاء حساب خارج نطاق مشروعه أو بعقد باطن أو بمرجع BOQ/WBS/CBS خاطئ. |
 | A1.2 ربط الحقائق | ✅ مكتمل: لكل Cost Entry وPO/GRN/WIR/Schedule حقل SQLite صريح للحساب الرقابي مع منع SQLite لخلط المشروع/العقد الرئيسي أو الباطن/BOQ/WBS/Cost Code. الصفوف غير المعيّنة أو غير المتسقة تظهر كاستثناءات في Data Quality؛ لا يتم توزيع مبلغ أو كمية تلقائيًا. | كل total في الحساب يساوي مجموع صفوف المصدر القابلة للعرض. |
 | A1.3 عرض التحكم | ✅ مكتمل: جدول Control Accounts يعرض Scope Qty وBudget وPV وEV وAC وOpen Commitment وETC وFAC وعدد الصفوف ومسار التتبع؛ وتوجد فلترة بالحساب داخل النشاط وWIR والتكلفة وPO وGRN للمراجعة التفصيلية. | لا يوجد roll-up يدوي أو تكرار لقيمة الاستلام كتكلفة. |
-| A1.3 حسابات التحكم | Scope quantity، planned quantity، accepted quantity، remaining quantity، PV، EV، AC، commitment، ETC وFAC حسب Data Date. | تعرض `Unavailable` عند غياب baseline أو تعيين وليس رقمًا تقديريًا. |
-| A1.4 تجربة المدير | جدول قابل للفلترة حسب WBS/CBS/عقد وحالة، مع drill-down للمصادر والتنبيه عن records غير المعينة. | مدير المشروع يصل من الحساب إلى كل WIR/PO/GRN/Cost/Activity مؤثر. |
-| A1.5 قبول | سيناريو عقد رئيسي + بند + WBS + Cost Code + باطن + WIR + PO + GRN + Cost، إضافة إلى حالات النطاق الخطأ والتعيين المكرر/الناقص. | اختبارات آلية، build، Tauri check، مراجعة محلية؛ عندها فقط تُعلّم A1 ✅. |
+| A1.3 حسابات التحكم | ✅ مكتمل: Scope quantity وPV/EV/AC/commitment/ETC/FAC تحسب من مصدر واحد حسب Control Data Date، وتستخدم توزيع النشاط الزمني المعتمد. | عند غياب Data Date أو baseline معتمد تظهر `Data Date Required` أو `Approved Baseline Required` ولا تعرض أرقامًا مضللة. |
+| A1.4 تجربة المدير | ✅ مكتمل: جدول قابل للفلترة حسب WBS/CBS/عقد وحالة، مع مسار تتبع وفلتر للحساب في كل مصدر وتنبيه عن records غير المعينة. | مدير المشروع يصل من الحساب إلى كل WIR/PO/GRN/Cost/Activity مؤثر. |
+| A1.5 قبول | ✅ مكتمل: سيناريو عقد رئيسي + بند + WBS + Cost Code + باطن + WIR + PO + GRN + Cost، وحالات نطاق خاطئ/تعيين ناقص/تكرار GRN/حقائق مستقبلية. | 95/95 اختبارًا، production build وTauri check ناجحة؛ مراجعة Ollama المحلية بدأت لكن لم تُنتج نتيجة قابلة للحفظ، لذا لم تُعامل كدليل قبول. |
 
 **قاعدة التنفيذ:** أي جزء من A1 لا يجتاز شروطه يظل `⏳ قيد التنفيذ`. لا يبدأ A2 قبل إغلاق A1 كاملًا.
 

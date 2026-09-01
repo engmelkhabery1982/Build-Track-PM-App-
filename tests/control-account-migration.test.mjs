@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { runDataQualityChecks } from '../src/data/dataQuality.ts';
+import { calculateControlAccountSummary } from '../src/utils/controlAccountSummary.ts';
 
 test('Control Account migration enforces one scoped main-contract account', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
@@ -110,4 +111,22 @@ test('Data Quality exposes unassigned and invalid Control Account facts', () => 
   assert.ok(unassigned.some((finding) => finding.title === 'Operational facts are unassigned to a Control Account'));
   const invalid = runDataQualityChecks({ ...base, costEntries: [{ ...base.costEntries[0], control_account_id: 'missing' }] });
   assert.ok(invalid.some((finding) => finding.title === 'Operational fact is outside its Control Account scope'));
+});
+
+test('Control Account total is traceable and does not double-count an accepted GRN', () => {
+  const summary = calculateControlAccountSummary({
+    account: { id: 'ca1', contract_id: 'main', boq_item_id: 'b1', contract_sov_line_id: 's1', data_date: '2026-06-30' },
+    boqItems: [{ id: 'b1', quantity: 100 }], sovLines: [{ id: 's1', revised_budget: 1000 }],
+    baselines: [{ id: 'bl1', contract_id: 'main', status: 'Approved' }],
+    schedules: [{ control_account_id: 'ca1', budget: 400, start_date: '2026-06-01', end_date: '2026-06-30' }],
+    wirEntries: [{ control_account_id: 'ca1', result: 'Pass', quantity: 20, unit_price: 10 }, { control_account_id: 'ca1', result: 'Pass', inspection_date: '2026-07-01', quantity: 10, unit_price: 10 }],
+    procurement: [{ control_account_id: 'ca1', status: 'Ordered', total_cost: 700 }, { control_account_id: 'ca1', status: 'Ordered', order_date: '2026-07-01', total_cost: 500 }],
+    procurementReceipts: [{ id: 'r1', control_account_id: 'ca1', status: 'Accepted', accepted_amount: 300 }, { id: 'r2', control_account_id: 'ca1', status: 'Accepted', receipt_date: '2026-07-01', accepted_amount: 100 }],
+    costEntries: [{ control_account_id: 'ca1', source_type: 'procurement_receipt', source_id: 'r1', amount: 300 }, { control_account_id: 'ca1', amount: 50 }, { control_account_id: 'ca1', date: '2026-07-01', amount: 40 }],
+  });
+  assert.deepEqual(summary, {
+    scope_quantity: 100, control_budget: 1000, planned_value: 400, earned_value: 200, actual_cost: 350,
+    open_commitment: 400, cost_to_complete: 650, forecast_at_completion: 1000, source_count: 10,
+    data_date: '2026-06-30', control_status: 'Ready', source_summary: 'Activities 1 · WIR 2 · Costs 3 · PO 2 · GRN 2',
+  });
 });
