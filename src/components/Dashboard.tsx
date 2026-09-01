@@ -135,11 +135,14 @@ export function Dashboard({
   const fQuality = pid === 'all' ? quality : quality.filter((entry) => entry.project_id === pid);
 
   const selectedProject = pid !== 'all' ? projects.find((p) => p.id === pid) : null;
+  const evmPerformanceContractIds = fContracts
+    .filter((contract) => primaryContracts.some((mainContract) => contract.id === mainContract.id || contract.parent_main_contract_id === mainContract.id))
+    .map((contract) => contract.id);
   const evm = useMemo(() => calculateEvmAtDataDate({
-    contractIds: primaryContracts.map((contract) => contract.id), dataDate: reportDate,
+    contractIds: primaryContracts.map((contract) => contract.id), performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
     schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
     wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
-  }), [primaryContracts, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fBOQ, fCostEntries]);
+  }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fBOQ, fCostEntries]);
 
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
@@ -374,13 +377,14 @@ export function Dashboard({
     if (fSchedules.length === 0) return [];
     const evmContractIds = primaryContracts.map((contract) => contract.id);
     const evmContractIdSet = new Set(evmContractIds);
+    const performanceContractIdSet = new Set(evmPerformanceContractIds);
     const evmSchedules = fSchedules.filter((schedule: any) => evmContractIdSet.has(String(schedule.contract_id || '')));
     const activityRows = evmSchedules.filter((schedule: any) => String(schedule.activity || '').trim());
     const datedSchedules = activityRows.length > 0 ? activityRows : fSchedules;
     const dates = [
       ...datedSchedules.flatMap((schedule) => [schedule.forecast_start_date || schedule.start_date, schedule.forecast_end_date || schedule.end_date]),
-      ...fWirs.filter((wir) => evmContractIdSet.has(String(wir.contract_id || ''))).map((wir) => wir.inspection_date),
-      ...fCostEntries.filter((entry) => evmContractIdSet.has(String(entry.contract_id || ''))).map((entry) => entry.date),
+      ...fWirs.filter((wir) => performanceContractIdSet.has(String(wir.contract_id || ''))).map((wir) => wir.inspection_date),
+      ...fCostEntries.filter((entry) => performanceContractIdSet.has(String(entry.contract_id || ''))).map((entry) => entry.date),
       ...fCashFlow.map((entry) => entry.date),
       ...resourceForecast.map((point) => point.date),
       reportDate,
@@ -394,7 +398,7 @@ export function Dashboard({
     const endMs = new Date(projectEnd).getTime();
     const totalDays = Math.max(Math.ceil((endMs - startMs) / 86400000), 1);
     const dataDateEvm = calculateEvmAtDataDate({
-      contractIds: evmContractIds, dataDate: reportDate,
+      contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
       schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
       wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
     });
@@ -405,7 +409,7 @@ export function Dashboard({
       const currentDate = new Date(startMs + dayOffset * 86400000);
       const dateStr = currentDate.toISOString().slice(0, 10);
       const pointEvm = calculateEvmAtDataDate({
-        contractIds: evmContractIds, dataDate: dateStr,
+        contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: dateStr,
         schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
         wirEntries: fWirs as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
       });
@@ -423,7 +427,7 @@ export function Dashboard({
       points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, resourceForecast: plannedResourceCostAt(resourceForecast, dateStr), date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, fCostEntries, fBOQ, primaryContracts, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
+  }, [fSchedules, fWirs, fCostEntries, fBOQ, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {

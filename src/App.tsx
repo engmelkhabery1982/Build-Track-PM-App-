@@ -17,6 +17,7 @@ import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, reconcileScheduleDistributions, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
+import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateCpm, calculateCpmStatusForecast } from '@/utils/cpm';
 import { calculateProductivityMetrics } from '@/utils/resourceProductivity';
 import { calculatePlannedResourceLoads, calculateResourceLoads, suggestResourceLeveling } from '@/utils/resourceLoading';
@@ -2296,14 +2297,18 @@ export default function App() {
         const timeImpact = approvedVariations.reduce((sum: number, variation: any) => sum + (Number(variation.time_impact_days) || 0), 0);
         const originalValue = Number(mainContract?.contract_value) || 0;
         const modifiedValue = originalValue + variationValue;
-        const costs = data.costs.filter((cost: any) => cost.project_id === project.id);
-        const actualCost = costs.reduce((sum: number, cost: any) => sum + (Number(cost.actual) || 0), 0);
-        const earnedValue = costs.reduce((sum: number, cost: any) => sum + (Number(cost.committed) || 0), 0);
-        const plannedValue = costs.reduce((sum: number, cost: any) => sum + (Number(cost.planned) || 0), 0);
-        const budgetAtCompletion = costs.reduce((sum: number, cost: any) => sum + (Number(cost.budget) || Number(cost.planned) || 0), 0);
-        const cpi = actualCost > 0 ? earnedValue / actualCost : null;
-        const estimateAtCompletion = cpi && cpi > 0 ? budgetAtCompletion / cpi : budgetAtCompletion;
-        const estimateToComplete = Math.max(0, estimateAtCompletion - actualCost);
+        const evm = mainContract ? calculateEvmAtDataDate({
+          contractIds: [mainContract.id], performanceContractIds: [...contractIds], dataDate: new Date().toISOString().slice(0, 10),
+          schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[],
+          baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[],
+          boqItems: data.boqItems as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[],
+        }) : null;
+        const actualCost = evm?.AC || 0;
+        const earnedValue = evm?.EV || 0;
+        const plannedValue = evm?.PV || 0;
+        const budgetAtCompletion = evm?.BAC || 0;
+        const estimateAtCompletion = evm?.EAC || 0;
+        const estimateToComplete = evm?.ETC || 0;
         const subcontractCount = Math.max(0, contractIds.size - (mainContract ? 1 : 0));
         const revisedEnd = addCalendarDays(mainContract?.end_date || project.end_date, timeImpact) || mainContract?.end_date || project.end_date;
         const activityEnds = data.schedules.filter((schedule: any) => schedule.project_id === project.id && String(schedule.activity || '').trim() && schedule.end_date).map((schedule: any) => String(schedule.end_date)).sort();
@@ -3859,7 +3864,7 @@ export default function App() {
           if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
           const status = snapshotDraft.status || 'Draft';
           if (status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
           return dataRepository.insert<Record<string, any>>('pmo_snapshots', {
             ...snapshotDraft, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost,
             cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id,
@@ -3984,7 +3989,7 @@ export default function App() {
           const period = data.reportingPeriods.find((row: any) => row.project_id === contract.project_id && dataDate >= String(row.start_date || '') && dataDate <= String(row.end_date || '')) as any;
           if (!period) throw new Error('PMO Snapshot Data Date must belong to a governed reporting period.');
           if (next.status === 'Approved' && !['Locked', 'Closed'].includes(String(period.status || ''))) throw new Error('Approve the PMO Snapshot only after its reporting period is Locked or Closed.');
-          const snapshot = calculatePmoSnapshot({ contract, dataDate, schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
+          const snapshot = calculatePmoSnapshot({ contract, dataDate, performanceContractIds: data.contracts.filter((row: any) => row.id === contract.id || row.parent_main_contract_id === contract.id).map((row: any) => row.id), schedules: data.schedules, scheduleDistributions: data.scheduleDistributions as Record<string, any>[], baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries, boqItems: data.boqItems, costEntries: data.costEntries, requireApprovedBaseline: true });
           return dataRepository.update<Record<string, any>>('pmo_snapshots', id, { ...patch, project_id: contract.project_id, planned_value: snapshot.plannedValue, earned_value: snapshot.earnedValue, actual_cost: snapshot.actualCost, cpi: snapshot.cpi, spi: snapshot.spi, eac: snapshot.estimateAtCompletion, baseline_id: snapshot.baselineId, baseline_revision: snapshot.baselineRevision, reporting_period_id: period.id });
         } : tableName === 'project_baselines' ? async (id, baselinePatch) => {
           const existing = data.baselines.find((baseline: any) => baseline.id === id) as any;

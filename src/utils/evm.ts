@@ -14,6 +14,8 @@ const approvedWir = (wir: Record<string, any>) => wir.status === 'Approved' || w
  */
 export function calculateEvmAtDataDate(input: {
   contractIds: string[];
+  /** Child/subcontract facts that roll up to the selected main contract(s). */
+  performanceContractIds?: string[];
   dataDate: string;
   schedules: Record<string, any>[];
   scheduleDistributions: Record<string, any>[];
@@ -23,6 +25,7 @@ export function calculateEvmAtDataDate(input: {
   costEntries: Record<string, any>[];
 }) {
   const contractIds = new Set(input.contractIds.filter(Boolean));
+  const performanceContractIds = new Set((input.performanceContractIds || input.contractIds).filter(Boolean));
   const dataDate = String(input.dataDate || '').slice(0, 10);
   const activities = input.schedules.filter((row) => contractIds.has(String(row.contract_id || '')) && String(row.activity || '').trim());
   const plans = activities.map((activity) => approvedBaselinePlanForActivity(activity, input.scheduleDistributions, input.baselines));
@@ -30,14 +33,14 @@ export function calculateEvmAtDataDate(input: {
   const pv = money(plans.reduce((sum, plan) => sum + distributedPlannedValueToDate(plan.activity, plan.distributions, dataDate), 0));
   const boqById = new Map(input.boqItems.map((item) => [String(item.id), item]));
   const ev = money(input.wirEntries
-    .filter((wir) => contractIds.has(String(wir.contract_id || '')) && datedThrough(wir.inspection_date, dataDate) && approvedWir(wir))
+    .filter((wir) => performanceContractIds.has(String(wir.contract_id || '')) && datedThrough(wir.inspection_date, dataDate) && approvedWir(wir))
     .reduce((sum, wir) => {
       const item = boqById.get(String(wir.boq_item_id || ''));
       const mainItem = item?.main_boq_item_id ? boqById.get(String(item.main_boq_item_id)) : item;
       return sum + (Number(wir.quantity) || 0) * (Number(mainItem?.unit_rate ?? wir.unit_price) || 0);
     }, 0));
   const ac = money(input.costEntries
-    .filter((entry) => contractIds.has(String(entry.contract_id || '')) && datedThrough(entry.date, dataDate))
+    .filter((entry) => performanceContractIds.has(String(entry.contract_id || '')) && datedThrough(entry.date, dataDate))
     .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0));
   // Keep absent ratios at zero. This is deliberately distinct from a real
   // negative/poor result and preserves the dashboard's existing "—" state.

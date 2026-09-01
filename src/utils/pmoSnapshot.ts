@@ -9,6 +9,8 @@ export function calculatePmoSnapshot(input: {
   wirEntries: Record<string, any>[];
   boqItems: Record<string, any>[];
   costEntries: Record<string, any>[];
+  /** Subcontract records that are operationally loaded to this main contract. */
+  performanceContractIds?: string[];
   baselines?: Record<string, any>[];
   /** Executive reporting may require an approved frozen baseline. */
   requireApprovedBaseline?: boolean;
@@ -22,7 +24,7 @@ export function calculatePmoSnapshot(input: {
     throw new Error('A governed PMO Snapshot requires an approved baseline with frozen activities and time-phased distribution.');
   }
   const evm = calculateEvmAtDataDate({
-    contractIds: [input.contract.id], dataDate,
+    contractIds: [input.contract.id], performanceContractIds: input.performanceContractIds, dataDate,
     schedules: input.schedules, scheduleDistributions: input.scheduleDistributions,
     baselines: input.baselines || [], wirEntries: input.wirEntries,
     boqItems: input.boqItems, costEntries: input.costEntries,
