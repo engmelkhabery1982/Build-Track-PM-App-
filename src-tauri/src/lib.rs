@@ -1940,7 +1940,8 @@ pub fn run() {
         tauri_plugin_sql::Migration {
             version: 48,
             description: "add_milestone_ladder_templates_and_stepped_earning",
-        },
+    kind: tauri_plugin_sql::MigrationKind::Up,
+},
         tauri_plugin_sql::Migration {
             version: 49,
             description: "add_time_phased_cost_distribution_engine",
