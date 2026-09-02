@@ -1,5 +1,11 @@
 import { procurementPostingState } from './commercialControl.ts';
 import { distributedPlannedValueToDate } from './schedulePlanning.ts';
+import {
+  calculateCostVariance,
+  calculateMixVariance,
+  calculateProductivityVariance,
+  calculateEfficiencyVariance,
+} from './costVariance.ts';
 
 const money = (value: number) => Math.round(value * 100) / 100;
 
@@ -27,6 +33,7 @@ export function calculateControlAccountSummary(input: {
     planned_value: null, earned_value: null, actual_cost: null, open_commitment: null, cost_to_complete: null, forecast_at_completion: null,
     source_count: 0, data_date: dataDate || null, control_status: !dataDate ? 'Data Date Required' : 'Approved Baseline Required',
     source_summary: !dataDate ? 'Set Control Data Date before using PV/EV/AC.' : 'Approve a baseline for the main contract before using PV/EV/AC.',
+    usageVariance: 0, rateVariance: 0, mixVariance: 0, productivityVariance: 0, efficiencyVariance: 0,
   };
   const onOrBefore = (value: unknown) => !value || String(value) <= dataDate;
   const linked = (rows: Record<string, any>[]) => rows.filter((row) => row.control_account_id === account.id);
@@ -43,11 +50,42 @@ export function calculateControlAccountSummary(input: {
   const committed = orders.filter((row) => onOrBefore(row.order_date) && procurementPostingState(row).isCommitment).reduce((sum, row) => sum + (Number(row.total_cost) || ((Number(row.quantity) || 0) * (Number(row.unit_cost) || 0))), 0);
   const openCommitment = Math.max(0, committed - receiptActual);
   const fac = Math.max(budget, ac + openCommitment);
+
+  const plannedQty = Number(boq?.quantity) || 0;
+  const plannedRate = Number(boq?.unit_rate) || (plannedQty > 0 ? budget / plannedQty : 0);
+  const actualQty = wirs.filter((row) => onOrBefore(row.inspection_date) && (['Pass', 'Conditional Pass'].includes(String(row.result || '')) || row.status === 'Approved'))
+    .reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const actualRate = actualQty > 0 ? ac / actualQty : 0;
+
+  const costVar = calculateCostVariance({ qty: plannedQty, rate: plannedRate }, { qty: actualQty, rate: actualRate });
+  const mixVar = calculateMixVariance({
+    plannedMixRatio: Number(account.planned_mix_ratio) || 1,
+    actualMixRatio: Number(account.actual_mix_ratio) || 1,
+    totalActualQty: actualQty,
+    plannedRate,
+  });
+  const prodVar = calculateProductivityVariance({
+    plannedOutput: Number(account.planned_output) || plannedQty,
+    actualOutput: Number(account.actual_output) || actualQty,
+    plannedRate,
+  });
+  const effVar = calculateEfficiencyVariance({
+    actualQty,
+    actualOutput: Number(account.actual_output) || actualQty,
+    standardQtyPerOutput: Number(account.standard_qty_per_output) || (plannedQty > 0 ? 1 : 0),
+    plannedRate,
+  });
+
   return {
     scope_quantity: Number(boq?.quantity) || 0, control_budget: money(budget), planned_value: money(pv), earned_value: money(ev), actual_cost: money(ac),
     open_commitment: money(openCommitment), cost_to_complete: money(Math.max(0, fac - ac)), forecast_at_completion: money(fac),
     source_count: schedules.length + wirs.length + costs.length + orders.length + receipts.length,
     data_date: dataDate, control_status: 'Ready', source_summary: `Activities ${schedules.length} · WIR ${wirs.length} · Costs ${costs.length} · PO ${orders.length} · GRN ${receipts.length}`,
+    usageVariance: costVar.usageVariance,
+    rateVariance: costVar.rateVariance,
+    mixVariance: mixVar.mixVariance,
+    productivityVariance: prodVar.productivityVariance,
+    efficiencyVariance: effVar.efficiencyVariance,
   };
 }
 
@@ -222,4 +260,3 @@ export function calculateControlAccountLoadedCost(
     loaded_cost_to_complete: money(Math.max(0, loadedFac - loadedAc)),
   };
 }
-
