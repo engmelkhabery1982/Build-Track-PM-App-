@@ -42,3 +42,65 @@ export function calculateBOQActivityAllocation(
     boq_item_amount: boqItemAmount,
   };
 }
+
+export function calculateMilestoneProgress(
+  steps: MilestoneLadderStep[],
+  progressList: ActivityMilestoneProgress[]
+): MilestoneProgressResult {
+  if (steps.length === 0) {
+    return {
+      earnedProgressPct: 0,
+      totalWeightPct: 0,
+      completedStepsCount: 0,
+      totalStepsCount: 0,
+      isFullyCompleted: false,
+    };
+  }
+
+  // Sort steps by order
+  const sortedSteps = [...steps].sort((a, b) => a.step_order - b.step_order);
+
+  // Calculate total weight and validate
+  const totalWeightPct = sortedSteps.reduce((sum, step) => sum + (step.weight_pct || 0), 0);
+
+  // Build completion map
+  const completionMap = new Map<string, ActivityMilestoneProgress>();
+  for (const progress of progressList) {
+    completionMap.set(progress.step_id, progress);
+  }
+
+  // Calculate earned progress
+  let earnedProgressPct = 0;
+  let completedStepsCount = 0;
+  let currentPendingStep: MilestoneLadderStep | undefined;
+
+  for (const step of sortedSteps) {
+    const progress = completionMap.get(step.id);
+    const isCompleted = progress?.is_completed === true || progress?.is_completed === 1;
+
+    if (isCompleted) {
+      earnedProgressPct += step.weight_pct || 0;
+      completedStepsCount++;
+    } else if (!currentPendingStep) {
+      // First incomplete step is the current pending step
+      currentPendingStep = step;
+    }
+  }
+
+  // Normalize earned progress if total weight is not exactly 100%
+  // This handles templates where weights don't sum to exactly 100
+  if (totalWeightPct > 0 && Math.abs(totalWeightPct - 100) > 0.01) {
+    earnedProgressPct = (earnedProgressPct / totalWeightPct) * 100;
+  }
+
+  const isFullyCompleted = completedStepsCount === sortedSteps.length;
+
+  return {
+    earnedProgressPct: Math.round(earnedProgressPct * 100) / 100, // Round to 2 decimals
+    totalWeightPct: Math.round(totalWeightPct * 100) / 100,
+    completedStepsCount,
+    totalStepsCount: sortedSteps.length,
+    isFullyCompleted,
+    currentPendingStep: isFullyCompleted ? undefined : currentPendingStep,
+  };
+}

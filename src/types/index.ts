@@ -1120,6 +1120,50 @@ export interface BOQActivitySummary {
   boq_item_amount: number;
 }
 
+export interface MilestoneLadderTemplate {
+  id: string;
+  project_id: string;
+  name: string;
+  code: string;
+  discipline?: 'CIVIL' | 'MEP' | 'STRUCTURE' | 'ARCH' | 'PROCUREMENT' | 'GENERAL' | string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MilestoneLadderStep {
+  id: string;
+  template_id: string;
+  step_order: number;
+  step_name: string;
+  weight_pct: number;
+  requires_wir: boolean;
+  requires_qa_signoff: boolean;
+  created_at?: string;
+}
+
+export interface ActivityMilestoneProgress {
+  id: string;
+  activity_id: string;
+  step_id: string;
+  is_completed: boolean;
+  completed_date?: string;
+  verified_by?: string;
+  wir_id?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MilestoneProgressResult {
+  earnedProgressPct: number;
+  totalWeightPct: number;
+  completedStepsCount: number;
+  totalStepsCount: number;
+  isFullyCompleted: boolean;
+  currentPendingStep?: MilestoneLadderStep;
+}
+
 export type ViewKey =
   | 'dashboard'
   | 'alerts'
