@@ -1906,6 +1906,36 @@ pub fn run() {
         tauri_plugin_sql::Migration {
             version: 47,
             description: "add_boq_item_to_schedule_activity_allocation_links",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS boq_item_activities (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        boq_item_id TEXT NOT NULL,
+        activity_id TEXT NOT NULL,
+        allocated_quantity REAL NOT NULL DEFAULT 0,
+        allocation_pct REAL NOT NULL DEFAULT 0,
+        allocated_cost REAL NOT NULL DEFAULT 0,
+        method TEXT NOT NULL DEFAULT 'percentage',
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE CASCADE,
+        FOREIGN KEY (activity_id) REFERENCES schedules(id) ON DELETE CASCADE,
+        UNIQUE(boq_item_id, activity_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_boq_item ON boq_item_activities(boq_item_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_activity ON boq_item_activities(activity_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_project ON boq_item_activities(project_id);
+      
+      CREATE TRIGGER IF NOT EXISTS boq_item_activities_updated_at
+      AFTER UPDATE ON boq_item_activities
+      FOR EACH ROW
+      BEGIN
+        UPDATE boq_item_activities SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
         },
         tauri_plugin_sql::Migration {
             version: 48,
@@ -1983,36 +2013,6 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-            sql: r#"
-      CREATE TABLE IF NOT EXISTS boq_item_activities (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        boq_item_id TEXT NOT NULL,
-        activity_id TEXT NOT NULL,
-        allocated_quantity REAL NOT NULL DEFAULT 0,
-        allocation_pct REAL NOT NULL DEFAULT 0,
-        allocated_cost REAL NOT NULL DEFAULT 0,
-        method TEXT NOT NULL DEFAULT 'percentage',
-        notes TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE CASCADE,
-        FOREIGN KEY (activity_id) REFERENCES schedules(id) ON DELETE CASCADE,
-        UNIQUE(boq_item_id, activity_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_boq_item ON boq_item_activities(boq_item_id);
-      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_activity ON boq_item_activities(activity_id);
-      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_project ON boq_item_activities(project_id);
-      
-      CREATE TRIGGER IF NOT EXISTS boq_item_activities_updated_at
-      AFTER UPDATE ON boq_item_activities
-      FOR EACH ROW
-      BEGIN
-        UPDATE boq_item_activities SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-      END;
-    "#,
-            kind: tauri_plugin_sql::MigrationKind::Up,
         }
     ];
 

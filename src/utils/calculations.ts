@@ -1,4 +1,12 @@
-import type { BOQItem, Schedule, BOQItemActivity, BOQActivitySummary } from '../types';
+import type { 
+  BOQItem, 
+  Schedule, 
+  BOQItemActivity, 
+  BOQActivitySummary,
+  MilestoneLadderStep,
+  ActivityMilestoneProgress,
+  MilestoneProgressResult
+} from '../types';
 
 export function calculateBOQActivityAllocation(
   boqItem: BOQItem,
