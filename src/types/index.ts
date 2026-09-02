@@ -1164,6 +1164,31 @@ export interface MilestoneProgressResult {
   currentPendingStep?: MilestoneLadderStep;
 }
 
+export type EACMethod = 'budget_rate' | 'cpi_extrapolated' | 'composite_cpi_spi' | 'bottom_up';
+
+export interface EACMethodResult {
+  method: EACMethod;
+  name: string;
+  description: string;
+  etc: number;
+  eac: number;
+  vac: number;
+  vacPct: number;
+}
+
+export interface MultiMethodEACSummary {
+  bac: number;
+  ev: number;
+  ac: number;
+  cpi: number;
+  spi: number;
+  methods: Record<EACMethod, EACMethodResult>;
+  tcpiBac: number;
+  tcpiEac: number;
+  recommendedMethod: EACMethod;
+  recommendedEAC: number;
+}
+
 export type ViewKey =
   | 'dashboard'
   | 'alerts'
