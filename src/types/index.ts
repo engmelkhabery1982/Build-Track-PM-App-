@@ -1094,6 +1094,32 @@ export interface ReportTemplate {
   show_signatures?: boolean;
   created_at: string;
 }
+export interface BOQItemActivity {
+  id: string;
+  project_id: string;
+  boq_item_id: string;
+  activity_id: string;
+  allocated_quantity: number;
+  allocation_pct: number;
+  allocated_cost: number;
+  method: 'percentage' | 'quantity' | 'fixed_cost';
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BOQActivitySummary {
+  boq_item_id: string;
+  total_allocated_quantity: number;
+  total_allocated_cost: number;
+  total_allocation_pct: number;
+  remaining_quantity: number;
+  remaining_cost: number;
+  is_over_allocated: boolean;
+  boq_item_quantity: number;
+  boq_item_amount: number;
+}
+
 export type ViewKey =
   | 'dashboard'
   | 'alerts'
