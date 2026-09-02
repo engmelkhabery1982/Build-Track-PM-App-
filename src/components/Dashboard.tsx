@@ -7,6 +7,7 @@ import { cashForecastAt } from '@/utils/cashForecast';
 import { deriveForecastHorizon } from '@/utils/forecastHorizon';
 import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/resourceLoading';
 import { calculateEvmAtDataDate } from '@/utils/evm';
+import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -146,6 +147,49 @@ export function Dashboard({
     wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
   }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fProgressCorrections, fBOQ, fCostEntries]);
 
+  const controlAccountVariances = useMemo(() => {
+    let usageVariance = 0;
+    let rateVariance = 0;
+    let mixVariance = 0;
+    let productivityVariance = 0;
+    let efficiencyVariance = 0;
+
+    fBOQ.forEach((boqItem) => {
+      const summary = calculateControlAccountSummary({
+        account: {
+          id: boqItem.id,
+          boq_item_id: boqItem.id,
+          contract_id: boqItem.contract_id,
+          contract_sov_line_id: boqItem.contract_sov_line_id || boqItem.id,
+          data_date: reportDate,
+        },
+        boqItems: fBOQ as Record<string, any>[],
+        sovLines: fBOQ as Record<string, any>[],
+        schedules: fSchedules as Record<string, any>[],
+        scheduleDistributions,
+        baselines: fBaselines as Record<string, any>[],
+        wirEntries: fWirs as Record<string, any>[],
+        costEntries: fCostEntries as Record<string, any>[],
+        procurement: fProcurement as Record<string, any>[],
+        procurementReceipts: [],
+      });
+
+      usageVariance += summary.usageVariance || 0;
+      rateVariance += summary.rateVariance || 0;
+      mixVariance += summary.mixVariance || 0;
+      productivityVariance += summary.productivityVariance || 0;
+      efficiencyVariance += summary.efficiencyVariance || 0;
+    });
+
+    return {
+      usageVariance: Math.round(usageVariance * 100) / 100,
+      rateVariance: Math.round(rateVariance * 100) / 100,
+      mixVariance: Math.round(mixVariance * 100) / 100,
+      productivityVariance: Math.round(productivityVariance * 100) / 100,
+      efficiencyVariance: Math.round(efficiencyVariance * 100) / 100,
+    };
+  }, [fBOQ, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fCostEntries, fProcurement]);
+
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
     const totalSpent = fCostEntries.filter((entry) => datedThroughToday(entry.date)).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
@@ -181,14 +225,8 @@ export function Dashboard({
     fTasks.forEach((t) => { taskPriorityCounts[t.priority] = (taskPriorityCounts[t.priority] || 0) + 1; });
 
     const totalPlannedCosts = fCosts.reduce((s, c) => s + (c.planned || 0), 0);
-    // Cost-control rows are live aggregates. Dashboard/report AC must be
-    // reconstructed from dated cost entries so future costs never appear in
-    // an "as of today" figure.
     const totalActualCosts = evm.AC;
     const totalCommittedCosts = fCosts.reduce((s, c) => s + (c.committed || 0), 0);
-    // EVM has authoritative sources: PV from Schedule and EV from the
-    // WIR-derived committed value in Cost Control. Project progress is a
-    // presentation percentage and must not be used to calculate money.
     const totalPlannedWork = evm.PV;
     const totalEarnedWork = evm.EV;
     const costVariance = evm.CV;
@@ -215,8 +253,6 @@ export function Dashboard({
     const criticalPathCount = fSchedules.filter((s) => s.critical_path).length;
     const delayedSchedules = fSchedules.filter((s) => s.status === 'Delayed').length;
     const completedSchedules = fSchedules.filter((s) => s.status === 'Completed').length;
-    // Dashboard contract values always come from main contracts. BOQ rows are
-    // operational detail and must never be used as a second contract total.
     const totalContractValue = primaryContracts.reduce((s, c) => s + (Number(c.contract_value) || 0), 0);
     const activeContracts = primaryContracts.filter((c) => c.status === 'Active').length;
     const totalBOQAmount = fBOQ.reduce((s, b) => s + (b.amount || 0), 0);
@@ -1028,6 +1064,42 @@ export function Dashboard({
                     {evm.SV !== 0 && (<div className={`absolute top-0 h-full ${evm.SV >= 0 ? 'bg-success-400' : 'bg-error-400'} transition-all duration-700`} style={{ left: evm.SV >= 0 ? '50%' : `${50 - Math.min(Math.abs(evm.SV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%`, width: `${Math.min(Math.abs(evm.SV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%` }} />)}
                   </div>
                   <div className="flex justify-between mt-1 text-[10px] text-neutral-400"><span>Behind</span><span>0</span><span>Ahead</span></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Cost Variance Breakdown Card */}
+            <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 size={18} className="text-primary-600" />
+                <h3 className="text-sm font-semibold text-neutral-700">Cost Variance Breakdown</h3>
+                <span className="text-xs text-neutral-400 ml-auto">Control account variance components</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
+                  <p className="text-xs font-bold text-neutral-700">Usage Variance</p>
+                  <p className="text-xs text-neutral-400 leading-tight mb-1">(Planned Qty - Actual Qty) × Rate</p>
+                  <p className={`text-base font-bold ${controlAccountVariances.usageVariance >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(controlAccountVariances.usageVariance)}</p>
+                </div>
+                <div className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
+                  <p className="text-xs font-bold text-neutral-700">Rate Variance</p>
+                  <p className="text-xs text-neutral-400 leading-tight mb-1">(Planned Rate - Actual Rate) × Qty</p>
+                  <p className={`text-base font-bold ${controlAccountVariances.rateVariance >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(controlAccountVariances.rateVariance)}</p>
+                </div>
+                <div className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
+                  <p className="text-xs font-bold text-neutral-700">Mix Variance</p>
+                  <p className="text-xs text-neutral-400 leading-tight mb-1">(Planned - Actual Ratio) × Qty × Rate</p>
+                  <p className={`text-base font-bold ${controlAccountVariances.mixVariance >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(controlAccountVariances.mixVariance)}</p>
+                </div>
+                <div className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
+                  <p className="text-xs font-bold text-neutral-700">Productivity Variance</p>
+                  <p className="text-xs text-neutral-400 leading-tight mb-1">(Actual - Planned Output) × Rate</p>
+                  <p className={`text-base font-bold ${controlAccountVariances.productivityVariance >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(controlAccountVariances.productivityVariance)}</p>
+                </div>
+                <div className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
+                  <p className="text-xs font-bold text-neutral-700">Efficiency Variance</p>
+                  <p className="text-xs text-neutral-400 leading-tight mb-1">Standard Qty Variance × Rate</p>
+                  <p className={`text-base font-bold ${controlAccountVariances.efficiencyVariance >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(controlAccountVariances.efficiencyVariance)}</p>
                 </div>
               </div>
             </div>
