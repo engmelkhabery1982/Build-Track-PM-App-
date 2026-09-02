@@ -154,8 +154,8 @@ export function calculateMultiMethodEAC(params: {
 
   // Recommendation logic based on PMI best practices
   let recommendedMethod: EACMethod;
-  if (spi < 0.85 && cpi < 0.9) {
-    // Severe cost and schedule issues: use composite method
+  if (spi < 0.85) {
+    // Any schedule delay should use composite method to account for both cost and schedule impacts
     recommendedMethod = 'composite_cpi_spi';
   } else if (cpi < 1.0) {
     // Cost overrun but schedule acceptable: use CPI extrapolation
