@@ -828,5 +828,221 @@ export interface GovernanceRegisterEntry {
 }
 
 export interface ApprovalRequest {
-  id: string; project_id: string; contract_id: string | null; entity_type: string; entity_id: string;
-  request_number: string
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  request_number: string;
+  title: string;
+  requested_by: string;
+  requested_date: string | null;
+  approver: string;
+  decision_date: string | null;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Returned' | string;
+  notes: string;
+  created_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  project_id: string | null;
+  contract_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  action: 'Insert' | 'Update' | 'Delete' | string;
+  actor: string;
+  before: Record<string, any> | null;
+  after: Record<string, any> | null;
+  summary: string;
+  created_at: string;
+}
+
+export interface RFIEntry {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string | null;
+  rfi_number: string;
+  rfi_number_locked?: boolean;
+  subject: string;
+  raised_by: string;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  raised_date: string | null;
+  due_date: string | null;
+  response: string;
+  response_date: string | null;
+  status: 'Draft' | 'Open' | 'Answered' | 'Closed' | string;
+  impact: 'None' | 'Cost' | 'Time' | 'Cost & Time' | string;
+  file_reference: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SubmittalEntry {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string | null;
+  submittal_number: string;
+  submittal_number_locked?: boolean;
+  title: string;
+  document_type: 'Material' | 'Shop Drawing' | 'Method Statement' | 'Sample' | 'Calculation' | 'Other' | string;
+  submitted_by: string;
+  submitted_date: string | null;
+  reviewer: string;
+  response_date: string | null;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Approved as Noted' | 'Revise & Resubmit' | 'Rejected' | string;
+  revision: string;
+  file_reference: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface QualityEntry {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string | null;
+  reference_number: string;
+  reference_number_locked?: boolean;
+  record_type: 'NCR' | 'Punch Item' | 'Observation' | string;
+  title: string;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  raised_date: string | null;
+  owner: string;
+  due_date: string | null;
+  closed_date: string | null;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical' | string;
+  status: 'Open' | 'In Progress' | 'Verified' | 'Closed' | string;
+  corrective_action: string;
+  file_reference: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SiteDailyReport {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_item_id: string | null;
+  schedule_id: string | null;
+  report_number: string;
+  report_number_locked?: boolean;
+  report_date: string | null;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  weather: string;
+  work_summary: string;
+  manpower_count: number;
+  equipment_summary: string;
+  issues: string;
+  next_day_plan: string;
+  photo_reference: string;
+  status: 'Draft' | 'Submitted' | 'Reviewed' | string;
+  notes: string;
+  created_at: string;
+}
+
+export interface WIREntry {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  schedule_id?: string | null;
+  /** Explicit governed link to the main-contract Control Account. */
+  control_account_id?: string | null;
+  company_name: string;
+  wir_number: string;
+  area: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  work_type: string;
+  inspection_date: string | null;
+  inspector: string;
+  result: string;
+  unit?: string;
+  quantity: number;
+  unit_price: number;
+  item_amount: number;
+  completion_pct?: number;
+  status?: string;
+  remarks: string;
+  variance_reason?: string;
+  file_reference?: string;
+  created_at: string;
+}
+
+export interface ProgressCorrection {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  boq_header_id: string | null;
+  boq_item_id: string | null;
+  original_wir_id: string;
+  correction_number: string;
+  correction_number_locked?: boolean;
+  correction_type: 'Reversal' | 'Reinstatement' | string;
+  effective_date: string | null;
+  quantity: number;
+  reason: string;
+  status: 'Draft' | 'Posted' | 'Cancelled' | string;
+  created_at: string;
+}
+
+export interface PMOSnapshot {
+  id: string;
+  project_id: string;
+  contract_id: string | null;
+  snapshot_name: string;
+  snapshot_name_locked?: boolean;
+  data_date: string | null;
+  status: 'Draft' | 'Approved' | 'Archived' | string;
+  planned_value: number;
+  earned_value: number;
+  actual_cost: number;
+  cpi: number | null;
+  spi: number | null;
+  eac: number | null;
+  baseline_id?: string | null;
+  baseline_revision?: number | null;
+  reporting_period_id?: string | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface AppUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: 'PMO Admin' | 'Project Manager' | 'Commercial Manager' | 'Site Engineer' | 'Executive Viewer' | string;
+  status: 'Active' | 'Disabled' | string;
+  password_hash?: string;
+  password_salt?: string;
+  last_login_at?: string | null;
+  created_at: string;
+}
+
+export type ViewKey =
+  | 'dashboard'
+  | 'alerts'
+  | 'dataQuality'
+  | 'workQueue'
+  | 'reportPack'
+  | 'help'
+  | 'preferences'
+  | 'dataEntry'
+  | 'insights'
+  | 'portfolio'
+  | 'projects'
+  | 'baselines'
+  | 'reporting
