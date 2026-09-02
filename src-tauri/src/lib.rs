@@ -211,7 +211,7 @@ fn backup_workspace(
         if companion.exists() {
             let companion_target = PathBuf::from(format!("{}{}", target.display(), suffix));
             fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
-        }
+        },
     }
     if attachments.exists() {
         copy_directory(attachments, &backup_directory.join("attachments"))?;
