@@ -38,3 +38,4 @@ docs/agent-work-orders/ready/*.ready.md
 docs/agent-work-orders/rejected/*.ready.md
 docs/agent-work-orders/needs-human/*.ready.md
 docs/agent-work-orders/needs-human/*.ready.md
+.aider*

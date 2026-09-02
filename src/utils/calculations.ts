@@ -1,3 +1,4 @@
+import type { CostCurveType, CostPhasingResult, TimePhasedCostBucket } from '../types';
 import type { 
   BOQItem, 
   Schedule, 
@@ -370,3 +371,4 @@ export function calculateMilestoneProgress(
     currentPendingStep: isFullyCompleted ? undefined : currentPendingStep,
   };
 }
+

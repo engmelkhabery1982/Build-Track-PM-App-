@@ -107,3 +107,15 @@
 2. ÙƒÙ„ Ù…ÙŠØ²Ø© ØªØ­ØµÙ„ Ø¹Ù„Ù‰: **Ù…Ø¹Ø§ÙŠÙŠØ± Ù‚Ø¨ÙˆÙ„ØŒ Ø§Ø®ØªØ¨Ø§Ø± Ø¥ÙŠØ¬Ø§Ø¨ÙŠ ÙˆØ³Ù„Ø¨ÙŠØŒ buildØŒ Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ø­Ù„ÙŠØ©ØŒ checkpointØŒ ÙˆØªØ­Ø¯ÙŠØ« Ø¹Ù„Ø§Ù…Ø© Ø§Ù„Ø­Ø§Ù„Ø© Ù‡Ù†Ø§**.
 3. Ø¹Ù†Ø¯ Ø¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ Ù…ØµØ¯Ø± Ø¨ÙŠØ§Ù†Ø§Øª ÙƒØ§ÙÙØŒ ÙŠØ¹Ø±Ø¶ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ `Unavailable / Requires data` ÙˆÙ„Ø§ ÙŠØ®ØªØ±Ø¹ Ø±Ù‚Ù…Ù‹Ø§.
 4. Ø£ÙŠ Ù†Ù‚Ø·Ø© Ù„Ø§ ØªØ­Ù‚Ù‚ 8/10 ÙÙŠ Ù†Ø·Ø§Ù‚Ù‡Ø§ ØªØ¨Ù‚Ù‰ â³ Â«Ù‚ÙŠØ¯ Ø§Ù„Ø¥ÙƒÙ…Ø§Ù„Â» ÙˆÙ„Ø§ ÙŠØ¹Ù„Ù† Ø¹Ù†Ù‡Ø§ Ù…ÙƒØªÙ…Ù„Ø©.
+
+---
+### ??? ÇÚÊãÇÏ æÇßÊãÇá ÇáãÑÍáÉ ÇáÃæáì (Gate 1 Foundation Sign-off)
+- **ÇáÊÇÑíÎ:** 2026-09-03 01:14
+- **ÍÇáÉ ÇáÇÎÊÈÇÑÇÊ:** 114/114 ÇÎÊÈÇÑ äÇÌÍ (0 İÔá).
+- **ÍÇáÉ ÇáÜ Build & Lint:** äÌÇÍ ßÇãá ááÜ Production Build æ TypeScript Lint.
+- **ÍÇáÉ ŞÇÚÏÉ ÇáÈíÇäÇÊ:** ÊİÚíá Migrations 47 æ 48 æ 49 ÈäÌÇÍ İí SQLite.
+- **ÇáãíÒÇÊ ÇáãÚÊãÏÉ ÑÓãíÇğ:**
+  1. ? N-to-M BOQ Item to Schedule Activities Allocation Link (Migration 47).
+  2. ? Advanced Milestone Ladders & Rules of Credit Stepped Earning Engine (Migration 48).
+  3. ? Multi-Method ETC / EAC & TCPI PMI Forecasting Engine.
+  4. ? Complete Time-Phased Cost Phasing & S-Curve Distribution Engine (Migration 49).

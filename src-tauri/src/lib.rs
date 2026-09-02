@@ -211,7 +211,7 @@ fn backup_workspace(
         if companion.exists() {
             let companion_target = PathBuf::from(format!("{}{}", target.display(), suffix));
             fs::copy(companion, companion_target).map_err(|error| error.to_string())?;
-        },
+        }
     }
     if attachments.exists() {
         copy_directory(attachments, &backup_directory.join("attachments"))?;
@@ -1905,7 +1905,7 @@ pub fn run() {
         },
         tauri_plugin_sql::Migration {
             version: 47,
-            description: "add_boq_item_to_schedule_activity_allocation_links",
+            description: "add_boq_item_activities_allocation_link",
             sql: r#"
       CREATE TABLE IF NOT EXISTS boq_item_activities (
         id TEXT PRIMARY KEY,
@@ -1921,13 +1921,12 @@ pub fn run() {
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
         FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE CASCADE,
-        FOREIGN KEY (activity_id) REFERENCES schedules(id) ON DELETE CASCADE,
+        FOREIGN KEY (activity_id) REFERENCES schedule_activities(id) ON DELETE CASCADE,
         UNIQUE(boq_item_id, activity_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_boq_item ON boq_item_activities(boq_item_id);
-      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_activity ON boq_item_activities(activity_id);
       CREATE INDEX IF NOT EXISTS idx_boq_item_activities_project ON boq_item_activities(project_id);
-      
+      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_boq ON boq_item_activities(boq_item_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_item_activities_act ON boq_item_activities(activity_id);
       CREATE TRIGGER IF NOT EXISTS boq_item_activities_updated_at
       AFTER UPDATE ON boq_item_activities
       FOR EACH ROW
@@ -1940,8 +1939,61 @@ pub fn run() {
         tauri_plugin_sql::Migration {
             version: 48,
             description: "add_milestone_ladder_templates_and_stepped_earning",
-    kind: tauri_plugin_sql::MigrationKind::Up,
-},
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS milestone_ladder_templates (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL,
+        discipline TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS milestone_ladder_steps (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        step_order INTEGER NOT NULL DEFAULT 1,
+        step_name TEXT NOT NULL,
+        weight_pct REAL NOT NULL,
+        requires_wir INTEGER NOT NULL DEFAULT 1,
+        requires_qa_signoff INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (template_id) REFERENCES milestone_ladder_templates(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS activity_milestone_progress (
+        id TEXT PRIMARY KEY,
+        activity_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        is_completed INTEGER NOT NULL DEFAULT 0,
+        completed_date TEXT,
+        verified_by TEXT,
+        wir_id TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (activity_id) REFERENCES schedule_activities(id) ON DELETE CASCADE,
+        FOREIGN KEY (step_id) REFERENCES milestone_ladder_steps(id) ON DELETE CASCADE,
+        UNIQUE(activity_id, step_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_milestone_ladder_steps_template ON milestone_ladder_steps(template_id);
+      CREATE INDEX IF NOT EXISTS idx_activity_milestone_prog_act ON activity_milestone_progress(activity_id);
+      CREATE TRIGGER IF NOT EXISTS milestone_ladder_templates_updated_at
+      AFTER UPDATE ON milestone_ladder_templates
+      FOR EACH ROW
+      BEGIN
+        UPDATE milestone_ladder_templates SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS activity_milestone_progress_updated_at
+      AFTER UPDATE ON activity_milestone_progress
+      FOR EACH ROW
+      BEGIN
+        UPDATE activity_milestone_progress SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
         tauri_plugin_sql::Migration {
             version: 49,
             description: "add_time_phased_cost_distribution_engine",
@@ -1958,20 +2010,8 @@ pub fn run() {
         end_date TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-        FOREIGN KEY (control_account_id) REFERENCES control_accounts(id) ON DELETE SET NULL,
-        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL,
-        FOREIGN KEY (cost_code_id) REFERENCES cost_codes(id) ON DELETE SET NULL
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       );
-      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_project
-        ON time_phased_cost_distributions(project_id);
-      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_control_account
-        ON time_phased_cost_distributions(control_account_id);
-      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_scope
-        ON time_phased_cost_distributions(project_id, boq_item_id, cost_code_id);
-      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_dates
-        ON time_phased_cost_distributions(project_id, start_date, end_date);
-
       CREATE TABLE IF NOT EXISTS time_phased_cost_periods (
         id TEXT PRIMARY KEY,
         distribution_id TEXT NOT NULL,
@@ -1986,12 +2026,9 @@ pub fn run() {
         FOREIGN KEY (distribution_id) REFERENCES time_phased_cost_distributions(id) ON DELETE CASCADE,
         UNIQUE(distribution_id, period_index)
       );
-      CREATE INDEX IF NOT EXISTS idx_time_phased_periods_distribution
-        ON time_phased_cost_periods(distribution_id, period_index);
-      CREATE INDEX IF NOT EXISTS idx_time_phased_periods_dates
-        ON time_phased_cost_periods(distribution_id, period_start, period_end);
-
-      CREATE TRIGGER IF NOT EXISTS time_phased_distributions_updated_at
+      CREATE INDEX IF NOT EXISTS idx_time_phased_dist_proj ON time_phased_cost_distributions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_time_phased_periods_dist ON time_phased_cost_periods(distribution_id);
+      CREATE TRIGGER IF NOT EXISTS time_phased_cost_distributions_updated_at
       AFTER UPDATE ON time_phased_cost_distributions
       FOR EACH ROW
       BEGIN
@@ -2000,79 +2037,6 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-            sql: r#"
-      CREATE TABLE IF NOT EXISTS milestone_ladder_templates (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL,
-        discipline TEXT,
-        description TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_milestone_ladder_template_code
-        ON milestone_ladder_templates(project_id, code);
-      CREATE INDEX IF NOT EXISTS idx_milestone_ladder_templates_project
-        ON milestone_ladder_templates(project_id);
-      CREATE INDEX IF NOT EXISTS idx_milestone_ladder_templates_discipline
-        ON milestone_ladder_templates(project_id, discipline);
-
-      CREATE TABLE IF NOT EXISTS milestone_ladder_steps (
-        id TEXT PRIMARY KEY,
-        template_id TEXT NOT NULL,
-        step_order INTEGER NOT NULL DEFAULT 1,
-        step_name TEXT NOT NULL,
-        weight_pct REAL NOT NULL,
-        requires_wir INTEGER NOT NULL DEFAULT 1,
-        requires_qa_signoff INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (template_id) REFERENCES milestone_ladder_templates(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_milestone_ladder_steps_template
-        ON milestone_ladder_steps(template_id, step_order);
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_milestone_ladder_step_order
-        ON milestone_ladder_steps(template_id, step_order);
-
-      CREATE TABLE IF NOT EXISTS activity_milestone_progress (
-        id TEXT PRIMARY KEY,
-        activity_id TEXT NOT NULL,
-        step_id TEXT NOT NULL,
-        is_completed INTEGER NOT NULL DEFAULT 0,
-        completed_date TEXT,
-        verified_by TEXT,
-        wir_id TEXT,
-        notes TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (activity_id) REFERENCES schedules(id) ON DELETE CASCADE,
-        FOREIGN KEY (step_id) REFERENCES milestone_ladder_steps(id) ON DELETE CASCADE,
-        UNIQUE(activity_id, step_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_activity_milestone_progress_activity
-        ON activity_milestone_progress(activity_id);
-      CREATE INDEX IF NOT EXISTS idx_activity_milestone_progress_step
-        ON activity_milestone_progress(step_id);
-      CREATE INDEX IF NOT EXISTS idx_activity_milestone_progress_completed
-        ON activity_milestone_progress(activity_id, is_completed);
-
-      CREATE TRIGGER IF NOT EXISTS milestone_ladder_templates_updated_at
-      AFTER UPDATE ON milestone_ladder_templates
-      FOR EACH ROW
-      BEGIN
-        UPDATE milestone_ladder_templates SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS activity_milestone_progress_updated_at
-      AFTER UPDATE ON activity_milestone_progress
-      FOR EACH ROW
-      BEGIN
-        UPDATE activity_milestone_progress SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-      END;
-    "#,
-            kind: tauri_plugin_sql::MigrationKind::Up,
-        }
     ];
 
     tauri::Builder::default()
@@ -2081,26 +2045,7 @@ pub fn run() {
                 .add_migrations("sqlite:buildtrack.db", migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![
-            save_excel_download,
-            save_document_attachment,
-            backup_local_database,
-            verify_local_backup,
-            stage_local_restore
-            ,commit_governed_import, reverse_governed_import, reverse_supplier_ap_posting, approve_supplier_invoice, settle_supplier_invoice_payment, approve_purchase_order, accept_procurement_receipt, cancel_purchase_order, amend_purchase_order,
-            approve_cost_change, approve_variation, approve_payment_certificate, settle_payment_certificate, reverse_commercial_posting, reverse_variation
-        ])
-        .setup(|app| {
-            apply_staged_restore(app.handle())?;
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

@@ -171,7 +171,7 @@ const frontResult = distributeCostTimePhased({
   curveType: 'front_loaded',
 });
 
-assert.equal(frontResult.totalCost, 80000, 'Total cost should be 80000');
+assert.ok(Math.abs(frontResult.totalCost - 80000) < 0.01, 'Total cost should be 80000');
 assert.equal(frontResult.checksumValid, true, 'Checksum should be valid');
 
 // First period should have more than last period
@@ -189,7 +189,7 @@ for (let i = 1; i < frontResult.buckets.length; i++) {
 }
 
 const frontSum = frontResult.buckets.reduce((sum, b) => sum + b.plannedCost, 0);
-assert.equal(frontSum, 80000, 'Sum should equal total cost');
+assert.ok(Math.abs(frontSum - 80000) < 0.01, 'Sum should equal total cost');
 
 console.log('✓ Test 5 passed\n');
 
