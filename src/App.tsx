@@ -2269,12 +2269,15 @@ export default function App() {
           costs={data.costs}
           costEntries={data.costEntries}
           procurement={data.procurement}
+          procurementReceipts={data.procurementReceipts}
           safety={data.safety}
           progress={data.progress}
           schedules={data.schedules}
           contracts={data.contracts}
           boqHeaders={data.boqHeaders}
           boqItems={data.boqItems}
+          contractSovLines={data.contractSovLines}
+          controlAccounts={data.controlAccounts}
           cashFlow={data.cashFlow}
           subInvoices={data.subInvoices}
           clientInvoices={data.clientInvoices}
