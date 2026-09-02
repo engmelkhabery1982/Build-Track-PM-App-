@@ -65,7 +65,7 @@ const zeroProgress = calculateMultiMethodEAC({
 assert.equal(zeroProgress.cpi, 1.0, 'Zero progress: CPI should default to 1.0');
 assert.equal(zeroProgress.spi, 0, 'Zero progress: SPI should be 0 (EV/PV = 0/100K)');
 assert.equal(zeroProgress.methods.budget_rate.eac, 1000000, 'Zero progress: Budget Rate EAC should equal BAC');
-assert.ok(Math.abs(zeroProgress.tcpiBac - 0) < 0.001, `Zero progress: TCPI to BAC should be 0, got ${zeroProgress.tcpiBac}`);
+assert.ok(Math.abs(zeroProgress.tcpiBac - 1.0) < 0.001, `Zero progress: TCPI to BAC should be 1.0 (need to earn BAC with remaining BAC), got ${zeroProgress.tcpiBac}`);
 console.log('✓ Zero progress edge case passed');
 
 // Completed project (EV = BAC)
