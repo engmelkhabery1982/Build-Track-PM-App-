@@ -1176,6 +1176,26 @@ export interface EACMethodResult {
   vacPct: number;
 }
 
+export type CostCurveType = 'linear' | 'bell_curve' | 'front_loaded' | 'back_loaded' | 's_curve' | 'custom';
+
+export interface TimePhasedCostBucket {
+  periodIndex: number;
+  periodStart: string;
+  periodEnd: string;
+  weightPct: number;
+  plannedCost: number;
+  cumulativePlannedCost: number;
+  actualCost?: number;
+  cumulativeActualCost?: number;
+}
+
+export interface CostPhasingResult {
+  totalCost: number;
+  curveType: CostCurveType;
+  buckets: TimePhasedCostBucket[];
+  checksumValid: boolean;
+}
+
 export interface MultiMethodEACSummary {
   bac: number;
   ev: number;

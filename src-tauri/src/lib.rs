@@ -1940,6 +1940,65 @@ pub fn run() {
         tauri_plugin_sql::Migration {
             version: 48,
             description: "add_milestone_ladder_templates_and_stepped_earning",
+        },
+        tauri_plugin_sql::Migration {
+            version: 49,
+            description: "add_time_phased_cost_distribution_engine",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS time_phased_cost_distributions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        control_account_id TEXT,
+        boq_item_id TEXT,
+        cost_code_id TEXT,
+        curve_type TEXT NOT NULL DEFAULT 'linear',
+        total_cost REAL NOT NULL DEFAULT 0,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (control_account_id) REFERENCES control_accounts(id) ON DELETE SET NULL,
+        FOREIGN KEY (boq_item_id) REFERENCES boq_items(id) ON DELETE SET NULL,
+        FOREIGN KEY (cost_code_id) REFERENCES cost_codes(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_project
+        ON time_phased_cost_distributions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_control_account
+        ON time_phased_cost_distributions(control_account_id);
+      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_scope
+        ON time_phased_cost_distributions(project_id, boq_item_id, cost_code_id);
+      CREATE INDEX IF NOT EXISTS idx_time_phased_distributions_dates
+        ON time_phased_cost_distributions(project_id, start_date, end_date);
+
+      CREATE TABLE IF NOT EXISTS time_phased_cost_periods (
+        id TEXT PRIMARY KEY,
+        distribution_id TEXT NOT NULL,
+        period_index INTEGER NOT NULL DEFAULT 0,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        planned_cost REAL NOT NULL DEFAULT 0,
+        actual_cost REAL NOT NULL DEFAULT 0,
+        forecast_cost REAL NOT NULL DEFAULT 0,
+        weight_pct REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (distribution_id) REFERENCES time_phased_cost_distributions(id) ON DELETE CASCADE,
+        UNIQUE(distribution_id, period_index)
+      );
+      CREATE INDEX IF NOT EXISTS idx_time_phased_periods_distribution
+        ON time_phased_cost_periods(distribution_id, period_index);
+      CREATE INDEX IF NOT EXISTS idx_time_phased_periods_dates
+        ON time_phased_cost_periods(distribution_id, period_start, period_end);
+
+      CREATE TRIGGER IF NOT EXISTS time_phased_distributions_updated_at
+      AFTER UPDATE ON time_phased_cost_distributions
+      FOR EACH ROW
+      BEGIN
+        UPDATE time_phased_cost_distributions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
             sql: r#"
       CREATE TABLE IF NOT EXISTS milestone_ladder_templates (
         id TEXT PRIMARY KEY,

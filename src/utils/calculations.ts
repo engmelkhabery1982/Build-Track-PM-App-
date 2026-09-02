@@ -54,6 +54,130 @@ export function calculateBOQActivityAllocation(
   };
 }
 
+export function distributeCostTimePhased(params: {
+  totalCost: number;
+  periodsCount: number;
+  curveType: CostCurveType;
+  periodDates?: Array<{ start: string; end: string }>;
+}): CostPhasingResult {
+  const { totalCost, periodsCount, curveType, periodDates } = params;
+
+  if (periodsCount <= 0) {
+    return {
+      totalCost,
+      curveType,
+      buckets: [],
+      checksumValid: false,
+    };
+  }
+
+  // Generate raw weights based on curve type
+  const rawWeights: number[] = [];
+
+  switch (curveType) {
+    case 'linear':
+      // Equal distribution across all periods
+      for (let i = 0; i < periodsCount; i++) {
+        rawWeights.push(1.0);
+      }
+      break;
+
+    case 'bell_curve':
+      // Normal distribution (Gaussian) centered at middle period
+      const mean = (periodsCount - 1) / 2;
+      const stdDev = periodsCount / 6; // ~99.7% within range
+      for (let i = 0; i < periodsCount; i++) {
+        const exponent = -Math.pow(i - mean, 2) / (2 * Math.pow(stdDev, 2));
+        rawWeights.push(Math.exp(exponent));
+      }
+      break;
+
+    case 'front_loaded':
+      // Exponential decay: higher at start, lower at end
+      for (let i = 0; i < periodsCount; i++) {
+        rawWeights.push(Math.exp(-2 * i / periodsCount));
+      }
+      break;
+
+    case 'back_loaded':
+      // Exponential growth: lower at start, higher at end
+      for (let i = 0; i < periodsCount; i++) {
+        rawWeights.push(Math.exp(2 * i / periodsCount) - 1);
+      }
+      break;
+
+    case 's_curve':
+      // Logistic S-curve: slow start, rapid middle, slow end
+      for (let i = 0; i < periodsCount; i++) {
+        const t = i / (periodsCount - 1); // Normalize to [0, 1]
+        const k = 10; // Steepness factor
+        const x = k * (t - 0.5);
+        const sigmoid = 1 / (1 + Math.exp(-x));
+        // Use derivative of sigmoid for distribution weights
+        rawWeights.push(sigmoid * (1 - sigmoid) * k);
+      }
+      break;
+
+    case 'custom':
+    default:
+      // Fallback to linear
+      for (let i = 0; i < periodsCount; i++) {
+        rawWeights.push(1.0);
+      }
+      break;
+  }
+
+  // Normalize weights to sum to 1.0
+  const totalWeight = rawWeights.reduce((sum, w) => sum + w, 0);
+  const normalizedWeights = rawWeights.map(w => w / totalWeight);
+
+  // Calculate planned costs with penny-perfect reconciliation
+  const buckets: TimePhasedCostBucket[] = [];
+  let cumulativePlanned = 0;
+  let allocatedTotal = 0;
+
+  for (let i = 0; i < periodsCount; i++) {
+    const weightPct = normalizedWeights[i] * 100;
+    
+    // Calculate planned cost for this period
+    let plannedCost: number;
+    if (i === periodsCount - 1) {
+      // Last period: allocate remaining to ensure exact total
+      plannedCost = totalCost - allocatedTotal;
+    } else {
+      // Round to 2 decimal places (penny precision)
+      plannedCost = Math.round(normalizedWeights[i] * totalCost * 100) / 100;
+      allocatedTotal += plannedCost;
+    }
+
+    cumulativePlanned += plannedCost;
+
+    // Generate period dates if not provided
+    const periodStart = periodDates?.[i]?.start || `Period ${i + 1} Start`;
+    const periodEnd = periodDates?.[i]?.end || `Period ${i + 1} End`;
+
+    buckets.push({
+      periodIndex: i,
+      periodStart,
+      periodEnd,
+      weightPct: Math.round(weightPct * 100) / 100,
+      plannedCost: Math.round(plannedCost * 100) / 100,
+      cumulativePlannedCost: Math.round(cumulativePlanned * 100) / 100,
+    });
+  }
+
+  // Verify checksum: total of all planned costs must equal totalCost
+  const sumPlannedCosts = buckets.reduce((sum, b) => sum + b.plannedCost, 0);
+  const checksumValid = Math.abs(sumPlannedCosts - totalCost) < 0.01;
+
+  return {
+    totalCost: Math.round(totalCost * 100) / 100,
+    curveType,
+    buckets,
+    checksumValid,
+  };
+}
+
 export function calculateMultiMethodEAC(params: {
   bac: number;
   ev: number;
