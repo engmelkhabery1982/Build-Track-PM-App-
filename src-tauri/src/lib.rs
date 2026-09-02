@@ -2013,7 +2013,7 @@ pub fn run() {
       END;
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
-        },
+        }
     ];
 
     tauri::Builder::default()
