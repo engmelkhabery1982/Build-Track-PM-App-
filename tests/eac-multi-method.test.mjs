@@ -40,14 +40,14 @@ assert.equal(benchmark.methods.bottom_up.eac, 1100000, 'Bottom-Up EAC should be 
 
 // TCPI calculations
 // TCPI to BAC = (BAC - EV) / (BAC - AC) = (1M - 400K) / (1M - 500K) = 600K / 500K = 1.2
-assert.equal(benchmark.tcpiBac, 1.2, 'TCPI to BAC should be 1.2');
+assert.ok(Math.abs(benchmark.tcpiBac - 1.2) < 0.001, `TCPI to BAC should be 1.2, got ${benchmark.tcpiBac}`);
 
 // Recommendation: SPI=0.8 < 0.85 AND CPI=0.8 < 0.9 => composite_cpi_spi
 assert.equal(benchmark.recommendedMethod, 'composite_cpi_spi', 'Should recommend composite method for severe issues');
 assert.equal(benchmark.recommendedEAC, 1437500, 'Recommended EAC should be 1.4375M');
 
 // TCPI to recommended EAC = (BAC - EV) / (EAC - AC) = 600K / (1437.5K - 500K) = 600K / 937.5K ≈ 0.64
-assert.ok(Math.abs(benchmark.tcpiEac - 0.64) < 0.01, 'TCPI to EAC should be ~0.64');
+assert.ok(Math.abs(benchmark.tcpiEac - 0.64) < 0.001, `TCPI to EAC should be ~0.64, got ${benchmark.tcpiEac}`);
 
 console.log('✓ Test 1 passed\n');
 
@@ -65,7 +65,7 @@ const zeroProgress = calculateMultiMethodEAC({
 assert.equal(zeroProgress.cpi, 1.0, 'Zero progress: CPI should default to 1.0');
 assert.equal(zeroProgress.spi, 0, 'Zero progress: SPI should be 0 (EV/PV = 0/100K)');
 assert.equal(zeroProgress.methods.budget_rate.eac, 1000000, 'Zero progress: Budget Rate EAC should equal BAC');
-assert.equal(zeroProgress.tcpiBac, 0, 'Zero progress: TCPI to BAC should be 0 (division guard)');
+assert.ok(Math.abs(zeroProgress.tcpiBac - 0) < 0.001, `Zero progress: TCPI to BAC should be 0, got ${zeroProgress.tcpiBac}`);
 console.log('✓ Zero progress edge case passed');
 
 // Completed project (EV = BAC)
@@ -76,7 +76,7 @@ const completed = calculateMultiMethodEAC({
   pv: 1000000,
 });
 
-assert.equal(completed.cpi, 1.053, 'Completed: CPI should be ~1.053 (1M/950K)');
+assert.ok(Math.abs(completed.cpi - 1.053) < 0.001, `Completed: CPI should be ~1.053, got ${completed.cpi}`);
 assert.equal(completed.spi, 1.0, 'Completed: SPI should be 1.0');
 assert.equal(completed.methods.budget_rate.etc, 0, 'Completed: ETC should be 0');
 assert.equal(completed.methods.budget_rate.eac, 950000, 'Completed: EAC should equal AC');
@@ -91,7 +91,7 @@ const divisionGuard = calculateMultiMethodEAC({
   pv: 500000,
 });
 
-assert.equal(divisionGuard.tcpiBac, 0, 'Division guard: TCPI to BAC should be 0 when BAC=AC');
+assert.ok(Math.abs(divisionGuard.tcpiBac - 0) < 0.001, `Division guard: TCPI to BAC should be 0, got ${divisionGuard.tcpiBac}`);
 console.log('✓ Division by zero resilience passed\n');
 
 // Test 3: Bottom-up ETC override
@@ -126,8 +126,8 @@ const goodPerformance = calculateMultiMethodEAC({
   pv: 500000,
 });
 
-assert.equal(goodPerformance.cpi, 1.1, 'Good performance: CPI should be 1.1');
-assert.equal(goodPerformance.spi, 1.1, 'Good performance: SPI should be 1.1');
+assert.ok(Math.abs(goodPerformance.cpi - 1.1) < 0.001, `Good performance: CPI should be 1.1, got ${goodPerformance.cpi}`);
+assert.ok(Math.abs(goodPerformance.spi - 1.1) < 0.001, `Good performance: SPI should be 1.1, got ${goodPerformance.spi}`);
 assert.equal(goodPerformance.recommendedMethod, 'budget_rate', 'Good performance should recommend budget_rate');
 console.log('✓ Good performance recommendation passed');
 
@@ -139,8 +139,8 @@ const costOverrun = calculateMultiMethodEAC({
   pv: 500000,
 });
 
-assert.equal(costOverrun.cpi, 0.9, 'Cost overrun: CPI should be 0.9');
-assert.equal(costOverrun.spi, 0.9, 'Cost overrun: SPI should be 0.9');
+assert.ok(Math.abs(costOverrun.cpi - 0.9) < 0.001, `Cost overrun: CPI should be 0.9, got ${costOverrun.cpi}`);
+assert.ok(Math.abs(costOverrun.spi - 0.9) < 0.001, `Cost overrun: SPI should be 0.9, got ${costOverrun.spi}`);
 assert.equal(costOverrun.recommendedMethod, 'cpi_extrapolated', 'Cost overrun should recommend cpi_extrapolated');
 console.log('✓ Cost overrun recommendation passed');
 
@@ -152,8 +152,8 @@ const severeIssues = calculateMultiMethodEAC({
   pv: 500000,
 });
 
-assert.equal(severeIssues.cpi, 0.7, 'Severe issues: CPI should be 0.7');
-assert.equal(severeIssues.spi, 0.7, 'Severe issues: SPI should be 0.7');
+assert.ok(Math.abs(severeIssues.cpi - 0.7) < 0.001, `Severe issues: CPI should be 0.7, got ${severeIssues.cpi}`);
+assert.ok(Math.abs(severeIssues.spi - 0.7) < 0.001, `Severe issues: SPI should be 0.7, got ${severeIssues.spi}`);
 assert.equal(severeIssues.recommendedMethod, 'composite_cpi_spi', 'Severe issues should recommend composite_cpi_spi');
 console.log('✓ Severe issues recommendation passed');
 
@@ -165,8 +165,8 @@ const scheduleDelay = calculateMultiMethodEAC({
   pv: 500000,
 });
 
-assert.equal(scheduleDelay.cpi, 0.909, 'Schedule delay: CPI should be ~0.909');
-assert.equal(scheduleDelay.spi, 0.8, 'Schedule delay: SPI should be 0.8');
+assert.ok(Math.abs(scheduleDelay.cpi - 0.909) < 0.001, `Schedule delay: CPI should be ~0.909, got ${scheduleDelay.cpi}`);
+assert.ok(Math.abs(scheduleDelay.spi - 0.8) < 0.001, `Schedule delay: SPI should be 0.8, got ${scheduleDelay.spi}`);
 assert.equal(scheduleDelay.recommendedMethod, 'composite_cpi_spi', 'Schedule delay with marginal cost should recommend composite');
 console.log('✓ Schedule delay recommendation passed\n');
 

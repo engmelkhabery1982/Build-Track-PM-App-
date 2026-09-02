@@ -177,8 +177,8 @@ export function calculateMultiMethodEAC(params: {
     cpi: Math.round(cpi * 1000) / 1000,
     spi: Math.round(spi * 1000) / 1000,
     methods,
-    tcpiBac: Math.round(tcpiBac * 1000) / 1000,
-    tcpiEac: Math.round(finalTcpiEac * 1000) / 1000,
+    tcpiBac: Number((Math.round(tcpiBac * 1000) / 1000).toFixed(3)),
+    tcpiEac: Number((Math.round(finalTcpiEac * 1000) / 1000).toFixed(3)),
     recommendedMethod,
     recommendedEAC: Math.round(recommendedEAC * 100) / 100,
   };
