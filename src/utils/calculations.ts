@@ -105,7 +105,7 @@ export function calculateMultiMethodEAC(params: {
 
   // TCPI calculations with division-by-zero guards
   // TCPI to BAC = (BAC - EV) / (BAC - AC)
-  const tcpiBac = (bac - ac) !== 0 ? (bac - ev) / (bac - ac) : (ev === 0 && ac === 0 ? 0 : 1);
+  const tcpiBac = (bac - ac) !== 0 ? (bac - ev) / (bac - ac) : 0;
 
   // TCPI to EAC: Use recommended EAC (determined below)
   // For now, use CPI-based EAC as default for TCPI calculation
