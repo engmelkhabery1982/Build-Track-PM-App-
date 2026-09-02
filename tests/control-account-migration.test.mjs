@@ -129,6 +129,11 @@ test('Control Account total is traceable and does not double-count an accepted G
     scope_quantity: 100, control_budget: 1000, planned_value: 400, earned_value: 200, actual_cost: 350,
     open_commitment: 400, cost_to_complete: 650, forecast_at_completion: 1000, source_count: 10,
     data_date: '2026-06-30', control_status: 'Ready', source_summary: 'Activities 1 · WIR 2 · Costs 3 · PO 2 · GRN 2',
+    usageVariance: 800,
+    rateVariance: -150,
+    mixVariance: 0,
+    productivityVariance: -800,
+    efficiencyVariance: -800,
   });
 });
 
