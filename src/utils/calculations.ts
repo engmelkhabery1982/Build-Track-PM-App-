@@ -84,7 +84,8 @@ export function calculateMilestoneProgress(
 
   for (const step of sortedSteps) {
     const progress = completionMap.get(step.id);
-    const isCompleted = progress?.is_completed === true || progress?.is_completed === 1 || progress?.is_completed === '1';
+    const isCompleted = progress?.is_completed === true || 
+                        progress?.is_completed?.toString() === '1';
 
     if (isCompleted) {
       earnedProgressPct += step.weight_pct || 0;
