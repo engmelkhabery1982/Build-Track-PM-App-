@@ -70,7 +70,7 @@ export function calculateControlAccountSummary(input: {
     plannedRate,
   });
   const effVar = calculateEfficiencyVariance({
-    actualQty,
+    plannedOutput: Number(account.planned_output) || plannedQty,
     actualOutput: Number(account.actual_output) || actualQty,
     standardQtyPerOutput: Number(account.standard_qty_per_output) || (plannedQty > 0 ? 1 : 0),
     plannedRate,

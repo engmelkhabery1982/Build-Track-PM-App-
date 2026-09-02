@@ -42,14 +42,14 @@ export interface ProductivityVarianceResult {
 }
 
 export interface EfficiencyInput {
-  actualQty: number;
+  plannedOutput: number;
   actualOutput: number;
   standardQtyPerOutput: number;
   plannedRate: number;
 }
 
 export interface EfficiencyVarianceResult {
-  actualQty: number;
+  plannedOutput: number;
   actualOutput: number;
   standardQtyPerOutput: number;
   plannedRate: number;
@@ -137,21 +137,22 @@ export function calculateProductivityVariance(
 /**
  * Calculates efficiency variance using standard quantity per output unit.
  *
- * Efficiency Variance = (Actual Qty - Standard Qty for Actual Output) * Planned Rate
+ * Efficiency Variance = (Actual Output * standardQtyPerOutput - Planned Output * standardQtyPerOutput) * Planned Rate
  */
 export function calculateEfficiencyVariance(
   input: EfficiencyInput
 ): EfficiencyVarianceResult {
-  const actualQty = Number(input?.actualQty) || 0;
+  const plannedOutput = Number(input?.plannedOutput) || 0;
   const actualOutput = Number(input?.actualOutput) || 0;
   const standardQtyPerOutput = Number(input?.standardQtyPerOutput) || 0;
   const plannedRate = Number(input?.plannedRate) || 0;
 
-  const standardQtyForActualOutput = actualOutput * standardQtyPerOutput;
-  const efficiencyVariance = money((actualQty - standardQtyForActualOutput) * plannedRate);
+  const actualStandardQty = actualOutput * standardQtyPerOutput;
+  const plannedStandardQty = plannedOutput * standardQtyPerOutput;
+  const efficiencyVariance = money((actualStandardQty - plannedStandardQty) * plannedRate);
 
   return {
-    actualQty,
+    plannedOutput,
     actualOutput,
     standardQtyPerOutput,
     plannedRate,
