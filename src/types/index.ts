@@ -1032,6 +1032,68 @@ export interface AppUser {
   created_at: string;
 }
 
+export interface Party {
+  id: string;
+  party_code: string;
+  legal_name: string;
+  trading_name: string;
+  party_type: 'Client' | 'Supplier' | 'Subcontractor' | 'Consultant' | string;
+  tax_number: string;
+  registration_number: string;
+  payment_terms_days: number;
+  phone: string;
+  email: string;
+  address: string;
+  status: 'Active' | 'Inactive' | string;
+  notes: string;
+  created_at: string;
+}
+
+export interface PartyContact {
+  id: string;
+  party_id: string;
+  contact_name: string;
+  job_title: string;
+  phone: string;
+  email: string;
+  is_primary: boolean;
+  status: string;
+  created_at: string;
+}
+
+export interface RateHistory {
+  id: string;
+  party_id: string;
+  item_code: string;
+  item_description: string;
+  unit: string;
+  unit_rate: number;
+  currency: string;
+  effective_date: string | null;
+  source_project_id: string | null;
+  source_contract_id: string | null;
+  source_reference: string;
+  status: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface ReportTemplate {
+  id: string;
+  template_name: string;
+  report_type: 'Client Invoice' | 'Subcontractor Invoice' | 'WIR' | 'Variation Order' | 'Cost Report' | 'Cash Forecast' | string;
+  title: string;
+  subtitle: string;
+  logo_data_url: string;
+  selected_fields: string[];
+  footer_text: string;
+  accent_color: string;
+  page_size?: 'A4' | 'Letter';
+  orientation?: 'portrait' | 'landscape';
+  show_generated_at?: boolean;
+  show_signatures?: boolean;
+  created_at: string;
+}
 export type ViewKey =
   | 'dashboard'
   | 'alerts'
