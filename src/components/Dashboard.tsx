@@ -160,24 +160,24 @@ export function Dashboard({
     let productivityVariance = 0;
     let efficiencyVariance = 0;
 
-    fBOQ.forEach((boqItem) => {
+    fControlAccounts.forEach((account) => {
       const summary = calculateControlAccountSummary({
         account: {
-          id: boqItem.id,
-          boq_item_id: boqItem.id,
-          contract_id: boqItem.contract_id,
-          contract_sov_line_id: boqItem.contract_sov_line_id || boqItem.id,
+          id: account.id,
+          boq_item_id: account.boq_item_id,
+          contract_id: account.contract_id,
+          contract_sov_line_id: account.contract_sov_line_id || account.id,
           data_date: reportDate,
         },
         boqItems: fBOQ as Record<string, any>[],
-        sovLines: fBOQ as Record<string, any>[],
+        sovLines: fContractSovLines as Record<string, any>[],
         schedules: fSchedules as Record<string, any>[],
         scheduleDistributions,
         baselines: fBaselines as Record<string, any>[],
         wirEntries: fWirs as Record<string, any>[],
         costEntries: fCostEntries as Record<string, any>[],
         procurement: fProcurement as Record<string, any>[],
-        procurementReceipts: [],
+        procurementReceipts: fProcurementReceipts as Record<string, any>[],
       });
 
       usageVariance += summary.usageVariance || 0;
@@ -194,7 +194,7 @@ export function Dashboard({
       productivityVariance: Math.round(productivityVariance * 100) / 100,
       efficiencyVariance: Math.round(efficiencyVariance * 100) / 100,
     };
-  }, [fBOQ, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fCostEntries, fProcurement]);
+  }, [fControlAccounts, reportDate, fBOQ, fContractSovLines, fSchedules, scheduleDistributions, fBaselines, fWirs, fCostEntries, fProcurement, fProcurementReceipts]);
 
   const stats = useMemo(() => {
     const totalBudget = fProjects.reduce((s, p) => s + (p.budget || 0), 0);
