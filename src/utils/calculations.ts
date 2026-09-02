@@ -5,7 +5,10 @@ import type {
   BOQActivitySummary,
   MilestoneLadderStep,
   ActivityMilestoneProgress,
-  MilestoneProgressResult
+  MilestoneProgressResult,
+  EACMethod,
+  EACMethodResult,
+  MultiMethodEACSummary
 } from '../types';
 
 export function calculateBOQActivityAllocation(
