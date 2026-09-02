@@ -21,7 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\', '/')
 $rootPrefix = "$projectRoot$([System.IO.Path]::DirectorySeparatorChar)"
-$perExcerptLimit = 5200
+$perExcerptLimit = 2200
 
 function Get-SectionTerms([string]$content, [string]$heading) {
   $match = [regex]::Match($content, "(?ms)^## $([regex]::Escape($heading))\s*$\r?\n(.*?)(?=^## |\z)")
@@ -36,14 +36,14 @@ function Read-ProjectExcerpt {
   if (-not $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Blocked path outside project: $PathValue" }
   if ($fullPath -match '[\\/]\.sandbox-secrets([\\/]|$)') { throw "Blocked protected path: $PathValue" }
   if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { throw "File not found: $PathValue" }
-  $content = Get-Content -LiteralPath $fullPath -Raw
+  $content = Get-Content -LiteralPath $fullPath -Raw -Encoding utf8
   if (-not $Anchors.Count) { throw "No Source anchors were supplied for: $PathValue" }
   $sections = New-Object System.Collections.Generic.List[string]
   foreach ($anchor in $Anchors) {
     $index = $content.IndexOf($anchor, [System.StringComparison]::OrdinalIgnoreCase)
     if ($index -lt 0) { throw "Source anchor '$anchor' was not found in: $PathValue" }
-    $start = [Math]::Max(0, $index - 1200)
-    $length = [Math]::Min(2800, $content.Length - $start)
+    $start = [Math]::Max(0, $index - 500)
+    $length = [Math]::Min(1400, $content.Length - $start)
     $sections.Add($content.Substring($start, $length))
   }
   $content = ($sections | Select-Object -Unique) -join "`n[... omitted ...]`n"
@@ -52,14 +52,16 @@ function Read-ProjectExcerpt {
 }
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Ollama is not available.' }
-$taskText = Get-Content -LiteralPath $TaskFile -Raw
+$taskText = Get-Content -LiteralPath $TaskFile -Raw -Encoding utf8
 $targets = Get-SectionTerms $taskText 'Target Files'
 $anchors = Get-SectionTerms $taskText 'Source anchors'
 if (-not $targets.Count) { throw 'Work order has no Target Files.' }
 if (-not $anchors.Count) { throw 'Work order has no Source anchors.' }
 if (@($SourceFile | Where-Object { $_ -notin $targets }).Count) { throw 'Only Target Files may be supplied to the implementation agent.' }
 $task = [pscustomobject]@{ Path = $TaskFile; Content = $taskText }
-$charter = Read-ProjectExcerpt $ProjectCharterFile -Anchors @('## الهدف التشغيلي', '## نموذج المشروع الذي لا يجوز كسره', '## طريقة العمل')
+# Keep launcher literals ASCII-only: Windows PowerShell 5.1 can parse a
+# UTF-8-without-BOM script using the legacy code page when the watcher starts.
+$charter = Read-ProjectExcerpt $ProjectCharterFile -Anchors @('BuildTrack')
 $sources = @($SourceFile | ForEach-Object {
   $sourcePath = $_
   $normalizedPath = $sourcePath.Replace('\', '/')
@@ -101,7 +103,7 @@ $revisionInstruction
 6. الـpatch مسودة للمراجعة؛ لا يحذف سلوكًا قائمًا ولا يعيد كتابة ملف كامل. لا تذكر أو تستخدم أي مصطلح محظور في بطاقة العمل حتى في الشرح.
 "@
 
-$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 4096; num_predict = 450; num_thread = 12; temperature = 0.1 } } | ConvertTo-Json -Depth 5
+$body = @{ model = $Model; prompt = $prompt; stream = $false; keep_alive = '0'; options = @{ num_ctx = 3072; num_predict = 250; num_thread = 12; temperature = 0.1 } } | ConvertTo-Json -Depth 5
 try {
   $response = Invoke-RestMethod -Uri 'http://localhost:11434/api/generate' -Method Post -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec $TimeoutSeconds
 } catch {

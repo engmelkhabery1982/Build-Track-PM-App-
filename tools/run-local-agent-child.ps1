@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$payload = Get-Content -LiteralPath $ParametersPath -Raw | ConvertFrom-Json
+$payload = Get-Content -LiteralPath $ParametersPath -Raw -Encoding utf8 | ConvertFrom-Json
 $parameters = @{}
 foreach ($property in $payload.PSObject.Properties) { $parameters[$property.Name] = $property.Value }
 & $ScriptPath @parameters

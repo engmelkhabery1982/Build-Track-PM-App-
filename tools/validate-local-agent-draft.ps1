@@ -31,8 +31,8 @@ function Invoke-CheckedCommand([string]$command, [string]$workingDirectory, [str
   if ($LASTEXITCODE -ne 0) { throw "Validation command failed ($LASTEXITCODE): $command" }
 }
 
-$task = Get-Content -LiteralPath $TaskFile -Raw
-$draft = Get-Content -LiteralPath $DraftFile -Raw
+$task = Get-Content -LiteralPath $TaskFile -Raw -Encoding utf8
+$draft = Get-Content -LiteralPath $DraftFile -Raw -Encoding utf8
 $targets = Get-Terms $task 'Target Files'
 $tests = Get-Terms $task 'Acceptance test commands'
 if (-not $targets.Count) { throw 'Deterministic gate rejected: work order has no Target Files.' }
@@ -58,7 +58,7 @@ try {
   Push-Location $worktreePath
   try { & git.exe apply $patchPath } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) { throw 'Deterministic gate rejected: patch could not be applied in disposable worktree.' }
-  $worktreePackage = Get-Content -LiteralPath (Join-Path $worktreePath 'package.json') -Raw | ConvertFrom-Json
+  $worktreePackage = Get-Content -LiteralPath (Join-Path $worktreePath 'package.json') -Raw -Encoding utf8 | ConvertFrom-Json
   $lintCommand = if ($worktreePackage.scripts.lint) { 'npm run lint' } else { 'npx tsc -b --pretty false' }
   Invoke-CheckedCommand $lintCommand $worktreePath $logPath
   Invoke-CheckedCommand 'npm run build' $worktreePath $logPath

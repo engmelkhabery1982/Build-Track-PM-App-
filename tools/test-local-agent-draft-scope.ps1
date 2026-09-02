@@ -12,8 +12,8 @@ function Get-Terms([string]$content, [string]$heading) {
   return @([regex]::Matches($match.Groups[1].Value, '`([^`]+)`') | ForEach-Object { $_.Groups[1].Value.Trim() } | Where-Object { $_ })
 }
 
-$task = Get-Content -LiteralPath $TaskFile -Raw
-$draft = Get-Content -LiteralPath $DraftFile -Raw
+$task = Get-Content -LiteralPath $TaskFile -Raw -Encoding utf8
+$draft = Get-Content -LiteralPath $DraftFile -Raw -Encoding utf8
 $patchMatch = [regex]::Match($draft, '(?ms)```diff\s*(.*?)(?:^```\s*$)')
 $patch = if ($patchMatch.Success) { $patchMatch.Groups[1].Value } else { $draft }
 $required = Get-Terms $task 'Required scope terms'

@@ -81,17 +81,20 @@ try {
   $fileName = Split-Path -Leaf $fullTaskPath
   $processingPath = Join-Path $processingRoot $fileName
   Move-Item -LiteralPath $fullTaskPath -Destination $processingPath -Force
-  $content = Get-Content -LiteralPath $processingPath -Raw
+  $content = Get-Content -LiteralPath $processingPath -Raw -Encoding utf8
   $title = [regex]::Match($content, '(?m)^##\s+(.+?)\s*$').Groups[1].Value.Trim()
   $sourceFiles = Get-SectionTerms $content 'Target Files'
   $requiredTerms = Get-SectionTerms $content 'Required scope terms'
   if ([string]::IsNullOrWhiteSpace($title) -or $title -like '<*') { throw 'Missing concrete feature heading.' }
   if (-not $sourceFiles.Count) { throw 'Work order has no Target Files.' }
   if (-not $requiredTerms.Count) { throw 'Work order has no Required scope terms.' }
+  $installedModels = (& ollama list 2>$null | Out-String)
+  $reviewerModel = if ($installedModels -match '(?m)^llama3\.2:3b\s+') { 'llama3.2:3b' } elseif ($installedModels -match '(?m)^llama3\.1:8b\s+') { 'llama3.1:8b' } else { '' }
+  if (-not $reviewerModel) { throw 'No independent local reviewer is installed; work order was not sent to Qwen.' }
 
   $runLog = Join-Path $runRoot "$((Get-Date).ToString('yyyyMMdd-HHmmss'))-work-order-$($fileName -replace '[^a-zA-Z0-9_.-]', '_').log"
   "[$(Get-Date -Format s)] Started: $title" | Set-Content -LiteralPath $runLog -Encoding utf8
-  $draftOutput = Invoke-BoundedLocalAgent (Join-Path $PSScriptRoot 'invoke-ollama-implementation-draft.ps1') @{ Feature = $title; TaskFile = $processingPath; SourceFile = $sourceFiles; TimeoutSeconds = 210 } 240 'qwen2.5-coder:7b' $runLog
+  $draftOutput = Invoke-BoundedLocalAgent (Join-Path $PSScriptRoot 'invoke-ollama-implementation-draft.ps1') @{ Feature = $title; TaskFile = $processingPath; SourceFile = $sourceFiles; TimeoutSeconds = 135 } 165 'qwen2.5-coder:7b' $runLog
   $draftPath = $draftOutput | Select-Object -Last 1
   "[$(Get-Date -Format s)] Qwen draft: $draftPath" | Add-Content -LiteralPath $runLog -Encoding utf8
   try {
@@ -106,9 +109,9 @@ try {
     "[$(Get-Date -Format s)] Rejected by deterministic gate." | Add-Content -LiteralPath $runLog -Encoding utf8
     exit 1
   }
-  # Keep CPU/RAM use inside the device budget. This lightweight reviewer is a
-  # second gate only; the deterministic gate above remains the acceptance authority.
-  $reviewOutput = Invoke-BoundedLocalAgent (Join-Path $PSScriptRoot 'invoke-ollama-phase-review.ps1') @{ Phase = "$title — lightweight draft challenge"; ReviewFile = @($sourceFiles + $draftPath); Model = 'qwen2.5-coder:1.5b-base'; Role = 'Lightweight Draft Reviewer'; TimeoutSeconds = 120; SaveResult = $true } 150 'qwen2.5-coder:1.5b-base' $runLog
+  # One reviewer runs only after Qwen has unloaded. Prefer the 3B reviewer
+  # after its download; the installed Q4 8B model is the safe sequential fallback.
+  $reviewOutput = Invoke-BoundedLocalAgent (Join-Path $PSScriptRoot 'invoke-ollama-phase-review.ps1') @{ Phase = "$title — independent draft challenge"; ReviewFile = @($sourceFiles + $draftPath); Model = $reviewerModel; Role = 'Governance Challenger'; TimeoutSeconds = 120; SaveResult = $true } 150 $reviewerModel $runLog
   $reviewPath = $reviewOutput | Select-Object -Last 1
   $resultPath = Join-Path $resultRoot "$($fileName).result.md"
   @('# Local work order ready for Codex review', '', "- Work order: $fileName", "- Draft: $draftPath", "- Independent review: $reviewPath", '- Result: No source, database, or Git file was changed. Codex must inspect the patch and run acceptance tests before integration.') | Set-Content -LiteralPath $resultPath -Encoding utf8
