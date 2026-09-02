@@ -74,6 +74,21 @@ export interface BaselineActivityVariance {
   currentCritical: boolean | null;
 }
 
+export type ForecastAvailability = 'Available' | 'Unavailable';
+
+/**
+ * Three-way schedule state variance holding approved baseline, current executable plan,
+ * and CPM network forecast without mutating any of the three sources.
+ */
+export interface BaselineCurrentForecastActivityVariance extends BaselineActivityVariance {
+  forecastAvailability: ForecastAvailability;
+  forecastStartDate: string | null;
+  forecastEndDate: string | null;
+  forecastDurationDays: number | null;
+  forecastFinishVarianceDays: number | null;
+  forecastCritical: boolean | null;
+}
+
 function activityIdentity(activity: Record<string, any>): string {
   // The activity code is the stable Primavera / user-facing identifier. Local
   // database IDs can change after an import or controlled re-load.
@@ -153,6 +168,49 @@ export function compareBaselineActivityDetails(
       baselineQuantity, currentQuantity, quantityVariance: baselineQuantity === null || currentQuantity === null ? null : currentQuantity - baselineQuantity,
       baselineBudget, currentBudget, budgetVariance: baselineBudget === null || currentBudget === null ? null : currentBudget - baselineBudget,
       baselineCalendar, currentCalendar, baselineCritical, currentCritical,
+    };
+  });
+}
+
+/**
+ * Compares an approved baseline, the current executable plan, and CPM network forecast
+ * for each activity without mutating historical baselines or current plan dates.
+ */
+export function compareBaselineCurrentForecastActivityDetails(
+  snapshot: BaselineActivitySnapshot[] | unknown,
+  currentActivities: Record<string, any>[],
+  forecastActivities?: Record<string, any>[] | unknown,
+): BaselineCurrentForecastActivityVariance[] {
+  const baseVariances = compareBaselineActivityDetails(snapshot, currentActivities);
+  const forecastRows = Array.isArray(forecastActivities) ? (forecastActivities as Record<string, any>[]) : [];
+  const forecastById = new Map(forecastRows.map((row) => [activityIdentity(row), row]));
+
+  return baseVariances.map((base) => {
+    const forecast = forecastById.get(base.identity);
+    const forecastStartDate = forecast?.forecast_start_date || forecast?.forecast_start || forecast?.start_date || null;
+    const forecastEndDate = forecast?.forecast_end_date || forecast?.forecast_end || forecast?.end_date || null;
+    const hasDates = Boolean(forecastStartDate || forecastEndDate);
+    const forecastAvailability: ForecastAvailability = forecast && hasDates ? 'Available' : 'Unavailable';
+    const forecastCritical = forecast
+      ? (forecast.network_critical != null ? Boolean(forecast.network_critical) : forecast.critical_path != null ? Boolean(forecast.critical_path) : null)
+      : null;
+    const forecastDurationDays = forecast
+      ? (numeric(forecast.forecast_duration_days || forecast.duration_days) || null)
+      : null;
+
+    const referenceEndDate = base.baselineEndDate || base.currentEndDate;
+    const forecastFinishVarianceDays = forecastAvailability === 'Available' && forecastEndDate && referenceEndDate
+      ? dateVarianceDays(referenceEndDate, forecastEndDate)
+      : null;
+
+    return {
+      ...base,
+      forecastAvailability,
+      forecastStartDate: forecastAvailability === 'Available' ? forecastStartDate : null,
+      forecastEndDate: forecastAvailability === 'Available' ? forecastEndDate : null,
+      forecastDurationDays: forecastAvailability === 'Available' ? forecastDurationDays : null,
+      forecastFinishVarianceDays: forecastAvailability === 'Available' ? forecastFinishVarianceDays : null,
+      forecastCritical: forecastAvailability === 'Available' ? forecastCritical : null,
     };
   });
 }
