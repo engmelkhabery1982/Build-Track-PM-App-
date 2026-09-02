@@ -10,7 +10,7 @@ import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
-  Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
+  Schedule, Contract, BOQHeader, BOQItem, ContractSOVLine, ControlAccount, ProcurementReceipt, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
   Variation, DocumentEntry, WIREntry, ProgressCorrection, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, RFIEntry, SubmittalEntry, QualityEntry,
 } from '@/types';
 
@@ -20,12 +20,15 @@ interface DashboardProps {
   costs: Cost[];
   costEntries: CostEntry[];
   procurement: Procurement[];
+  procurementReceipts: ProcurementReceipt[];
   safety: Safety[];
   progress: ProgressEntry[];
   schedules: Schedule[];
   contracts: Contract[];
   boqHeaders: BOQHeader[];
   boqItems: BOQItem[];
+  contractSovLines: ContractSOVLine[];
+  controlAccounts: ControlAccount[];
   cashFlow: CashFlowEntry[];
   subInvoices: SubcontractorInvoice[];
   clientInvoices: ClientInvoice[];
@@ -86,8 +89,8 @@ function useAnimatedNumber(target: number, duration = 800): number {
 type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety' | 'procurement' | 'documents' | 'action';
 
 export function Dashboard({
-  projects, tasks, costs, costEntries, procurement, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
+  projects, tasks, costs, costEntries, procurement, procurementReceipts, safety, progress, schedules, contracts,
+  boqHeaders, boqItems, contractSovLines, controlAccounts, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
 }: DashboardProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -117,12 +120,15 @@ export function Dashboard({
   const fCosts = pid === 'all' ? costs : costs.filter((c) => c.project_id === pid);
   const fCostEntries = pid === 'all' ? costEntries : costEntries.filter((entry) => entry.project_id === pid);
   const fProcurement = pid === 'all' ? procurement : procurement.filter((p) => p.project_id === pid);
+  const fProcurementReceipts = pid === 'all' ? procurementReceipts : procurementReceipts.filter((r) => r.project_id === pid);
   const fSafety = pid === 'all' ? safety : safety.filter((s) => s.project_id === pid);
   const fProgress = pid === 'all' ? progress : progress.filter((p) => p.project_id === pid);
   const fSchedules = pid === 'all' ? schedules : schedules.filter((s) => s.project_id === pid);
   const fContracts = pid === 'all' ? contracts : contracts.filter((c) => c.project_id === pid);
   const primaryContracts = selectPrimaryContracts(fContracts).filter((contract) => datedThroughToday(contract.signed_date || contract.start_date));
   const fBOQ = pid === 'all' ? boqItems : boqItems.filter((b) => b.project_id === pid);
+  const fContractSovLines = pid === 'all' ? contractSovLines : contractSovLines.filter((line) => line.project_id === pid);
+  const fControlAccounts = pid === 'all' ? controlAccounts : controlAccounts.filter((account) => account.project_id === pid);
   const fCashFlow = pid === 'all' ? cashFlow : cashFlow.filter((c) => c.project_id === pid);
   const fSubInv = pid === 'all' ? subInvoices : subInvoices.filter((s) => s.project_id === pid);
   const fClientInv = pid === 'all' ? clientInvoices : clientInvoices.filter((c) => c.project_id === pid);
