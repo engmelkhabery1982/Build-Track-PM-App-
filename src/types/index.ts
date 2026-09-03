@@ -1276,3 +1276,70 @@ export type ViewKey =
   | 'safety'
   | 'documents'
   | 'tracking';
+
+export interface DelayEvent {
+  id: string;
+  project_id: string;
+  schedule_id?: string;
+  variation_id?: string;
+  title: string;
+  event_code: string;
+  event_type: 'EMPLOYER_DELAY' | 'CONTRACTOR_DELAY' | 'FORCE_MAJEURE' | 'VARIATION_ADDITION';
+  responsibility: 'OWNER' | 'CONTRACTOR' | 'SHARED' | 'NEUTRAL';
+  impact_date: string;
+  delay_days: number;
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+}
+
+export interface FragnetActivity {
+  id: string;
+  event_id: string;
+  activity_code: string;
+  name: string;
+  duration_days: number;
+  predecessor_id: string;
+  successor_id: string;
+  link_type?: string;
+  lag_days?: number;
+}
+
+export interface TIACalculationResult {
+  isCritical: boolean;
+  delayDays: number;
+  availableFloatDays: number;
+  consumedFloatDays: number;
+  projectDelayDays: number;
+  excusableEotDays: number;
+  nonExcusableDays: number;
+  isCompensable: boolean;
+  impactedFinishDate: string;
+  requiresLiquidatedDamagesReview: boolean;
+}
+
+export type ActivityScheduleStatus = 'ON_TRACK' | 'DELAYED_CRITICAL' | 'DELAYED_NON_CRITICAL' | 'AHEAD' | 'COMPLETED';
+
+export interface GanttOverlayActivity {
+  id: string;
+  name: string;
+  baselineStart: string;
+  baselineFinish: string;
+  actualStart?: string;
+  actualFinish?: string;
+  forecastFinish: string;
+  totalFloat: number;
+  isCritical: boolean;
+  progressPct: number;
+  finishSlippageDays: number;
+  status: ActivityScheduleStatus;
+}
+
+export interface GanttOverlaySummary {
+  totalActivities: number;
+  completedCount: number;
+  onTrackCount: number;
+  criticalDelayedCount: number;
+  nonCriticalDelayedCount: number;
+  aheadCount: number;
+  maxSlippageDays: number;
+  activities: GanttOverlayActivity[];
+}

@@ -372,3 +372,123 @@ export function calculateMilestoneProgress(
   };
 }
 
+
+export function calculateTimeImpactAnalysis(params: {
+  baseFinishDate: string;
+  criticalPathActivityIds: string[];
+  fragnet: FragnetActivity[];
+  delayEvent: DelayEvent;
+  availableFloatDays?: number;
+}): TIACalculationResult {
+  const totalFragnetDelay = params.fragnet.reduce((sum, f) => sum + (f.duration_days || 0), 0) || params.delayEvent.delay_days || 0;
+  const floatAvailable = params.availableFloatDays ?? 0;
+  const isPredecessorOnCp = params.fragnet.some(f => params.criticalPathActivityIds.includes(f.predecessor_id)) || floatAvailable <= 0;
+
+  let projectDelayDays = 0;
+  let consumedFloatDays = 0;
+
+  if (isPredecessorOnCp) {
+    projectDelayDays = totalFragnetDelay;
+    consumedFloatDays = 0;
+  } else {
+    if (totalFragnetDelay > floatAvailable) {
+      projectDelayDays = totalFragnetDelay - floatAvailable;
+      consumedFloatDays = floatAvailable;
+    } else {
+      projectDelayDays = 0;
+      consumedFloatDays = totalFragnetDelay;
+    }
+  }
+
+  const isExcusable = params.delayEvent.responsibility === 'OWNER' || params.delayEvent.responsibility === 'NEUTRAL' || params.delayEvent.event_type === 'FORCE_MAJEURE';
+  const excusableEotDays = isExcusable ? projectDelayDays : 0;
+  const nonExcusableDays = isExcusable ? 0 : projectDelayDays;
+  const isCompensable = params.delayEvent.responsibility === 'OWNER';
+
+  const baseDate = new Date(params.baseFinishDate);
+  baseDate.setDate(baseDate.getDate() + projectDelayDays);
+  const impactedFinishDate = baseDate.toISOString().split('T')[0];
+
+  return {
+    isCritical: isPredecessorOnCp || projectDelayDays > 0,
+    delayDays: totalFragnetDelay,
+    availableFloatDays: floatAvailable,
+    consumedFloatDays,
+    projectDelayDays,
+    excusableEotDays,
+    nonExcusableDays,
+    isCompensable,
+    impactedFinishDate,
+    requiresLiquidatedDamagesReview: nonExcusableDays > 0 && params.delayEvent.responsibility === 'CONTRACTOR'
+  };
+}
+
+export function calculateGanttOverlay(params: {
+  activities: Array<{
+    id: string;
+    name: string;
+    baselineStart: string;
+    baselineFinish: string;
+    actualStart?: string;
+    actualFinish?: string;
+    forecastFinish: string;
+    totalFloat: number;
+    isCritical: boolean;
+    progressPct: number;
+  }>;
+}): GanttOverlaySummary {
+  let completedCount = 0;
+  let onTrackCount = 0;
+  let criticalDelayedCount = 0;
+  let nonCriticalDelayedCount = 0;
+  let aheadCount = 0;
+  let maxSlippageDays = 0;
+
+  const activities: GanttOverlayActivity[] = params.activities.map(act => {
+    const bFinish = new Date(act.baselineFinish).getTime();
+    const fFinish = new Date(act.forecastFinish).getTime();
+    const slippageDays = Math.round((fFinish - bFinish) / (1000 * 60 * 60 * 24));
+
+    if (slippageDays > maxSlippageDays) {
+      maxSlippageDays = slippageDays;
+    }
+
+    let status: ActivityScheduleStatus = 'ON_TRACK';
+
+    if (act.progressPct >= 100 || act.actualFinish) {
+      status = 'COMPLETED';
+      completedCount++;
+    } else if (slippageDays > 0) {
+      if (act.isCritical || act.totalFloat <= 0) {
+        status = 'DELAYED_CRITICAL';
+        criticalDelayedCount++;
+      } else {
+        status = 'DELAYED_NON_CRITICAL';
+        nonCriticalDelayedCount++;
+      }
+    } else if (slippageDays < 0) {
+      status = 'AHEAD';
+      aheadCount++;
+    } else {
+      status = 'ON_TRACK';
+      onTrackCount++;
+    }
+
+    return {
+      ...act,
+      finishSlippageDays: slippageDays,
+      status
+    };
+  });
+
+  return {
+    totalActivities: activities.length,
+    completedCount,
+    onTrackCount,
+    criticalDelayedCount,
+    nonCriticalDelayedCount,
+    aheadCount,
+    maxSlippageDays,
+    activities
+  };
+}
