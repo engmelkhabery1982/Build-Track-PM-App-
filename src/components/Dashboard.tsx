@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { generateWarnings } from '@/utils/earlyWarningSystem';
-import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer } from 'lucide-react';
+import { useVarianceActions } from '@/hooks/useVarianceActions';
+import type { Warning } from '@/utils/varianceActionRegister';
+import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer, X } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
@@ -98,6 +100,11 @@ export function Dashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const { varianceActionItems, handleCreateAction } = useVarianceActions();
+  const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
+  const [actionAssignedTo, setActionAssignedTo] = useState('');
+  const [actionDueDate, setActionDueDate] = useState('');
 
   const pid = selectedProjectId;
   const reportDate = asOfDate;
@@ -395,12 +402,23 @@ export function Dashboard({
         >
           <div className="flex items-center gap-2">
             {warning.severity === 'critical' ? (
-              <AlertCircle size={16} className="text-red-500" />
+              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
             ) : (
-              <AlertTriangle size={16} className="text-yellow-500" />
+              <AlertTriangle size={16} className="text-yellow-500 flex-shrink-0" />
             )}
             <span className="font-medium">{warning.message}</span>
-            <span className="ml-auto font-semibold">{warning.value.toFixed(2)}</span>
+            <span className="ml-auto font-semibold mr-3">{warning.value.toFixed(2)}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedWarningForAction(warning);
+                setActionAssignedTo('');
+                setActionDueDate('');
+              }}
+              className="text-xs font-medium px-2.5 py-1 rounded bg-white border border-neutral-300 hover:bg-neutral-50 shadow-sm transition-colors cursor-pointer text-neutral-800 shrink-0"
+            >
+              Create Action
+            </button>
           </div>
         </div>
       ))}
@@ -1666,6 +1684,117 @@ export function Dashboard({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action Creation Modal */}
+        {selectedWarningForAction && (
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in p-4"
+            onClick={() => {
+              setSelectedWarningForAction(null);
+              setActionAssignedTo('');
+              setActionDueDate('');
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="action-modal-title"
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+                <div>
+                  <h3 id="action-modal-title" className="text-base font-semibold text-neutral-900">Create Action Item</h3>
+                  <p className="text-xs text-neutral-500">Assign and track a corrective action from early warning</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedWarningForAction(null);
+                    setActionAssignedTo('');
+                    setActionDueDate('');
+                  }}
+                  className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors"
+                  aria-label="Close dialog"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!selectedWarningForAction) return;
+                  handleCreateAction(selectedWarningForAction, actionAssignedTo, actionDueDate);
+                  setActionAssignedTo('');
+                  setActionDueDate('');
+                  setSelectedWarningForAction(null);
+                }}
+                className="p-5 space-y-4"
+              >
+                <div className={`p-3 rounded-lg border text-sm ${
+                  selectedWarningForAction.severity === 'critical'
+                    ? 'bg-red-50 border-red-200 text-red-800'
+                    : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                }`}>
+                  <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                    <span className="uppercase tracking-wider">Category: {selectedWarningForAction.category}</span>
+                    <span className="capitalize px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/80 border border-current">
+                      {selectedWarningForAction.severity}
+                    </span>
+                  </div>
+                  <p className="font-medium text-xs mt-1">{selectedWarningForAction.message}</p>
+                </div>
+
+                <div>
+                  <label htmlFor="action-assigned-to" className="block text-xs font-medium text-neutral-700 mb-1">
+                    Assigned To
+                  </label>
+                  <input
+                    id="action-assigned-to"
+                    type="text"
+                    value={actionAssignedTo}
+                    onChange={(e) => setActionAssignedTo(e.target.value)}
+                    placeholder="e.g. Project Manager, Lead Engineer"
+                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="action-due-date" className="block text-xs font-medium text-neutral-700 mb-1">
+                    Due Date
+                  </label>
+                  <input
+                    id="action-due-date"
+                    type="date"
+                    value={actionDueDate}
+                    onChange={(e) => setActionDueDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedWarningForAction(null);
+                      setActionAssignedTo('');
+                      setActionDueDate('');
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-neutral-700 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                  >
+                    Save Action
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
