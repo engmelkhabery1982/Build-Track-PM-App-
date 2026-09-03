@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { generateWarnings } from '@/utils/earlyWarningSystem';
 import { useVarianceActions } from '@/hooks/useVarianceActions';
 import type { Warning } from '@/utils/varianceActionRegister';
+import { VarianceActionTable } from '@/components/VarianceActionTable';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer, X } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
@@ -101,7 +102,7 @@ export function Dashboard({
   const [statusFilter, setStatusFilter] = useState('all');
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  const { varianceActionItems, handleCreateAction } = useVarianceActions();
+  const { varianceActionItems, handleCreateAction, handleUpdateActionStatus } = useVarianceActions();
   const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
   const [actionAssignedTo, setActionAssignedTo] = useState('');
   const [actionDueDate, setActionDueDate] = useState('');
@@ -1684,6 +1685,14 @@ export function Dashboard({
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-neutral-900 mb-3">Variance Actions Register</h3>
+              <VarianceActionTable
+                actions={varianceActionItems}
+                onUpdateStatus={handleUpdateActionStatus}
+              />
             </div>
           </div>
         )}

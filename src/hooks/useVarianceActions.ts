@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { VarianceActionItem } from '@/types';
 import { createActionFromWarning, Warning } from '@/utils/varianceActionRegister';
 
@@ -15,9 +15,16 @@ export function useVarianceActions() {
     setVarianceActionItems((prev) => [...prev, newAction]);
   };
 
+  const handleUpdateActionStatus = (id: string, status: 'Open' | 'In Progress' | 'Closed') => {
+    setVarianceActionItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status } : item))
+    );
+  };
+
   return {
     varianceActionItems,
     setVarianceActionItems,
     handleCreateAction,
+    handleUpdateActionStatus,
   };
 }
