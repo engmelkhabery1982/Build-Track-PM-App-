@@ -36,10 +36,10 @@ export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ da
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Net Cumulative Position */}
         <div className={`p-4 rounded-lg shadow-sm ${
-          status.netCumulativePosition >= 0 ? 'bg-green-50' : 'bg-red-50'
+          netCumulativePosition >= 0 ? 'bg-green-50' : 'bg-red-50'
         }`}>
           <div className="flex items-center space-x-2">
-            {status.netCumulativePosition >= 0 ? (
+            {netCumulativePosition >= 0 ? (
               <TrendingUp className="w-5 h-5 text-green-600" />
             ) : (
               <TrendingDown className="w-5 h-5 text-red-600" />
@@ -47,7 +47,7 @@ export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ da
             <span className="text-sm font-medium">Net Cumulative Position</span>
           </div>
           <div className={`mt-2 text-xl font-semibold ${
-            status.netCumulativePosition >= 0 ? 'text-green-600' : 'text-red-600'
+            netCumulativePosition >= 0 ? 'text-green-600' : 'text-red-600'
           }`}>
             {currency}{netCumulativePosition.toLocaleString()}
           </div>
