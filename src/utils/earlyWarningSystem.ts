@@ -5,7 +5,7 @@ export function generateWarnings(
   highSeveritySafetyCount: number,
   criticalGovernanceCount: number
 ): Array<{ severity: 'critical' | 'warning'; category: string; message: string; value: number }> {
-  const warnings = [];
+  const warnings: Array<{ severity: 'critical' | 'warning'; category: string; message: string; value: number }> = [];
 
   if (cpi < 0.9) {
     warnings.push({
