@@ -384,6 +384,29 @@ export function Dashboard({
     stats.criticalGovernanceItems
   ), [evm.CPI, evm.SPI, stats.delayedTasks, stats.highSeverity, stats.criticalGovernanceItems]);
 
+  const warningBanner = warnings.length > 0 && (
+    <div className="mb-5">
+      {warnings.map((warning, index) => (
+        <div
+          key={index}
+          className={`p-3 mb-2 rounded-lg border-l-4 ${warning.severity === 'critical' 
+            ? 'bg-red-50 border-red-500 text-red-700' 
+            : 'bg-yellow-50 border-yellow-500 text-yellow-700'}`}
+        >
+          <div className="flex items-center gap-2">
+            {warning.severity === 'critical' ? (
+              <AlertCircle size={16} className="text-red-500" />
+            ) : (
+              <AlertTriangle size={16} className="text-yellow-500" />
+            )}
+            <span className="font-medium">{warning.message}</span>
+            <span className="ml-auto font-semibold">{warning.value.toFixed(2)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   const healthLabel = healthScore >= 80 ? 'Healthy' : healthScore >= 60 ? 'At Risk' : 'Critical';
   const healthColor = healthScore >= 80 ? 'var(--color-success-500)' : healthScore >= 60 ? 'var(--color-warning-500)' : 'var(--color-error-500)';
 
@@ -699,6 +722,9 @@ export function Dashboard({
             </div>
           </div>
         </div>
+
+        {/* Warning Banner */}
+        {warningBanner}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
