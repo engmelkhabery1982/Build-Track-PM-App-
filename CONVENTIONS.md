@@ -1,21 +1,23 @@
-# قواعد العمل الثابتة على هذا المشروع
+# Project Working Rules
 
-## الالتزام بالنطاق
-- عدّل فقط الملفات المطلوبة صراحة في المهمة. لا تلمس أي ملف آخر حتى لو بدا مرتبطًا.
-- إذا احتجت تعديل ملف إضافي غير مذكور، اذكر ذلك بوضوح واطلب تأكيدًا قبل التنفيذ، ولا تنفذه تلقائيًا.
+## Scope Discipline
+- Only edit files explicitly required by the task. Do not touch any other file even if it seems related.
+- If an additional file needs changes, state that clearly and ask for confirmation before doing it.
 
-## حجم التغييرات
-- قسّم أي مهمة كبيرة إلى أجزاء صغيرة مستقلة، كل جزء في تعديل (commit) منفصل.
-- لا تعيد كتابة ملف كامل من أجل تغيير بسيط. استخدم أصغر تعديل ممكن (diff) يحقق المطلوب.
+## Change Size (important for cost control)
+- Split any large task into small independent parts, each as a separate commit.
+- Never rewrite a whole file for a simple change. Send only the smallest diff that achieves the goal.
+- If the target file is large (roughly 300+ lines), ask for the specific function name or approximate line before reading it fully.
 
-## الجودة والتحقق
-- التزم بنفس نمط الكود ونمط التقريب الرقمي (money pattern) المستخدم بالفعل في الملفات المشابهة.
-- لا تفترض أسماء حقول أو متغيرات غير موجودة فعليًا في الملف — تحقق من التعريفات الموجودة أولاً.
+## Quality
+- Follow the same code style and rounding pattern (money pattern) used in similar files.
+- Do not assume field or variable names that do not actually exist in the file. Verify existing definitions first instead of guessing.
 
-## الاقتصاد في الاستهلاك
-- أعط إجابات مختصرة ومباشرة، بدون شرح مطوّل غير ضروري.
-- إذا كانت المهمة بسيطة جدًا (دالة واحدة، تعديل سطر)، نفذها مباشرة بأقل عدد ممكن من الجولات.
-- إذا كانت المهمة معقدة (تلمس عدة ملفات مترابطة)، خذ وقتك في التخطيط الدقيق قبل التنفيذ لتجنب إعادة العمل.
+## Token Economy (strict rules)
+- Give short, direct answers, no long explanations or unnecessary preambles.
+- Do not re-explain code that did not change.
+- If a test run fully succeeds, just give a brief confirmation, do not list every passing test case.
+- If the build or tests fail after a change, stop immediately. Do not attempt more than two consecutive automatic fixes. Show the problem clearly and ask for direction instead of repeated guessing.
 
-## عند الفشل
-- إذا فشل الـ build أو الاختبارات بعد أي تعديل، توقف فورًا ولا تحاول "تصحيحات سريعة" متتالية أكثر من مرتين. اعرض المشكلة بوضوح بدلاً من ذلك.
+## On Successful Task Completion
+- After a successful build, tests, and commit, mention it in one short sentence only. Do not suggest additional tasks on your own.
