@@ -4,6 +4,8 @@ import { useVarianceActions } from '@/hooks/useVarianceActions';
 import type { Warning } from '@/utils/varianceActionRegister';
 import { VarianceActionTable } from '@/components/VarianceActionTable';
 import { CashFlowForecastBoard } from '@/components/CashFlowForecastBoard';
+import { PvoRegisterTable } from '@/components/PvoRegisterTable';
+import type { PotentialVariationOrder, PvoStatus } from '@/types/pvo';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer, X } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
@@ -107,6 +109,83 @@ export function Dashboard({
   const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
   const [actionAssignedTo, setActionAssignedTo] = useState('');
   const [actionDueDate, setActionDueDate] = useState('');
+
+  const [pvoList, setPvoList] = useState<PotentialVariationOrder[]>([
+    {
+      id: 'pvo-1',
+      pvoNumber: 'PVO-001',
+      title: 'Subsurface Rock Excavation',
+      description: 'Unexpected basalt rock encountered during foundation excavation requiring pneumatic breaker',
+      identifiedDate: '2026-08-10',
+      submittedDate: '2026-08-14',
+      estimatedCostImpact: 45000,
+      estimatedTimeImpactDays: 12,
+      status: 'Under Review',
+      claimReference: 'CLM-FOUND-01',
+      submittedBy: 'Earthworks Contractor',
+    },
+    {
+      id: 'pvo-2',
+      pvoNumber: 'PVO-002',
+      title: 'Client Architectural Revisions',
+      description: 'Lobby partition wall layout reconfigured per client instruction bulletin #4',
+      identifiedDate: '2026-08-18',
+      submittedDate: '2026-08-22',
+      estimatedCostImpact: 85000,
+      estimatedTimeImpactDays: 20,
+      status: 'Submitted',
+      claimReference: 'CLM-ARCH-03',
+      submittedBy: 'Lead Architect',
+    },
+    {
+      id: 'pvo-3',
+      pvoNumber: 'PVO-003',
+      title: 'Unforeseen Groundwater Dewatering',
+      description: 'High water table encountered during basement pit digging requiring 24/7 dewatering pumps',
+      identifiedDate: '2026-07-25',
+      submittedDate: '2026-08-01',
+      estimatedCostImpact: 30000,
+      approvedCostImpact: 28000,
+      estimatedTimeImpactDays: 7,
+      approvedTimeImpactDays: 7,
+      status: 'Approved',
+      claimReference: 'CLM-DEWATER-02',
+      submittedBy: 'Site Engineer',
+    },
+    {
+      id: 'pvo-4',
+      pvoNumber: 'PVO-004',
+      title: 'MEP Route Relocation',
+      description: 'Chilled water pipe clashes with structural beam B-12 requiring route redesign',
+      identifiedDate: '2026-08-28',
+      estimatedCostImpact: 15000,
+      estimatedTimeImpactDays: 3,
+      status: 'Identified',
+      submittedBy: 'MEP Coordinator',
+    },
+  ]);
+
+  const handlePvoStatusChange = (id: string, newStatus: PvoStatus) => {
+    setPvoList((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        return {
+          ...item,
+          status: newStatus,
+          approvedCostImpact: newStatus === 'Approved' ? (item.approvedCostImpact ?? item.estimatedCostImpact) : item.approvedCostImpact,
+          approvedTimeImpactDays: newStatus === 'Approved' ? (item.approvedTimeImpactDays ?? item.estimatedTimeImpactDays) : item.approvedTimeImpactDays,
+        };
+      })
+    );
+  };
+
+  const handleAddNewPvo = (newPvo: Omit<PotentialVariationOrder, 'id'>) => {
+    const item: PotentialVariationOrder = {
+      ...newPvo,
+      id: `pvo-${Date.now()}`,
+    };
+    setPvoList((prev) => [item, ...prev]);
+  };
 
   const pid = selectedProjectId;
   const reportDate = asOfDate;
@@ -1436,6 +1515,23 @@ export function Dashboard({
                   <div className="flex items-center justify-between"><span className="text-xs text-neutral-500">Approved</span><span className="text-sm font-semibold text-success-600">{stats.approvedVariations}</span></div>
                 </div>
               </button>
+            </div>
+
+            {/* Potential Variation Orders (PVO) & Claims Register (COM-03) */}
+            <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <FileSignature size={18} className="text-primary-600" />
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-700">Potential Variation Orders (PVO) & Claims Register (COM-03)</h3>
+                  <p className="text-xs text-neutral-400">Emerging scope changes, site conditions, and claims tracking</p>
+                </div>
+              </div>
+              <PvoRegisterTable
+                pvoList={pvoList}
+                currency={projectCurrency || '$'}
+                onStatusChange={handlePvoStatusChange}
+                onAddNewPvo={handleAddNewPvo}
+              />
             </div>
           </div>
         )}

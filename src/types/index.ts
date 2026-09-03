@@ -1353,3 +1353,5 @@ export interface GanttOverlaySummary {
   maxSlippageDays: number;
   activities: GanttOverlayActivity[];
 }
+
+export * from './pvo';
