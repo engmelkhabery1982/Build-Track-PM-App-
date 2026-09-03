@@ -1316,6 +1316,16 @@ export interface TIACalculationResult {
   requiresLiquidatedDamagesReview: boolean;
 }
 
+export interface VarianceActionItem {
+  id: string;
+  warningMessage: string;
+  category: string;
+  assignedTo: string;
+  dueDate: string;
+  status: 'Open' | 'In Progress' | 'Closed';
+  createdDate: string;
+}
+
 export type ActivityScheduleStatus = 'ON_TRACK' | 'DELAYED_CRITICAL' | 'DELAYED_NON_CRITICAL' | 'AHEAD' | 'COMPLETED';
 
 export interface GanttOverlayActivity {
