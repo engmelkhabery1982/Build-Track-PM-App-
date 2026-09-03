@@ -14,11 +14,12 @@ interface CashFlowForecastBoardProps {
 }
 
 export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ data, currency = '$' }) => {
-  const { periods, status } = useMemo(() => {
-    const periods = calculateCashFlowForecast(data);
-    const status = getCashFlowStatus(periods);
-    return { periods, status };
-  }, [data]);
+  const periods = useMemo(() => calculateCashFlowForecast(data), [data]);
+  const status = useMemo(() => getCashFlowStatus(periods), [periods]);
+  
+  const netCumulativePosition = periods.length > 0 ? periods[periods.length - 1].cumulativeCash : 0;
+  const totalActualInflows = periods.reduce((sum, p) => sum + p.actualInflow, 0);
+  const totalPlannedInflows = periods.reduce((sum, p) => sum + p.plannedInflow, 0);
 
   if (data.length === 0) {
     return (
@@ -48,7 +49,7 @@ export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ da
           <div className={`mt-2 text-xl font-semibold ${
             status.netCumulativePosition >= 0 ? 'text-green-600' : 'text-red-600'
           }`}>
-            {currency}{status.netCumulativePosition.toLocaleString()}
+            {currency}{netCumulativePosition.toLocaleString()}
           </div>
         </div>
 
@@ -59,10 +60,10 @@ export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ da
             <span className="text-sm font-medium">Total Inflows</span>
           </div>
           <div className="mt-2 text-xl font-semibold text-blue-600">
-            {currency}{status.totalInflows.toLocaleString()}
+            {currency}{totalActualInflows.toLocaleString()}
           </div>
           <div className="text-sm text-gray-500 mt-1">
-            Planned: {currency}{status.totalPlannedInflows.toLocaleString()}
+            Planned: {currency}{totalPlannedInflows.toLocaleString()}
           </div>
         </div>
 
@@ -118,14 +119,14 @@ export const CashFlowForecastBoard: React.FC<CashFlowForecastBoardProps> = ({ da
                   {period.actualOutflow ? `${currency}${period.actualOutflow.toLocaleString()}` : '-'}
                 </td>
                 <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                  period.netPeriodCash < 0 ? 'text-red-500' : 'text-gray-500'
+                  (period.netActual ?? period.netPlanned) < 0 ? 'text-red-500' : 'text-gray-500'
                 }`}>
-                  {currency}{period.netPeriodCash.toLocaleString()}
+                  {currency}{(period.netActual ?? period.netPlanned).toLocaleString()}
                 </td>
                 <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                  period.cumulativeBalance < 0 ? 'text-red-500' : 'text-gray-500'
+                  period.cumulativeCash < 0 ? 'text-red-500' : 'text-gray-500'
                 }`}>
-                  {currency}{period.cumulativeBalance.toLocaleString()}
+                  {currency}{period.cumulativeCash.toLocaleString()}
                 </td>
               </tr>
             ))}
