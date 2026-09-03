@@ -1,5 +1,7 @@
-import type { CostCurveType, CostPhasingResult, TimePhasedCostBucket } from '../types';
 import type { 
+  CostCurveType, 
+  CostPhasingResult, 
+  TimePhasedCostBucket,
   BOQItem, 
   Schedule, 
   BOQItemActivity, 
@@ -9,7 +11,13 @@ import type {
   MilestoneProgressResult,
   EACMethod,
   EACMethodResult,
-  MultiMethodEACSummary
+  MultiMethodEACSummary,
+  FragnetActivity,
+  DelayEvent,
+  TIACalculationResult,
+  GanttOverlaySummary,
+  GanttOverlayActivity,
+  ActivityScheduleStatus
 } from '../types';
 
 export function calculateBOQActivityAllocation(
