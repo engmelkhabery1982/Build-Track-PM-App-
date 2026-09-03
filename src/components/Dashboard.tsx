@@ -326,20 +326,53 @@ export function Dashboard({
     };
   }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate, evm]);
 
-  const healthScore = useMemo(() => {
+  const [healthScore, healthBreakdown] = useMemo(() => {
     let score = 100;
-    if (stats.delayedTasks > 0) score -= Math.min(stats.delayedTasks * 5, 25);
-    if (stats.highSeverity > 0) score -= Math.min(stats.highSeverity * 8, 20);
-    if (stats.openSafety > 0) score -= Math.min(stats.openSafety * 3, 10);
-    if (stats.criticalGovernanceItems > 0) score -= Math.min(stats.criticalGovernanceItems * 8, 20);
-    if (stats.openQualityItems > 0) score -= Math.min(stats.openQualityItems * 2, 10);
-    if (stats.openRfis > 0) score -= Math.min(stats.openRfis, 5);
-    if (evm.CPI > 0 && evm.CPI < 0.9) score -= 15;
-    if (evm.SPI > 0 && evm.SPI < 0.9) score -= 10;
-    if (stats.budgetUtilization > 90) score -= 10;
-    if (stats.netCashFlow < 0) score -= 5;
-    if (stats.pendingVariations > 0) score -= Math.min(stats.pendingVariations * 2, 5);
-    return Math.max(0, Math.round(score));
+    const breakdown: string[] = [];
+
+    const addPenalty = (value: number, max: number, message: string) => {
+      const penalty = Math.min(value, max);
+      if (penalty > 0) {
+        score -= penalty;
+        breakdown.push(`${message}: -${penalty}`);
+      }
+      return penalty;
+    };
+
+    addPenalty(stats.delayedTasks * 5, 25, `${stats.delayedTasks} delayed tasks`);
+    addPenalty(stats.highSeverity * 8, 20, `${stats.highSeverity} high/critical safety issues`);
+    addPenalty(stats.openSafety * 3, 10, `${stats.openSafety} open safety issues`);
+    addPenalty(stats.criticalGovernanceItems * 8, 20, `${stats.criticalGovernanceItems} critical governance items`);
+    addPenalty(stats.openQualityItems * 2, 10, `${stats.openQualityItems} open quality items`);
+    addPenalty(stats.openRfis, 5, `${stats.openRfis} open RFIs`);
+    
+    if (evm.CPI > 0 && evm.CPI < 0.9) {
+      const penalty = 15;
+      score -= penalty;
+      breakdown.push(`CPI ${evm.CPI.toFixed(2)} (below 0.9): -${penalty}`);
+    }
+    
+    if (evm.SPI > 0 && evm.SPI < 0.9) {
+      const penalty = 10;
+      score -= penalty;
+      breakdown.push(`SPI ${evm.SPI.toFixed(2)} (below 0.9): -${penalty}`);
+    }
+
+    if (stats.budgetUtilization > 90) {
+      const penalty = 10;
+      score -= penalty;
+      breakdown.push(`Budget utilization ${stats.budgetUtilization}%: -${penalty}`);
+    }
+
+    if (stats.netCashFlow < 0) {
+      const penalty = 5;
+      score -= penalty;
+      breakdown.push(`Negative cash flow: -${penalty}`);
+    }
+
+    addPenalty(stats.pendingVariations * 2, 5, `${stats.pendingVariations} pending variations`);
+
+    return [Math.max(0, Math.round(score)), breakdown] as const;
   }, [stats, evm]);
 
   const healthLabel = healthScore >= 80 ? 'Healthy' : healthScore >= 60 ? 'At Risk' : 'Critical';
@@ -742,7 +775,19 @@ export function Dashboard({
                     </div>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-4">
+                  <details className="text-xs text-neutral-500">
+                    <summary className="cursor-pointer hover:text-primary-600">
+                      Health score breakdown ({healthBreakdown.length} factors)
+                    </summary>
+                    <ul className="mt-2 space-y-1 pl-4">
+                      {healthBreakdown.map((item, i) => (
+                        <li key={i} className="list-disc">{item}</li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-lg bg-success-50 py-2">
                     <p className="text-xs text-neutral-500">Delayed</p>
                     <p className="text-sm font-bold text-neutral-800">{stats.delayedTasks}</p>
