@@ -375,6 +375,14 @@ export function Dashboard({
     return [Math.max(0, Math.round(score)), breakdown] as const;
   }, [stats, evm]);
 
+  const warnings = useMemo(() => generateWarnings(
+    evm.CPI,
+    evm.SPI,
+    stats.delayedTasks,
+    stats.highSeverity,
+    stats.criticalGovernanceItems
+  ), [evm.CPI, evm.SPI, stats.delayedTasks, stats.highSeverity, stats.criticalGovernanceItems]);
+
   const healthLabel = healthScore >= 80 ? 'Healthy' : healthScore >= 60 ? 'At Risk' : 'Critical';
   const healthColor = healthScore >= 80 ? 'var(--color-success-500)' : healthScore >= 60 ? 'var(--color-warning-500)' : 'var(--color-error-500)';
 
