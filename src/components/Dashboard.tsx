@@ -781,9 +781,35 @@ export function Dashboard({
                       Health score breakdown ({healthBreakdown.length} factors)
                     </summary>
                     <ul className="mt-2 space-y-1 pl-4">
-                      {healthBreakdown.map((item, i) => (
-                        <li key={i} className="list-disc">{item}</li>
-                      ))}
+                      {healthBreakdown.map((item, i) => {
+                        let view: ViewKey | null = null;
+                        if (item.includes('CPI') || item.includes('Budget')) {
+                          view = 'costs';
+                        } else if (item.includes('SPI') || item.includes('delayed tasks')) {
+                          view = 'schedule';
+                        } else if (item.includes('safety') || item.includes('HSE')) {
+                          view = 'safety';
+                        } else if (item.includes('variation')) {
+                          view = 'variations';
+                        } else if (item.includes('governance') || item.includes('RFI') || item.includes('quality')) {
+                          view = 'governance';
+                        }
+
+                        return (
+                          <li key={i} className="list-disc">
+                            {view ? (
+                              <button 
+                                onClick={() => onNavigate(view as ViewKey)}
+                                className="text-left hover:text-primary-600 hover:underline"
+                              >
+                                {item}
+                              </button>
+                            ) : (
+                              <span>{item}</span>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </details>
                 </div>
