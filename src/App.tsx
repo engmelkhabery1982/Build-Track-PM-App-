@@ -42,4 +42,5 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'portfolio', label: 'Project Portfolio', icon: Layers, group: 'Executive' },
   { key: 'projects', label: 'Project Workspace', icon: FolderKanban, group: 'Executive' },
   { key: 'baselines', label: 'Baselines', icon: ClipboardList, group: 'Executive' },
-  { key: 'reportingPeriods', label: 'Reporting Periods', icon: CalendarClock, group: 'Executive
+  { key: 'reportingPeriods', label: 'Reporting Periods', icon: CalendarClock, group: 'Executive' },
+  { key: 'earned_value', label: 'EV', type: 'money', editable: false }, { key: 'actual_cost', label: 'AC', type: 'money', editable: false } ];
