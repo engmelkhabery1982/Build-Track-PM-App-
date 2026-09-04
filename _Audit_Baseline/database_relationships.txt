@@ -1,0 +1,518 @@
+﻿
+supabase\migrations\20260809001444_create_all_construction_tables.sql:5:- `projects` — Construction projects with 
+client, budget, progress, manager, contractor
+supabase\migrations\20260809001444_create_all_construction_tables.sql:12:- `contracts` — Contracts with number, title, 
+contractor, type, value, dates, status
+supabase\migrations\20260809001444_create_all_construction_tables.sql:13:- `boq_items` — Bill of Quantities line items 
+with code, description, unit, qty, rate, amount
+supabase\migrations\20260809001444_create_all_construction_tables.sql:27:- Foreign keys from child tables to 
+projects(id) with CASCADE delete.
+supabase\migrations\20260809001444_create_all_construction_tables.sql:28:- Indexes on project_id and status columns 
+for query performance.
+supabase\migrations\20260809001444_create_all_construction_tables.sql:31:-- ============ PROJECTS ============
+supabase\migrations\20260809001444_create_all_construction_tables.sql:32:CREATE TABLE IF NOT EXISTS projects (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:49:ALTER TABLE projects ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:50:DROP POLICY IF EXISTS "anon_select_projects" 
+ON projects;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:51:CREATE POLICY "anon_select_projects" ON 
+projects FOR SELECT TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:52:DROP POLICY IF EXISTS "anon_insert_projects" 
+ON projects;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:53:CREATE POLICY "anon_insert_projects" ON 
+projects FOR INSERT TO anon, authenticated WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:54:DROP POLICY IF EXISTS "anon_update_projects" 
+ON projects;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:55:CREATE POLICY "anon_update_projects" ON 
+projects FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:56:DROP POLICY IF EXISTS "anon_delete_projects" 
+ON projects;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:57:CREATE POLICY "anon_delete_projects" ON 
+projects FOR DELETE TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:58:CREATE INDEX IF NOT EXISTS 
+idx_projects_status ON projects(status);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:61:CREATE TABLE IF NOT EXISTS tasks (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:63:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:76:ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:85:CREATE INDEX IF NOT EXISTS 
+idx_tasks_project_id ON tasks(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:89:CREATE TABLE IF NOT EXISTS costs (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:91:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:101:ALTER TABLE costs ENABLE ROW LEVEL SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:110:CREATE INDEX IF NOT EXISTS 
+idx_costs_project_id ON costs(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:113:CREATE TABLE IF NOT EXISTS procurement (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:115:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:128:ALTER TABLE procurement ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:137:CREATE INDEX IF NOT EXISTS 
+idx_proc_project_id ON procurement(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:141:CREATE TABLE IF NOT EXISTS safety (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:143:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:154:ALTER TABLE safety ENABLE ROW LEVEL SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:163:CREATE INDEX IF NOT EXISTS 
+idx_safety_project_id ON safety(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:167:CREATE TABLE IF NOT EXISTS progress_entries (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:169:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:178:ALTER TABLE progress_entries ENABLE ROW 
+LEVEL SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:187:CREATE INDEX IF NOT EXISTS 
+idx_progress_project_id ON progress_entries(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:190:CREATE TABLE IF NOT EXISTS schedules (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:192:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:205:ALTER TABLE schedules ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:214:CREATE INDEX IF NOT EXISTS 
+idx_sched_project_id ON schedules(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:217:-- ============ CONTRACTS ============
+supabase\migrations\20260809001444_create_all_construction_tables.sql:218:CREATE TABLE IF NOT EXISTS contracts (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:220:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:233:ALTER TABLE contracts ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:234:DROP POLICY IF EXISTS 
+"anon_select_contracts" ON contracts;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:235:CREATE POLICY "anon_select_contracts" ON 
+contracts FOR SELECT TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:236:DROP POLICY IF EXISTS 
+"anon_insert_contracts" ON contracts;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:237:CREATE POLICY "anon_insert_contracts" ON 
+contracts FOR INSERT TO anon, authenticated WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:238:DROP POLICY IF EXISTS 
+"anon_update_contracts" ON contracts;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:239:CREATE POLICY "anon_update_contracts" ON 
+contracts FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:240:DROP POLICY IF EXISTS 
+"anon_delete_contracts" ON contracts;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:241:CREATE POLICY "anon_delete_contracts" ON 
+contracts FOR DELETE TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:242:CREATE INDEX IF NOT EXISTS 
+idx_contracts_project_id ON contracts(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:243:CREATE INDEX IF NOT EXISTS 
+idx_contracts_status ON contracts(status);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:246:CREATE TABLE IF NOT EXISTS boq_items (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:248:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:249:  item_code text DEFAULT '',
+supabase\migrations\20260809001444_create_all_construction_tables.sql:259:ALTER TABLE boq_items ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:260:DROP POLICY IF EXISTS 
+"anon_select_boq_items" ON boq_items;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:261:CREATE POLICY "anon_select_boq_items" ON 
+boq_items FOR SELECT TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:262:DROP POLICY IF EXISTS 
+"anon_insert_boq_items" ON boq_items;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:263:CREATE POLICY "anon_insert_boq_items" ON 
+boq_items FOR INSERT TO anon, authenticated WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:264:DROP POLICY IF EXISTS 
+"anon_update_boq_items" ON boq_items;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:265:CREATE POLICY "anon_update_boq_items" ON 
+boq_items FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:266:DROP POLICY IF EXISTS 
+"anon_delete_boq_items" ON boq_items;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:267:CREATE POLICY "anon_delete_boq_items" ON 
+boq_items FOR DELETE TO anon, authenticated USING (true);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:268:CREATE INDEX IF NOT EXISTS 
+idx_boq_project_id ON boq_items(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:271:CREATE TABLE IF NOT EXISTS wir_entries (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:273:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:284:ALTER TABLE wir_entries ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:293:CREATE INDEX IF NOT EXISTS 
+idx_wir_project_id ON wir_entries(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:297:CREATE TABLE IF NOT EXISTS cash_flow (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:299:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:310:ALTER TABLE cash_flow ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:319:CREATE INDEX IF NOT EXISTS 
+idx_cashflow_project_id ON cash_flow(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:322:CREATE TABLE IF NOT EXISTS 
+subcontractor_invoices (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:324:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:337:ALTER TABLE subcontractor_invoices ENABLE 
+ROW LEVEL SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:346:CREATE INDEX IF NOT EXISTS 
+idx_subinv_project_id ON subcontractor_invoices(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:350:CREATE TABLE IF NOT EXISTS client_invoices (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:352:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:365:ALTER TABLE client_invoices ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:374:CREATE INDEX IF NOT EXISTS 
+idx_clientinv_project_id ON client_invoices(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:378:CREATE TABLE IF NOT EXISTS variations (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:380:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:393:ALTER TABLE variations ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:402:CREATE INDEX IF NOT EXISTS 
+idx_var_project_id ON variations(project_id);
+supabase\migrations\20260809001444_create_all_construction_tables.sql:406:CREATE TABLE IF NOT EXISTS documents (
+supabase\migrations\20260809001444_create_all_construction_tables.sql:408:  project_id uuid REFERENCES projects(id) ON 
+DELETE CASCADE,
+supabase\migrations\20260809001444_create_all_construction_tables.sql:420:ALTER TABLE documents ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809001444_create_all_construction_tables.sql:429:CREATE INDEX IF NOT EXISTS 
+idx_docs_project_id ON documents(project_id);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:6:a new detailed 
+Costs tracking table, and adds missing columns across Projects, WIR,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:11:### 1. New 
+Table: boq_headers
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:12:Top-level BOQ 
+records (main contractor or subcontractor BOQ). Each header has multiple boq_items.
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:14:- boq_code 
+(text) - unique BOQ identifier
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:15:- classification 
+(text) - "Main" or "Subcontractor"
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:16:- company_name 
+(text) - company name
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:22:- project_code, 
+boq_code, company_name, boq_item_code, boq_item_name
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:26:### 3. Modified: 
+projects table
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:27:Added: 
+project_code (text), boq_code (text)
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:28:Spent and 
+total_value remain calculated in the app from cost_entries and boq_items.
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:30:### 4. Modified: 
+boq_items table
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:31:Added: boq_code 
+(text), project_code (text), item_name (text)
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:35:Added: 
+project_code, boq_code, item_code, item_name, item_description,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:36:  company_name, 
+unit, quantity, unit_price, item_amount, completion_pct
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:39:Added: 
+project_code, company_name, prev_value, prev_pct, current_value,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:43:Added: 
+project_code, item_code, company_name, boq_item_code, boq_item_name
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:46:Added: 
+project_code, boq_code, boq_item_code, boq_item_name, planned_value,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:55:-- 1. NEW TABLE: 
+boq_headers
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:57:CREATE TABLE IF 
+NOT EXISTS boq_headers (
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:59:  project_id 
+uuid REFERENCES projects(id) ON DELETE CASCADE,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:61:  boq_code text 
+NOT NULL,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:62:  classification 
+text DEFAULT 'Main',
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:63:  company_name 
+text DEFAULT '',
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:69:ALTER TABLE 
+boq_headers ENABLE ROW LEVEL SECURITY;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:71:DROP POLICY IF 
+EXISTS "anon_select_boq_headers" ON boq_headers;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:72:CREATE POLICY 
+"anon_select_boq_headers" ON boq_headers FOR SELECT
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:75:DROP POLICY IF 
+EXISTS "anon_insert_boq_headers" ON boq_headers;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:76:CREATE POLICY 
+"anon_insert_boq_headers" ON boq_headers FOR INSERT
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:79:DROP POLICY IF 
+EXISTS "anon_update_boq_headers" ON boq_headers;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:80:CREATE POLICY 
+"anon_update_boq_headers" ON boq_headers FOR UPDATE
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:83:DROP POLICY IF 
+EXISTS "anon_delete_boq_headers" ON boq_headers;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:84:CREATE POLICY 
+"anon_delete_boq_headers" ON boq_headers FOR DELETE
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:90:CREATE TABLE IF 
+NOT EXISTS cost_entries (
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:92:  project_id 
+uuid REFERENCES projects(id) ON DELETE CASCADE,
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:94:  boq_code text 
+DEFAULT '',
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:95:  company_name 
+text DEFAULT '',
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:96:  boq_item_code 
+text DEFAULT '',
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:106:ALTER TABLE 
+cost_entries ENABLE ROW LEVEL SECURITY;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:125:-- 3. MODIFY: 
+projects - add project_code and boq_code
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:128:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'project_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:129:    ALTER TABLE 
+projects ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:131:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'boq_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:132:    ALTER TABLE 
+projects ADD COLUMN boq_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:137:-- 4. MODIFY: 
+boq_items - add boq_code, project_code, item_name
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:140:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'boq_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:141:    ALTER TABLE 
+boq_items ADD COLUMN boq_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:143:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'project_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:144:    ALTER TABLE 
+boq_items ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:146:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'item_name') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:147:    ALTER TABLE 
+boq_items ADD COLUMN item_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:156:    ALTER TABLE 
+wir_entries ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:158:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'boq_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:159:    ALTER TABLE 
+wir_entries ADD COLUMN boq_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:161:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'item_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:162:    ALTER TABLE 
+wir_entries ADD COLUMN item_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:165:    ALTER TABLE 
+wir_entries ADD COLUMN item_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:168:    ALTER TABLE 
+wir_entries ADD COLUMN item_description text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:170:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'company_name') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:171:    ALTER TABLE 
+wir_entries ADD COLUMN company_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:174:    ALTER TABLE 
+wir_entries ADD COLUMN unit text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:177:    ALTER TABLE 
+wir_entries ADD COLUMN quantity numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:180:    ALTER TABLE 
+wir_entries ADD COLUMN unit_price numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:183:    ALTER TABLE 
+wir_entries ADD COLUMN item_amount numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:186:    ALTER TABLE 
+wir_entries ADD COLUMN completion_pct numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:195:    ALTER TABLE 
+progress_entries ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:197:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'company_name') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:198:    ALTER TABLE 
+progress_entries ADD COLUMN company_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:201:    ALTER TABLE 
+progress_entries ADD COLUMN prev_value numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:204:    ALTER TABLE 
+progress_entries ADD COLUMN prev_pct numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:207:    ALTER TABLE 
+progress_entries ADD COLUMN current_value numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:210:    ALTER TABLE 
+progress_entries ADD COLUMN current_pct numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:213:    ALTER TABLE 
+progress_entries ADD COLUMN total_value numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:216:    ALTER TABLE 
+progress_entries ADD COLUMN total_pct numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:225:    ALTER TABLE 
+costs ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:227:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'item_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:228:    ALTER TABLE 
+costs ADD COLUMN item_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:230:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'company_name') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:231:    ALTER TABLE 
+costs ADD COLUMN company_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:233:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'boq_item_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:234:    ALTER TABLE 
+costs ADD COLUMN boq_item_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:237:    ALTER TABLE 
+costs ADD COLUMN boq_item_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:246:    ALTER TABLE 
+schedules ADD COLUMN project_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:248:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'boq_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:249:    ALTER TABLE 
+schedules ADD COLUMN boq_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:251:  IF NOT EXISTS 
+(SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'boq_item_code') THEN
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:252:    ALTER TABLE 
+schedules ADD COLUMN boq_item_code text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:255:    ALTER TABLE 
+schedules ADD COLUMN boq_item_name text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:258:    ALTER TABLE 
+schedules ADD COLUMN planned_value numeric DEFAULT 0;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:261:    ALTER TABLE 
+schedules ADD COLUMN predecessor_item text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:264:    ALTER TABLE 
+schedules ADD COLUMN is_critical_item boolean DEFAULT false;
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:267:    ALTER TABLE 
+schedules ADD COLUMN notes text DEFAULT '';
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:274:CREATE INDEX IF 
+NOT EXISTS idx_boq_headers_project_id ON boq_headers(project_id);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:275:CREATE INDEX IF 
+NOT EXISTS idx_boq_headers_boq_code ON boq_headers(boq_code);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:276:CREATE INDEX IF 
+NOT EXISTS idx_boq_items_boq_code ON boq_items(boq_code);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:277:CREATE INDEX IF 
+NOT EXISTS idx_cost_entries_project_id ON cost_entries(project_id);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:278:CREATE INDEX IF 
+NOT EXISTS idx_cost_entries_boq_code ON cost_entries(boq_code);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:280:CREATE INDEX IF 
+NOT EXISTS idx_wir_entries_boq_code ON wir_entries(boq_code);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:281:CREATE INDEX IF 
+NOT EXISTS idx_wir_entries_item_code ON wir_entries(item_code);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:282:CREATE INDEX IF 
+NOT EXISTS idx_progress_entries_project_id ON progress_entries(project_id);
+supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql:283:CREATE INDEX IF 
+NOT EXISTS idx_schedules_boq_code ON schedules(boq_code);
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:16:1. subcontractor_invoices - added 
+boq_code, boq_item_code, item_desc, unit, quantity, unit_rate, created_by
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:17:2. client_invoices - added boq_code, 
+boq_item_code, item_desc, unit, quantity, unit_rate, created_by
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:31:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS boq_code text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:32:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS boq_item_code text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:33:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS item_desc text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:34:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS unit text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:35:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS quantity numeric DEFAULT 0;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:36:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS unit_rate numeric DEFAULT 0;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:37:ALTER TABLE subcontractor_invoices ADD 
+COLUMN IF NOT EXISTS created_by text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:40:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS boq_code text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:41:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS boq_item_code text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:42:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS item_desc text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:43:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS unit text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:44:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS quantity numeric DEFAULT 0;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:45:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS unit_rate numeric DEFAULT 0;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:46:ALTER TABLE client_invoices ADD COLUMN 
+IF NOT EXISTS created_by text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:49:ALTER TABLE cost_entries ADD COLUMN IF 
+NOT EXISTS source_type text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:50:ALTER TABLE cost_entries ADD COLUMN IF 
+NOT EXISTS source_id text;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:53:CREATE TABLE IF NOT EXISTS labor_duty (
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:55:  project_id text,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:71:CREATE TABLE IF NOT EXISTS equipment (
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:73:  project_id text,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:87:CREATE TABLE IF NOT EXISTS 
+tracking_sheet (
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:89:  project_id text,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:90:  company_name text,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:101:ALTER TABLE labor_duty ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:102:ALTER TABLE equipment ENABLE ROW LEVEL 
+SECURITY;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:103:ALTER TABLE tracking_sheet ENABLE ROW 
+LEVEL SECURITY;
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:140:    INSERT INTO cost_entries 
+(project_id, project_code, date, cost_type, invoice_number, amount, source_type, source_id)
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:141:    VALUES (NEW.project_id, 
+NEW.project_code, NEW.date, 'Labor', NEW.worker_name || ' - ' || COALESCE(NEW.role, ''), NEW.amount, 'labor_duty', 
+NEW.id::text);
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:145:      project_id = NEW.project_id, 
+project_code = NEW.project_code, date = NEW.date,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:162:    INSERT INTO cost_entries 
+(project_id, project_code, date, cost_type, invoice_number, amount, source_type, source_id)
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:163:    VALUES (NEW.project_id, 
+NEW.project_code, NEW.date, 'Equipment', NEW.equipment_name, NEW.amount, 'equipment', NEW.id::text);
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:167:      project_id = NEW.project_id, 
+project_code = NEW.project_code, date = NEW.date,
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:184:    INSERT INTO tracking_sheet 
+(project_id, company_name, source_type, source_id, amount, status, created_by, created_time)
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:185:    VALUES (NEW.project_id, 
+COALESCE(NEW.subcontractor, ''), 'subcontractor_invoices', NEW.id::text, COALESCE(NEW.amount, 0), COALESCE(NEW.status, 
+''), COALESCE(NEW.created_by, ''), now());
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:189:      project_id = NEW.project_id, 
+company_name = COALESCE(NEW.subcontractor, ''),
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:206:    INSERT INTO tracking_sheet 
+(project_id, company_name, source_type, source_id, amount, status, created_by, created_time)
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:207:    VALUES (NEW.project_id, 
+COALESCE(NEW.client, ''), 'client_invoices', NEW.id::text, COALESCE(NEW.amount, 0), COALESCE(NEW.status, ''), 
+COALESCE(NEW.created_by, ''), now());
+supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql:211:      project_id = NEW.project_id, 
+company_name = COALESCE(NEW.client, ''),
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:2:ALTER TABLE projects ADD 
+COLUMN IF NOT EXISTS project_code_locked boolean NOT NULL DEFAULT false;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:3:ALTER TABLE projects ADD 
+COLUMN IF NOT EXISTS client_contract_type text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:4:ALTER TABLE projects ADD 
+COLUMN IF NOT EXISTS company_contract_type text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:5:ALTER TABLE projects ADD 
+COLUMN IF NOT EXISTS parent_main_project_id uuid;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:6:ALTER TABLE projects ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:8:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS contract_code text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:9:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS client text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:10:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS company text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:11:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS client_contract_type text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:12:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS company_contract_type text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:13:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS parent_main_contract_id uuid;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:14:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS document_reference text;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:15:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS contract_code_locked boolean NOT NULL DEFAULT false;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:16:ALTER TABLE contracts ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:18:ALTER TABLE boq_headers ADD 
+COLUMN IF NOT EXISTS contract_id uuid;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:19:ALTER TABLE boq_headers ADD 
+COLUMN IF NOT EXISTS boq_code_locked boolean NOT NULL DEFAULT false;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:20:ALTER TABLE boq_headers ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:22:ALTER TABLE boq_items ADD 
+COLUMN IF NOT EXISTS boq_header_id uuid;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:23:ALTER TABLE boq_items ADD 
+COLUMN IF NOT EXISTS item_code_locked boolean NOT NULL DEFAULT false;
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:24:ALTER TABLE boq_items ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:26:ALTER TABLE wir_entries ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:27:ALTER TABLE 
+progress_entries ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:28:ALTER TABLE costs ADD 
+COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:29:ALTER TABLE cost_entries 
+ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:32:  IF NOT EXISTS (SELECT 1 
+FROM pg_constraint WHERE conname = 'projects_parent_main_project_id_fkey') THEN
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:33:    ALTER TABLE projects 
+ADD CONSTRAINT projects_parent_main_project_id_fkey FOREIGN KEY (parent_main_project_id) REFERENCES projects(id);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:35:  IF NOT EXISTS (SELECT 1 
+FROM pg_constraint WHERE conname = 'contracts_parent_main_contract_id_fkey') THEN
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:36:    ALTER TABLE contracts 
+ADD CONSTRAINT contracts_parent_main_contract_id_fkey FOREIGN KEY (parent_main_contract_id) REFERENCES contracts(id);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:38:  IF NOT EXISTS (SELECT 1 
+FROM pg_constraint WHERE conname = 'boq_headers_contract_id_fkey') THEN
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:39:    ALTER TABLE boq_headers 
+ADD CONSTRAINT boq_headers_contract_id_fkey FOREIGN KEY (contract_id) REFERENCES contracts(id);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:41:  IF NOT EXISTS (SELECT 1 
+FROM pg_constraint WHERE conname = 'boq_items_boq_header_id_fkey') THEN
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:42:    ALTER TABLE boq_items 
+ADD CONSTRAINT boq_items_boq_header_id_fkey FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:46:CREATE INDEX IF NOT EXISTS 
+idx_projects_project_code ON projects(project_code);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:47:CREATE INDEX IF NOT EXISTS 
+idx_contracts_contract_code ON contracts(contract_code);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:48:CREATE INDEX IF NOT EXISTS 
+idx_boq_headers_boq_code ON boq_headers(boq_code);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:49:CREATE INDEX IF NOT EXISTS 
+idx_boq_items_boq_header_id ON boq_items(boq_header_id);
+supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql:62:  FOREACH t IN ARRAY 
+ARRAY['projects','contracts','boq_headers','boq_items','wir_entries','progress_entries','costs','cost_entries'] LOOP
+
+

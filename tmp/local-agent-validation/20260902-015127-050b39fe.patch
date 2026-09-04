@@ -1,0 +1,7 @@
+diff --git a/tmp/local-agent-gate-proof.txt b/tmp/local-agent-gate-proof.txt
+new file mode 100644
+--- /dev/null
++++ b/tmp/local-agent-gate-proof.txt
+@@ -0,0 +1 @@
++deterministic gate proof
+

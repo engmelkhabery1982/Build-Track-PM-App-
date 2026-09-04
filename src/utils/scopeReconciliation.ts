@@ -1,8 +1,8 @@
-export interface CalculateBoqWasteLedgerParams {
+export interface BoqWasteLedgerParams {
   boqItemId: string;
-  contractualWasteAllowancePercent: number;
-  purchasedQty: number;
-  certifiedInstalledQty: number;
+  contractualWasteAllowancePercent: number; // e.g. 5% or 8%
+  purchasedQty: number; // Total received from GRNs
+  certifiedInstalledQty: number; // Total approved/certified from WIRs
   unitRate: number;
 }
 
@@ -12,11 +12,18 @@ export interface BoqWasteLedgerResult {
   certifiedInstalledQty: number;
   wasteQty: number;
   wastePercentage: number;
-  wasteCost: number;
+  allowableWasteQty: number;
+  excessWasteQty: number;
+  excessWasteCost: number;
   isExcessiveWaste: boolean;
 }
 
-export function calculateBoqWasteLedger(params: CalculateBoqWasteLedgerParams): BoqWasteLedgerResult {
+/**
+ * SC-06: As-Built BOQ Reconciliation & Material Waste Ledger
+ * Calculates difference between procurement receipts and consultant-certified installation,
+ * isolating allowable contract waste from culpable contractor waste cost.
+ */
+export function calculateBoqWasteLedger(params: BoqWasteLedgerParams): BoqWasteLedgerResult {
   const {
     boqItemId,
     contractualWasteAllowancePercent,
@@ -25,18 +32,29 @@ export function calculateBoqWasteLedger(params: CalculateBoqWasteLedgerParams): 
     unitRate,
   } = params;
 
-  const wasteQty = purchasedQty - certifiedInstalledQty;
-  const wastePercentage = purchasedQty > 0 ? (wasteQty / purchasedQty) * 100 : 0;
-  const wasteCost = wasteQty * unitRate;
-  const isExcessiveWaste = wastePercentage > contractualWasteAllowancePercent;
+  const wasteQty = Math.max(0, purchasedQty - certifiedInstalledQty);
+  const wastePercentage =
+    certifiedInstalledQty > 0
+      ? Number(((wasteQty / certifiedInstalledQty) * 100).toFixed(2))
+      : 0;
+
+  const allowableWasteQty = Number(
+    ((certifiedInstalledQty * contractualWasteAllowancePercent) / 100).toFixed(2)
+  );
+
+  const excessWasteQty = Number(Math.max(0, wasteQty - allowableWasteQty).toFixed(2));
+  const excessWasteCost = Number((excessWasteQty * unitRate).toFixed(2));
+  const isExcessiveWaste = excessWasteQty > 0.001;
 
   return {
     boqItemId,
     purchasedQty,
     certifiedInstalledQty,
-    wasteQty,
+    wasteQty: Number(wasteQty.toFixed(2)),
     wastePercentage,
-    wasteCost,
+    allowableWasteQty,
+    excessWasteQty,
+    excessWasteCost,
     isExcessiveWaste,
   };
 }

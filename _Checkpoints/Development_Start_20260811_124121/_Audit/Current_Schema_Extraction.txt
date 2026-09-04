@@ -1,0 +1,1752 @@
+﻿==================================================
+CURRENT PROJECT DATABASE SCHEMA EXTRACTION
+Date: 2026-08-11 12:21:48
+==================================================
+
+==================================================
+FILE: F:\PM App\Project\supabase\migrations\20260809001444_create_all_construction_tables.sql
+==================================================
+/*
+# Create all construction management tables (single-tenant, no auth)
+
+1. New Tables
+- `projects` â€” Construction projects with client, budget, progress, manager, contractor
+- `tasks` â€” Tasks within a project with assignee, category, dates, cost, priority, predecessors
+- `costs` â€” Cost control entries with planned/actual/committed, category, status
+- `procurement` â€” Procurement items with supplier, qty, unit cost, total, status, dates
+- `safety` â€” Safety/HSE records with type, severity, date, description, status, action
+- `progress_entries` â€” Daily progress logs with area, % complete, weather, workers
+- `schedules` â€” Schedule activities with dates, duration, progress, critical path, predecessors
+- `contracts` â€” Contracts with number, title, contractor, type, value, dates, status
+- `boq_items` â€” Bill of Quantities line items with code, description, unit, qty, rate, amount
+- `wir_entries` â€” Work Inspection Requests with area, type, date, inspector, result, status
+- `cash_flow` â€” Cash flow entries with inflow, outflow, net, cumulative balance, category
+- `subcontractor_invoices` â€” Subcontractor invoices with BOQ ref, amount, payment tracking
+- `client_invoices` â€” Client invoices with due date, amount, payment tracking
+- `variations` â€” Variation orders with type, cost/time impact, approval status
+- `documents` â€” Document tracking with name, type, category, version, status, responsible
+
+2. Security
+- RLS enabled on all tables.
+- 4 CRUD policies each (TO anon, authenticated) â€” single-tenant no-auth app, data is intentionally shared.
+
+3. Notes
+- No user_id columns (no auth required).
+- Foreign keys from child tables to projects(id) with CASCADE delete.
+- Indexes on project_id and status columns for query performance.
+*/
+
+-- ============ PROJECTS ============
+CREATE TABLE IF NOT EXISTS projects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  client text DEFAULT '',
+  location text DEFAULT '',
+  category text DEFAULT 'Residential',
+  start_date date,
+  end_date date,
+  budget numeric(14,2) DEFAULT 0,
+  spent numeric(14,2) DEFAULT 0,
+  status text DEFAULT 'Planning',
+  progress integer DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  project_manager text DEFAULT '',
+  contractor text DEFAULT '',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_projects" ON projects;
+CREATE POLICY "anon_select_projects" ON projects FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_projects" ON projects;
+CREATE POLICY "anon_insert_projects" ON projects FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_projects" ON projects;
+CREATE POLICY "anon_update_projects" ON projects FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_projects" ON projects;
+CREATE POLICY "anon_delete_projects" ON projects FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+
+-- ============ TASKS ============
+CREATE TABLE IF NOT EXISTS tasks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  assignee text DEFAULT '',
+  category text DEFAULT '',
+  start_date date,
+  end_date date,
+  cost numeric(14,2) DEFAULT 0,
+  status text DEFAULT 'Not Started',
+  progress integer DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  predecessors text DEFAULT '',
+  priority text DEFAULT 'Medium',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_tasks" ON tasks;
+CREATE POLICY "anon_select_tasks" ON tasks FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_tasks" ON tasks;
+CREATE POLICY "anon_insert_tasks" ON tasks FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_tasks" ON tasks;
+CREATE POLICY "anon_update_tasks" ON tasks FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_tasks" ON tasks;
+CREATE POLICY "anon_delete_tasks" ON tasks FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+-- ============ COSTS ============
+CREATE TABLE IF NOT EXISTS costs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  category text NOT NULL DEFAULT 'Materials',
+  description text DEFAULT '',
+  planned numeric(14,2) DEFAULT 0,
+  actual numeric(14,2) DEFAULT 0,
+  committed numeric(14,2) DEFAULT 0,
+  status text DEFAULT 'On Budget',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE costs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_costs" ON costs;
+CREATE POLICY "anon_select_costs" ON costs FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_costs" ON costs;
+CREATE POLICY "anon_insert_costs" ON costs FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_costs" ON costs;
+CREATE POLICY "anon_update_costs" ON costs FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_costs" ON costs;
+CREATE POLICY "anon_delete_costs" ON costs FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_costs_project_id ON costs(project_id);
+
+-- ============ PROCUREMENT ============
+CREATE TABLE IF NOT EXISTS procurement (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  item text NOT NULL DEFAULT '',
+  supplier text DEFAULT '',
+  quantity numeric(14,2) DEFAULT 1,
+  unit text DEFAULT 'pcs',
+  unit_cost numeric(14,2) DEFAULT 0,
+  total_cost numeric(14,2) DEFAULT 0,
+  status text DEFAULT 'Requested',
+  order_date date,
+  delivery_date date,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE procurement ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_proc" ON procurement;
+CREATE POLICY "anon_select_proc" ON procurement FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_proc" ON procurement;
+CREATE POLICY "anon_insert_proc" ON procurement FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_proc" ON procurement;
+CREATE POLICY "anon_update_proc" ON procurement FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_proc" ON procurement;
+CREATE POLICY "anon_delete_proc" ON procurement FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_proc_project_id ON procurement(project_id);
+CREATE INDEX IF NOT EXISTS idx_proc_status ON procurement(status);
+
+-- ============ SAFETY ============
+CREATE TABLE IF NOT EXISTS safety (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  type text NOT NULL DEFAULT 'Inspection',
+  severity text DEFAULT 'Low',
+  date date,
+  description text DEFAULT '',
+  location text DEFAULT '',
+  responsible text DEFAULT '',
+  status text DEFAULT 'Open',
+  action_taken text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE safety ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_safety" ON safety;
+CREATE POLICY "anon_select_safety" ON safety FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_safety" ON safety;
+CREATE POLICY "anon_insert_safety" ON safety FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_safety" ON safety;
+CREATE POLICY "anon_update_safety" ON safety FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_safety" ON safety;
+CREATE POLICY "anon_delete_safety" ON safety FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_safety_project_id ON safety(project_id);
+CREATE INDEX IF NOT EXISTS idx_safety_status ON safety(status);
+
+-- ============ PROGRESS ENTRIES ============
+CREATE TABLE IF NOT EXISTS progress_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  date date NOT NULL DEFAULT CURRENT_DATE,
+  area text DEFAULT '',
+  percent_complete integer DEFAULT 0 CHECK (percent_complete >= 0 AND percent_complete <= 100),
+  weather text DEFAULT '',
+  workers integer DEFAULT 0,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE progress_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_progress" ON progress_entries;
+CREATE POLICY "anon_select_progress" ON progress_entries FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_progress" ON progress_entries;
+CREATE POLICY "anon_insert_progress" ON progress_entries FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_progress" ON progress_entries;
+CREATE POLICY "anon_update_progress" ON progress_entries FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_progress" ON progress_entries;
+CREATE POLICY "anon_delete_progress" ON progress_entries FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_progress_project_id ON progress_entries(project_id);
+
+-- ============ SCHEDULES ============
+CREATE TABLE IF NOT EXISTS schedules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  activity text NOT NULL DEFAULT '',
+  start_date date,
+  end_date date,
+  duration_days integer DEFAULT 0,
+  progress integer DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  predecessors text DEFAULT '',
+  critical_path boolean DEFAULT false,
+  responsible text DEFAULT '',
+  status text DEFAULT 'Not Started',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_schedules" ON schedules;
+CREATE POLICY "anon_select_schedules" ON schedules FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_schedules" ON schedules;
+CREATE POLICY "anon_insert_schedules" ON schedules FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_schedules" ON schedules;
+CREATE POLICY "anon_update_schedules" ON schedules FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_schedules" ON schedules;
+CREATE POLICY "anon_delete_schedules" ON schedules FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_sched_project_id ON schedules(project_id);
+CREATE INDEX IF NOT EXISTS idx_sched_status ON schedules(status);
+
+-- ============ CONTRACTS ============
+CREATE TABLE IF NOT EXISTS contracts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  contract_number text DEFAULT '',
+  title text NOT NULL DEFAULT '',
+  contractor text DEFAULT '',
+  contract_type text DEFAULT 'Lump Sum',
+  contract_value numeric DEFAULT 0,
+  start_date date,
+  end_date date,
+  status text DEFAULT 'Draft',
+  signed_date date,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE contracts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_contracts" ON contracts;
+CREATE POLICY "anon_select_contracts" ON contracts FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_contracts" ON contracts;
+CREATE POLICY "anon_insert_contracts" ON contracts FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_contracts" ON contracts;
+CREATE POLICY "anon_update_contracts" ON contracts FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_contracts" ON contracts;
+CREATE POLICY "anon_delete_contracts" ON contracts FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_contracts_project_id ON contracts(project_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
+
+-- ============ BOQ ITEMS ============
+CREATE TABLE IF NOT EXISTS boq_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  item_code text DEFAULT '',
+  description text NOT NULL DEFAULT '',
+  category text DEFAULT '',
+  unit text DEFAULT 'pcs',
+  quantity numeric DEFAULT 0,
+  unit_rate numeric DEFAULT 0,
+  amount numeric DEFAULT 0,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE boq_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_boq_items" ON boq_items;
+CREATE POLICY "anon_select_boq_items" ON boq_items FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_boq_items" ON boq_items;
+CREATE POLICY "anon_insert_boq_items" ON boq_items FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_boq_items" ON boq_items;
+CREATE POLICY "anon_update_boq_items" ON boq_items FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_boq_items" ON boq_items;
+CREATE POLICY "anon_delete_boq_items" ON boq_items FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_boq_project_id ON boq_items(project_id);
+
+-- ============ WIR ENTRIES ============
+CREATE TABLE IF NOT EXISTS wir_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  wir_number text DEFAULT '',
+  area text DEFAULT '',
+  work_type text DEFAULT 'Inspection',
+  inspection_date date,
+  inspector text DEFAULT '',
+  result text DEFAULT 'Pending',
+  remarks text DEFAULT '',
+  status text DEFAULT 'Open',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE wir_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_wir_entries" ON wir_entries;
+CREATE POLICY "anon_select_wir_entries" ON wir_entries FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_wir_entries" ON wir_entries;
+CREATE POLICY "anon_insert_wir_entries" ON wir_entries FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_wir_entries" ON wir_entries;
+CREATE POLICY "anon_update_wir_entries" ON wir_entries FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_wir_entries" ON wir_entries;
+CREATE POLICY "anon_delete_wir_entries" ON wir_entries FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_wir_project_id ON wir_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_wir_status ON wir_entries(status);
+
+-- ============ CASH FLOW ============
+CREATE TABLE IF NOT EXISTS cash_flow (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  date date,
+  description text DEFAULT '',
+  inflow numeric DEFAULT 0,
+  outflow numeric DEFAULT 0,
+  net numeric DEFAULT 0,
+  cumulative_balance numeric DEFAULT 0,
+  category text DEFAULT '',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE cash_flow ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_cash_flow" ON cash_flow;
+CREATE POLICY "anon_select_cash_flow" ON cash_flow FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_cash_flow" ON cash_flow;
+CREATE POLICY "anon_insert_cash_flow" ON cash_flow FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_cash_flow" ON cash_flow;
+CREATE POLICY "anon_update_cash_flow" ON cash_flow FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_cash_flow" ON cash_flow;
+CREATE POLICY "anon_delete_cash_flow" ON cash_flow FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_cashflow_project_id ON cash_flow(project_id);
+
+-- ============ SUBCONTRACTOR INVOICES ============
+CREATE TABLE IF NOT EXISTS subcontractor_invoices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  invoice_number text DEFAULT '',
+  subcontractor text DEFAULT '',
+  boq_reference text DEFAULT '',
+  invoice_date date,
+  amount numeric DEFAULT 0,
+  status text DEFAULT 'Submitted',
+  payment_status text DEFAULT 'Unpaid',
+  payment_date date,
+  paid_amount numeric DEFAULT 0,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE subcontractor_invoices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_subcontractor_invoices" ON subcontractor_invoices;
+CREATE POLICY "anon_select_subcontractor_invoices" ON subcontractor_invoices FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_subcontractor_invoices" ON subcontractor_invoices;
+CREATE POLICY "anon_insert_subcontractor_invoices" ON subcontractor_invoices FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_subcontractor_invoices" ON subcontractor_invoices;
+CREATE POLICY "anon_update_subcontractor_invoices" ON subcontractor_invoices FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_subcontractor_invoices" ON subcontractor_invoices;
+CREATE POLICY "anon_delete_subcontractor_invoices" ON subcontractor_invoices FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_subinv_project_id ON subcontractor_invoices(project_id);
+CREATE INDEX IF NOT EXISTS idx_subinv_status ON subcontractor_invoices(status);
+
+-- ============ CLIENT INVOICES ============
+CREATE TABLE IF NOT EXISTS client_invoices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  invoice_number text DEFAULT '',
+  client text DEFAULT '',
+  invoice_date date,
+  due_date date,
+  amount numeric DEFAULT 0,
+  status text DEFAULT 'Draft',
+  payment_status text DEFAULT 'Unpaid',
+  payment_date date,
+  paid_amount numeric DEFAULT 0,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE client_invoices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_client_invoices" ON client_invoices;
+CREATE POLICY "anon_select_client_invoices" ON client_invoices FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_client_invoices" ON client_invoices;
+CREATE POLICY "anon_insert_client_invoices" ON client_invoices FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_client_invoices" ON client_invoices;
+CREATE POLICY "anon_update_client_invoices" ON client_invoices FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_client_invoices" ON client_invoices;
+CREATE POLICY "anon_delete_client_invoices" ON client_invoices FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_clientinv_project_id ON client_invoices(project_id);
+CREATE INDEX IF NOT EXISTS idx_clientinv_status ON client_invoices(status);
+
+-- ============ VARIATIONS ============
+CREATE TABLE IF NOT EXISTS variations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  variation_number text DEFAULT '',
+  type text DEFAULT 'Variation',
+  title text DEFAULT '',
+  description text DEFAULT '',
+  cost_impact numeric DEFAULT 0,
+  time_impact_days integer DEFAULT 0,
+  status text DEFAULT 'Pending',
+  approved_by text DEFAULT '',
+  approved_date date,
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE variations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_variations" ON variations;
+CREATE POLICY "anon_select_variations" ON variations FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_variations" ON variations;
+CREATE POLICY "anon_insert_variations" ON variations FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_variations" ON variations;
+CREATE POLICY "anon_update_variations" ON variations FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_variations" ON variations;
+CREATE POLICY "anon_delete_variations" ON variations FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_var_project_id ON variations(project_id);
+CREATE INDEX IF NOT EXISTS idx_var_status ON variations(status);
+
+-- ============ DOCUMENTS ============
+CREATE TABLE IF NOT EXISTS documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  document_name text NOT NULL DEFAULT '',
+  document_type text DEFAULT 'Drawing',
+  category text DEFAULT '',
+  version text DEFAULT '1.0',
+  upload_date date,
+  status text DEFAULT 'Current',
+  responsible text DEFAULT '',
+  file_reference text DEFAULT '',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_select_documents" ON documents;
+CREATE POLICY "anon_select_documents" ON documents FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_documents" ON documents;
+CREATE POLICY "anon_insert_documents" ON documents FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_documents" ON documents;
+CREATE POLICY "anon_update_documents" ON documents FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_documents" ON documents;
+CREATE POLICY "anon_delete_documents" ON documents FOR DELETE TO anon, authenticated USING (true);
+CREATE INDEX IF NOT EXISTS idx_docs_project_id ON documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
+
+==================================================
+FILE: F:\PM App\Project\supabase\migrations\20260809074809_restructure_tables_add_boq_headers_cost_entries_new_columns.sql
+==================================================
+/*
+# Restructure tables: BOQ split, new Costs table, expanded columns
+
+## Summary
+This migration restructures several tables to support a two-level BOQ (headers + items),
+a new detailed Costs tracking table, and adds missing columns across Projects, WIR,
+Progress, Cost Control, and Schedule tables per the user's requirements.
+
+## Changes
+
+### 1. New Table: boq_headers
+Top-level BOQ records (main contractor or subcontractor BOQ). Each header has multiple boq_items.
+- project_code (text) - links to project
+- boq_code (text) - unique BOQ identifier
+- classification (text) - "Main" or "Subcontractor"
+- company_name (text) - company name
+- contract_type (text) - Lump Sum, Unit Price, Cost Plus, Time & Materials, Design-Build, GMP, Cost Reimbursable
+- total_value (numeric) - sum of all item amounts (calculated in app)
+
+### 2. New Table: cost_entries (detailed costs)
+Replaces the old simple costs table with a detailed cost tracking table.
+- project_code, boq_code, company_name, boq_item_code, boq_item_name
+- date, cost_type (Labor, Equipment, Materials, Miscellaneous, Other)
+- invoice_number, payment_order_number, amount
+
+### 3. Modified: projects table
+Added: project_code (text), boq_code (text)
+Spent and total_value remain calculated in the app from cost_entries and boq_items.
+
+### 4. Modified: boq_items table
+Added: boq_code (text), project_code (text), item_name (text)
+Existing columns preserved.
+
+### 5. Modified: wir_entries table
+Added: project_code, boq_code, item_code, item_name, item_description,
+  company_name, unit, quantity, unit_price, item_amount, completion_pct
+
+### 6. Modified: progress_entries table
+Added: project_code, company_name, prev_value, prev_pct, current_value,
+  current_pct, total_value, total_pct
+
+### 7. Modified: costs table (cost control)
+Added: project_code, item_code, company_name, boq_item_code, boq_item_name
+
+### 8. Modified: schedules table
+Added: project_code, boq_code, boq_item_code, boq_item_name, planned_value,
+  predecessor_item, is_critical_item, notes
+
+## Security
+All new tables get RLS enabled with anon+authenticated CRUD (single-tenant, no auth).
+All modified tables keep existing RLS policies.
+*/
+
+-- ============================================================
+-- 1. NEW TABLE: boq_headers
+-- ============================================================
+CREATE TABLE IF NOT EXISTS boq_headers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  project_code text DEFAULT '',
+  boq_code text NOT NULL,
+  classification text DEFAULT 'Main',
+  company_name text DEFAULT '',
+  contract_type text DEFAULT '',
+  total_value numeric DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE boq_headers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_select_boq_headers" ON boq_headers;
+CREATE POLICY "anon_select_boq_headers" ON boq_headers FOR SELECT
+  TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "anon_insert_boq_headers" ON boq_headers;
+CREATE POLICY "anon_insert_boq_headers" ON boq_headers FOR INSERT
+  TO anon, authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon_update_boq_headers" ON boq_headers;
+CREATE POLICY "anon_update_boq_headers" ON boq_headers FOR UPDATE
+  TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon_delete_boq_headers" ON boq_headers;
+CREATE POLICY "anon_delete_boq_headers" ON boq_headers FOR DELETE
+  TO anon, authenticated USING (true);
+
+-- ============================================================
+-- 2. NEW TABLE: cost_entries (detailed costs)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cost_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  project_code text DEFAULT '',
+  boq_code text DEFAULT '',
+  company_name text DEFAULT '',
+  boq_item_code text DEFAULT '',
+  boq_item_name text DEFAULT '',
+  date date,
+  cost_type text DEFAULT 'Materials',
+  invoice_number text DEFAULT '',
+  payment_order_number text DEFAULT '',
+  amount numeric DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE cost_entries ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_select_cost_entries" ON cost_entries;
+CREATE POLICY "anon_select_cost_entries" ON cost_entries FOR SELECT
+  TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "anon_insert_cost_entries" ON cost_entries;
+CREATE POLICY "anon_insert_cost_entries" ON cost_entries FOR INSERT
+  TO anon, authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon_update_cost_entries" ON cost_entries;
+CREATE POLICY "anon_update_cost_entries" ON cost_entries FOR UPDATE
+  TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon_delete_cost_entries" ON cost_entries;
+CREATE POLICY "anon_delete_cost_entries" ON cost_entries FOR DELETE
+  TO anon, authenticated USING (true);
+
+-- ============================================================
+-- 3. MODIFY: projects - add project_code and boq_code
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'project_code') THEN
+    ALTER TABLE projects ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'boq_code') THEN
+    ALTER TABLE projects ADD COLUMN boq_code text DEFAULT '';
+  END IF;
+END $$;
+
+-- ============================================================
+-- 4. MODIFY: boq_items - add boq_code, project_code, item_name
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'boq_code') THEN
+    ALTER TABLE boq_items ADD COLUMN boq_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'project_code') THEN
+    ALTER TABLE boq_items ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'boq_items' AND column_name = 'item_name') THEN
+    ALTER TABLE boq_items ADD COLUMN item_name text DEFAULT '';
+  END IF;
+END $$;
+
+-- ============================================================
+-- 5. MODIFY: wir_entries - add new columns
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'project_code') THEN
+    ALTER TABLE wir_entries ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'boq_code') THEN
+    ALTER TABLE wir_entries ADD COLUMN boq_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'item_code') THEN
+    ALTER TABLE wir_entries ADD COLUMN item_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'item_name') THEN
+    ALTER TABLE wir_entries ADD COLUMN item_name text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'item_description') THEN
+    ALTER TABLE wir_entries ADD COLUMN item_description text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'company_name') THEN
+    ALTER TABLE wir_entries ADD COLUMN company_name text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'unit') THEN
+    ALTER TABLE wir_entries ADD COLUMN unit text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'quantity') THEN
+    ALTER TABLE wir_entries ADD COLUMN quantity numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'unit_price') THEN
+    ALTER TABLE wir_entries ADD COLUMN unit_price numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'item_amount') THEN
+    ALTER TABLE wir_entries ADD COLUMN item_amount numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wir_entries' AND column_name = 'completion_pct') THEN
+    ALTER TABLE wir_entries ADD COLUMN completion_pct numeric DEFAULT 0;
+  END IF;
+END $$;
+
+-- ============================================================
+-- 6. MODIFY: progress_entries - add new columns
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'project_code') THEN
+    ALTER TABLE progress_entries ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'company_name') THEN
+    ALTER TABLE progress_entries ADD COLUMN company_name text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'prev_value') THEN
+    ALTER TABLE progress_entries ADD COLUMN prev_value numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'prev_pct') THEN
+    ALTER TABLE progress_entries ADD COLUMN prev_pct numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'current_value') THEN
+    ALTER TABLE progress_entries ADD COLUMN current_value numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'current_pct') THEN
+    ALTER TABLE progress_entries ADD COLUMN current_pct numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'total_value') THEN
+    ALTER TABLE progress_entries ADD COLUMN total_value numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'progress_entries' AND column_name = 'total_pct') THEN
+    ALTER TABLE progress_entries ADD COLUMN total_pct numeric DEFAULT 0;
+  END IF;
+END $$;
+
+-- ============================================================
+-- 7. MODIFY: costs (cost control) - add new columns
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'project_code') THEN
+    ALTER TABLE costs ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'item_code') THEN
+    ALTER TABLE costs ADD COLUMN item_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'company_name') THEN
+    ALTER TABLE costs ADD COLUMN company_name text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'boq_item_code') THEN
+    ALTER TABLE costs ADD COLUMN boq_item_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'costs' AND column_name = 'boq_item_name') THEN
+    ALTER TABLE costs ADD COLUMN boq_item_name text DEFAULT '';
+  END IF;
+END $$;
+
+-- ============================================================
+-- 8. MODIFY: schedules - add new columns
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'project_code') THEN
+    ALTER TABLE schedules ADD COLUMN project_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'boq_code') THEN
+    ALTER TABLE schedules ADD COLUMN boq_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'boq_item_code') THEN
+    ALTER TABLE schedules ADD COLUMN boq_item_code text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'boq_item_name') THEN
+    ALTER TABLE schedules ADD COLUMN boq_item_name text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'planned_value') THEN
+    ALTER TABLE schedules ADD COLUMN planned_value numeric DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'predecessor_item') THEN
+    ALTER TABLE schedules ADD COLUMN predecessor_item text DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'is_critical_item') THEN
+    ALTER TABLE schedules ADD COLUMN is_critical_item boolean DEFAULT false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schedules' AND column_name = 'notes') THEN
+    ALTER TABLE schedules ADD COLUMN notes text DEFAULT '';
+  END IF;
+END $$;
+
+-- ============================================================
+-- Indexes for frequently queried columns
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_boq_headers_project_id ON boq_headers(project_id);
+CREATE INDEX IF NOT EXISTS idx_boq_headers_boq_code ON boq_headers(boq_code);
+CREATE INDEX IF NOT EXISTS idx_boq_items_boq_code ON boq_items(boq_code);
+CREATE INDEX IF NOT EXISTS idx_cost_entries_project_id ON cost_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_cost_entries_boq_code ON cost_entries(boq_code);
+CREATE INDEX IF NOT EXISTS idx_cost_entries_cost_type ON cost_entries(cost_type);
+CREATE INDEX IF NOT EXISTS idx_wir_entries_boq_code ON wir_entries(boq_code);
+CREATE INDEX IF NOT EXISTS idx_wir_entries_item_code ON wir_entries(item_code);
+CREATE INDEX IF NOT EXISTS idx_progress_entries_project_id ON progress_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_boq_code ON schedules(boq_code);
+
+
+==================================================
+FILE: F:\PM App\Project\supabase\migrations\20260809100744_add_labor_equipment_tracking_tables.sql
+==================================================
+/*
+# Add labor, equipment, tracking tables and update invoice columns
+
+## Summary
+Adds new tables for labor duty tracking and equipment management, creates a
+tracking sheet that auto-records invoice entries, adds BOQ-related columns to
+invoice tables for auto-fill, and sets up database triggers to sync labor and
+equipment costs into the cost entries table.
+
+## New Tables
+1. labor_duty - daily labor assignments with worker counts, hours, rates
+2. equipment - equipment usage with quantities, rates, costs
+3. tracking_sheet - auto-populated from invoice inserts
+
+## Modified Tables
+1. subcontractor_invoices - added boq_code, boq_item_code, item_desc, unit, quantity, unit_rate, created_by
+2. client_invoices - added boq_code, boq_item_code, item_desc, unit, quantity, unit_rate, created_by
+3. cost_entries - added source_type, source_id for linking to labor/equipment
+
+## Security
+- RLS enabled on all new tables with anon+authenticated CRUD (single-tenant, no auth)
+
+## Triggers
+1. labor_duty AFTER INSERT/UPDATE/DELETE -> syncs to cost_entries
+2. equipment AFTER INSERT/UPDATE/DELETE -> syncs to cost_entries
+3. subcontractor_invoices AFTER INSERT/UPDATE/DELETE -> syncs to tracking_sheet
+4. client_invoices AFTER INSERT/UPDATE/DELETE -> syncs to tracking_sheet
+*/
+
+-- Add columns to subcontractor_invoices
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS boq_code text;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS boq_item_code text;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS item_desc text;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS unit text;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS quantity numeric DEFAULT 0;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS unit_rate numeric DEFAULT 0;
+ALTER TABLE subcontractor_invoices ADD COLUMN IF NOT EXISTS created_by text;
+
+-- Add columns to client_invoices
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS boq_code text;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS boq_item_code text;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS item_desc text;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS unit text;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS quantity numeric DEFAULT 0;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS unit_rate numeric DEFAULT 0;
+ALTER TABLE client_invoices ADD COLUMN IF NOT EXISTS created_by text;
+
+-- Add source tracking to cost_entries
+ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS source_id text;
+
+-- Create labor_duty table
+CREATE TABLE IF NOT EXISTS labor_duty (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id text,
+  project_code text,
+  date date,
+  worker_name text,
+  role text,
+  no_of_workers numeric DEFAULT 0,
+  hours_per_day numeric DEFAULT 0,
+  days numeric DEFAULT 0,
+  total_hours numeric DEFAULT 0,
+  rate_per_hour numeric DEFAULT 0,
+  amount numeric DEFAULT 0,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Create equipment table
+CREATE TABLE IF NOT EXISTS equipment (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id text,
+  project_code text,
+  date date,
+  equipment_name text,
+  equipment_type text,
+  unit text,
+  quantity numeric DEFAULT 0,
+  unit_rate numeric DEFAULT 0,
+  amount numeric DEFAULT 0,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Create tracking_sheet table
+CREATE TABLE IF NOT EXISTS tracking_sheet (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id text,
+  company_name text,
+  source_type text,
+  source_id text,
+  amount numeric DEFAULT 0,
+  status text,
+  created_by text,
+  created_time timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE labor_duty ENABLE ROW LEVEL SECURITY;
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tracking_sheet ENABLE ROW LEVEL SECURITY;
+
+-- RLS for labor_duty
+DROP POLICY IF EXISTS "anon_select_labor_duty" ON labor_duty;
+CREATE POLICY "anon_select_labor_duty" ON labor_duty FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_labor_duty" ON labor_duty;
+CREATE POLICY "anon_insert_labor_duty" ON labor_duty FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_labor_duty" ON labor_duty;
+CREATE POLICY "anon_update_labor_duty" ON labor_duty FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_labor_duty" ON labor_duty;
+CREATE POLICY "anon_delete_labor_duty" ON labor_duty FOR DELETE TO anon, authenticated USING (true);
+
+-- RLS for equipment
+DROP POLICY IF EXISTS "anon_select_equipment" ON equipment;
+CREATE POLICY "anon_select_equipment" ON equipment FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_equipment" ON equipment;
+CREATE POLICY "anon_insert_equipment" ON equipment FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_equipment" ON equipment;
+CREATE POLICY "anon_update_equipment" ON equipment FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_equipment" ON equipment;
+CREATE POLICY "anon_delete_equipment" ON equipment FOR DELETE TO anon, authenticated USING (true);
+
+-- RLS for tracking_sheet
+DROP POLICY IF EXISTS "anon_select_tracking_sheet" ON tracking_sheet;
+CREATE POLICY "anon_select_tracking_sheet" ON tracking_sheet FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "anon_insert_tracking_sheet" ON tracking_sheet;
+CREATE POLICY "anon_insert_tracking_sheet" ON tracking_sheet FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update_tracking_sheet" ON tracking_sheet;
+CREATE POLICY "anon_update_tracking_sheet" ON tracking_sheet FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_delete_tracking_sheet" ON tracking_sheet;
+CREATE POLICY "anon_delete_tracking_sheet" ON tracking_sheet FOR DELETE TO anon, authenticated USING (true);
+
+-- Trigger: sync labor to cost_entries
+CREATE OR REPLACE FUNCTION sync_labor_cost()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO cost_entries (project_id, project_code, date, cost_type, invoice_number, amount, source_type, source_id)
+    VALUES (NEW.project_id, NEW.project_code, NEW.date, 'Labor', NEW.worker_name || ' - ' || COALESCE(NEW.role, ''), NEW.amount, 'labor_duty', NEW.id::text);
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    UPDATE cost_entries SET
+      project_id = NEW.project_id, project_code = NEW.project_code, date = NEW.date,
+      amount = NEW.amount, invoice_number = NEW.worker_name || ' - ' || COALESCE(NEW.role, '')
+    WHERE source_type = 'labor_duty' AND source_id = NEW.id::text;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    DELETE FROM cost_entries WHERE source_type = 'labor_duty' AND source_id = OLD.id::text;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: sync equipment to cost_entries
+CREATE OR REPLACE FUNCTION sync_equipment_cost()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO cost_entries (project_id, project_code, date, cost_type, invoice_number, amount, source_type, source_id)
+    VALUES (NEW.project_id, NEW.project_code, NEW.date, 'Equipment', NEW.equipment_name, NEW.amount, 'equipment', NEW.id::text);
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    UPDATE cost_entries SET
+      project_id = NEW.project_id, project_code = NEW.project_code, date = NEW.date,
+      amount = NEW.amount, invoice_number = NEW.equipment_name
+    WHERE source_type = 'equipment' AND source_id = NEW.id::text;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    DELETE FROM cost_entries WHERE source_type = 'equipment' AND source_id = OLD.id::text;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: sync subcontractor invoices to tracking_sheet
+CREATE OR REPLACE FUNCTION sync_subcontractor_tracking()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO tracking_sheet (project_id, company_name, source_type, source_id, amount, status, created_by, created_time)
+    VALUES (NEW.project_id, COALESCE(NEW.subcontractor, ''), 'subcontractor_invoices', NEW.id::text, COALESCE(NEW.amount, 0), COALESCE(NEW.status, ''), COALESCE(NEW.created_by, ''), now());
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    UPDATE tracking_sheet SET
+      project_id = NEW.project_id, company_name = COALESCE(NEW.subcontractor, ''),
+      amount = COALESCE(NEW.amount, 0), status = COALESCE(NEW.status, ''), created_by = COALESCE(NEW.created_by, '')
+    WHERE source_type = 'subcontractor_invoices' AND source_id = NEW.id::text;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    DELETE FROM tracking_sheet WHERE source_type = 'subcontractor_invoices' AND source_id = OLD.id::text;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: sync client invoices to tracking_sheet
+CREATE OR REPLACE FUNCTION sync_client_tracking()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO tracking_sheet (project_id, company_name, source_type, source_id, amount, status, created_by, created_time)
+    VALUES (NEW.project_id, COALESCE(NEW.client, ''), 'client_invoices', NEW.id::text, COALESCE(NEW.amount, 0), COALESCE(NEW.status, ''), COALESCE(NEW.created_by, ''), now());
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    UPDATE tracking_sheet SET
+      project_id = NEW.project_id, company_name = COALESCE(NEW.client, ''),
+      amount = COALESCE(NEW.amount, 0), status = COALESCE(NEW.status, ''), created_by = COALESCE(NEW.created_by, '')
+    WHERE source_type = 'client_invoices' AND source_id = NEW.id::text;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    DELETE FROM tracking_sheet WHERE source_type = 'client_invoices' AND source_id = OLD.id::text;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create triggers
+DROP TRIGGER IF EXISTS labor_duty_cost_sync ON labor_duty;
+CREATE TRIGGER labor_duty_cost_sync
+AFTER INSERT OR UPDATE OR DELETE ON labor_duty
+FOR EACH ROW EXECUTE FUNCTION sync_labor_cost();
+
+DROP TRIGGER IF EXISTS equipment_cost_sync ON equipment;
+CREATE TRIGGER equipment_cost_sync
+AFTER INSERT OR UPDATE OR DELETE ON equipment
+FOR EACH ROW EXECUTE FUNCTION sync_equipment_cost();
+
+DROP TRIGGER IF EXISTS subcontractor_invoice_tracking ON subcontractor_invoices;
+CREATE TRIGGER subcontractor_invoice_tracking
+AFTER INSERT OR UPDATE OR DELETE ON subcontractor_invoices
+FOR EACH ROW EXECUTE FUNCTION sync_subcontractor_tracking();
+
+DROP TRIGGER IF EXISTS client_invoice_tracking ON client_invoices;
+CREATE TRIGGER client_invoice_tracking
+AFTER INSERT OR UPDATE OR DELETE ON client_invoices
+FOR EACH ROW EXECUTE FUNCTION sync_client_tracking();
+
+==================================================
+FILE: F:\PM App\Project\supabase\migrations\20260810120608_20260810120000_phase1_contract_boq_code_controls.sql
+==================================================
+-- Phase 1 additive changes only: preserve all existing columns and records.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_code_locked boolean NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_contract_type text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS company_contract_type text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_main_project_id uuid;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS contract_code text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS client text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS company text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS client_contract_type text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS company_contract_type text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS parent_main_contract_id uuid;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS document_reference text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS contract_code_locked boolean NOT NULL DEFAULT false;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE boq_headers ADD COLUMN IF NOT EXISTS contract_id uuid;
+ALTER TABLE boq_headers ADD COLUMN IF NOT EXISTS boq_code_locked boolean NOT NULL DEFAULT false;
+ALTER TABLE boq_headers ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS boq_header_id uuid;
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS item_code_locked boolean NOT NULL DEFAULT false;
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE wir_entries ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+ALTER TABLE progress_entries ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+ALTER TABLE costs ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+ALTER TABLE cost_entries ADD COLUMN IF NOT EXISTS last_modified timestamptz NOT NULL DEFAULT now();
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_parent_main_project_id_fkey') THEN
+    ALTER TABLE projects ADD CONSTRAINT projects_parent_main_project_id_fkey FOREIGN KEY (parent_main_project_id) REFERENCES projects(id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contracts_parent_main_contract_id_fkey') THEN
+    ALTER TABLE contracts ADD CONSTRAINT contracts_parent_main_contract_id_fkey FOREIGN KEY (parent_main_contract_id) REFERENCES contracts(id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boq_headers_contract_id_fkey') THEN
+    ALTER TABLE boq_headers ADD CONSTRAINT boq_headers_contract_id_fkey FOREIGN KEY (contract_id) REFERENCES contracts(id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boq_items_boq_header_id_fkey') THEN
+    ALTER TABLE boq_items ADD CONSTRAINT boq_items_boq_header_id_fkey FOREIGN KEY (boq_header_id) REFERENCES boq_headers(id);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_projects_project_code ON projects(project_code);
+CREATE INDEX IF NOT EXISTS idx_contracts_contract_code ON contracts(contract_code);
+CREATE INDEX IF NOT EXISTS idx_boq_headers_boq_code ON boq_headers(boq_code);
+CREATE INDEX IF NOT EXISTS idx_boq_items_boq_header_id ON boq_items(boq_header_id);
+
+CREATE OR REPLACE FUNCTION set_phase1_last_modified()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.last_modified = now();
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['projects','contracts','boq_headers','boq_items','wir_entries','progress_entries','costs','cost_entries'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', 'set_' || t || '_last_modified', t);
+    EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_phase1_last_modified()', 'set_' || t || '_last_modified', t);
+  END LOOP;
+END $$;
+
+==================================================
+TYPESCRIPT DATABASE TYPES
+==================================================
+export interface Project {
+  id: string;
+  name: string;
+  client: string;
+  location: string;
+  category: string;
+  start_date: string | null;
+  end_date: string | null;
+  budget: number;
+  spent: number;
+  status: string;
+  progress: number;
+  project_manager: string;
+  contractor: string;
+  project_code: string;
+  boq_code: string;
+  client_contract_type: string;
+  company_contract_type: string;
+  parent_main_project_id: string | null;
+  project_code_locked: boolean;
+  last_modified: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface ProjectWithStats extends Project {
+  task_count: number;
+  completed_tasks: number;
+}
+
+export interface Task {
+  id: string;
+  project_id: string;
+  name: string;
+  assignee: string;
+  category: string;
+  start_date: string | null;
+  end_date: string | null;
+  cost: number;
+  status: string;
+  progress: number;
+  predecessors: string;
+  priority: string;
+  created_at: string;
+}
+
+export interface Cost {
+  id: string;
+  project_id: string;
+  project_code: string;
+  item_code: string;
+  company_name: string;
+  boq_item_code: string;
+  boq_item_name: string;
+  category: string;
+  description: string;
+  planned: number;
+  actual: number;
+  committed: number;
+  status: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface CostEntry {
+  id: string;
+  project_id: string;
+  project_code: string;
+  boq_code: string;
+  company_name: string;
+  boq_item_code: string;
+  boq_item_name: string;
+  date: string | null;
+  cost_type: string;
+  invoice_number: string;
+  payment_order_number: string;
+  amount: number;
+  created_at: string;
+}
+
+export interface Procurement {
+  id: string;
+  project_id: string;
+  item: string;
+  supplier: string;
+  quantity: number;
+  unit: string;
+  unit_cost: number;
+  total_cost: number;
+  status: string;
+  order_date: string | null;
+  delivery_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface Safety {
+  id: string;
+  project_id: string;
+  type: string;
+  severity: string;
+  date: string | null;
+  description: string;
+  location: string;
+  responsible: string;
+  status: string;
+  action_taken: string;
+  created_at: string;
+}
+
+export interface ProgressEntry {
+  id: string;
+  project_id: string;
+  project_code: string;
+  company_name: string;
+  date: string | null;
+  area: string;
+  percent_complete: number;
+  prev_value: number;
+  prev_pct: number;
+  current_value: number;
+  current_pct: number;
+  total_value: number;
+  total_pct: number;
+  weather: string;
+  workers: number;
+  notes: string;
+  created_at: string;
+}
+
+export interface Schedule {
+  id: string;
+  project_id: string;
+  project_code: string;
+  boq_code: string;
+  boq_item_code: string;
+  boq_item_name: string;
+  activity: string;
+  start_date: string | null;
+  end_date: string | null;
+  duration_days: number;
+  planned_value: number;
+  progress: number;
+  predecessors: string;
+  predecessor_item: string;
+  critical_path: boolean;
+  is_critical_item: boolean;
+  responsible: string;
+  status: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface Contract {
+  id: string;
+  project_id: string;
+  contract_number: string;
+  title: string;
+  contractor: string;
+  contract_type: string;
+  contract_value: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  signed_date: string | null;
+  contract_code: string;
+  client: string;
+  company: string;
+  client_contract_type: string;
+  company_contract_type: string;
+  parent_main_contract_id: string | null;
+  document_reference: string;
+  contract_code_locked: boolean;
+  last_modified: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface BOQHeader {
+  id: string;
+  project_id: string;
+  project_code: string;
+  boq_code: string;
+  classification: string;
+  company_name: string;
+  contract_type: string;
+  total_value: number;
+  contract_id: string | null;
+  boq_code_locked: boolean;
+  last_modified: string;
+  created_at: string;
+}
+
+export interface BOQItem {
+  id: string;
+  project_id: string;
+  project_code: string;
+  boq_code: string;
+  item_code: string;
+  item_name: string;
+  description: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  boq_header_id: string | null;
+  item_code_locked: boolean;
+  last_modified: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface CashFlowEntry {
+  id: string;
+  project_id: string;
+  date: string | null;
+  description: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+  cumulative_balance: number;
+  category: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SubcontractorInvoice {
+  id: string;
+  project_id: string;
+  invoice_number: string;
+  subcontractor: string;
+  boq_reference: string;
+  boq_code: string;
+  boq_item_code: string;
+  item_desc: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  invoice_date: string | null;
+  amount: number;
+  status: string;
+  payment_status: string;
+  payment_date: string | null;
+  paid_amount: number;
+  notes: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ClientInvoice {
+  id: string;
+  project_id: string;
+  invoice_number: string;
+  client: string;
+  boq_code: string;
+  boq_item_code: string;
+  item_desc: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  invoice_date: string | null;
+  due_date: string | null;
+  amount: number;
+  status: string;
+  payment_status: string;
+  payment_date: string | null;
+  paid_amount: number;
+  notes: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface LaborDuty {
+  id: string;
+  project_id: string;
+  project_code: string;
+  date: string | null;
+  worker_name: string;
+  role: string;
+  no_of_workers: number;
+  hours_per_day: number;
+  days: number;
+  total_hours: number;
+  rate_per_hour: number;
+  amount: number;
+  notes: string;
+  created_at: string;
+}
+
+export interface Equipment {
+  id: string;
+  project_id: string;
+  project_code: string;
+  date: string | null;
+  equipment_name: string;
+  equipment_type: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  notes: string;
+  created_at: string;
+}
+
+export interface TrackingSheet {
+  id: string;
+  project_id: string;
+  company_name: string;
+  source_type: string;
+  source_id: string;
+  amount: number;
+  status: string;
+  created_by: string;
+  created_time: string;
+  created_at: string;
+}
+
+export interface Variation {
+  id: string;
+  project_id: string;
+  variation_number: string;
+  type: string;
+  title: string;
+  description: string;
+  cost_impact: number;
+  time_impact_days: number;
+  status: string;
+  approved_by: string;
+  approved_date: string | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface DocumentEntry {
+  id: string;
+  project_id: string;
+  document_name: string;
+  document_type: string;
+  category: string;
+  version: string;
+  upload_date: string | null;
+  status: string;
+  responsible: string;
+  file_reference: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface WIREntry {
+  id: string;
+  project_id: string;
+  project_code: string;
+  boq_code: string;
+  item_code: string;
+  item_name: string;
+  item_description: string;
+  company_name: string;
+  wir_number: string;
+  area: string;
+  work_type: string;
+  inspection_date: string | null;
+  inspector: string;
+  result: string;
+  remarks: string;
+  status: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  item_amount: number;
+  completion_pct: number;
+  last_modified: string;
+  created_at: string;
+}
+
+export type ViewKey =
+  | 'dashboard' | 'projects' | 'tasks' | 'costs' | 'costEntries'
+  | 'procurement' | 'safety' | 'progress' | 'schedule' | 'contracts'
+  | 'boq' | 'boqItems' | 'cashflow' | 'subinvoices' | 'clientinvoices'
+  | 'variations' | 'documents' | 'wir' | 'laborDuty' | 'equipment' | 'tracking';
+
+
+==================================================
+DATA REPOSITORIES
+==================================================
+
+---------- .\src\data\repository.ts ----------
+export type DataRow = object;
+
+export interface ListOptions {
+  orderBy?: string;
+  ascending?: boolean;
+}
+
+export interface DataRepository {
+  list<T extends DataRow>(
+    tableName: string,
+    options?: ListOptions
+  ): Promise<T[]>;
+
+  insert<T extends DataRow>(
+    tableName: string,
+    row: T
+  ): Promise<T>;
+
+  insertMany<T extends DataRow>(
+    tableName: string,
+    rows: T[]
+  ): Promise<T[]>;
+
+  update<T extends DataRow>(
+    tableName: string,
+    id: string,
+    patch: Partial<T>
+  ): Promise<T>;
+
+  delete(
+    tableName: string,
+    id: string
+  ): Promise<void>;
+}
+
+export class DataRepositoryError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "DataRepositoryError";
+  }
+}
+
+
+---------- .\src\data\supabaseRepository.ts ----------
+import { supabase } from "@/lib/supabase";
+import type { DataRepository, ListOptions } from "./repository";
+import { DataRepositoryError } from "./repository";
+
+export class SupabaseRepository implements DataRepository {
+  async list<T extends object>(
+    tableName: string,
+    options: ListOptions = {}
+  ): Promise<T[]> {
+    try {
+      const orderBy = options.orderBy ?? "created_at";
+      const ascending = options.ascending ?? false;
+
+      const { data, error } = await supabase
+        .from(tableName)
+        .select("*")
+        .order(orderBy, { ascending });
+
+      if (error) throw error;
+
+      return (data ?? []) as T[];
+    } catch (error) {
+      throw new DataRepositoryError(
+        `Failed to load data from "${tableName}".`,
+        error
+      );
+    }
+  }
+
+  async insert<T extends object>(
+    tableName: string,
+    row: T
+  ): Promise<T> {
+    try {
+      const { data, error } = await supabase
+        .from(tableName)
+        .insert(row as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return data as T;
+    } catch (error) {
+      throw new DataRepositoryError(
+        `Failed to insert data into "${tableName}".`,
+        error
+      );
+    }
+  }
+
+  async insertMany<T extends object>(
+    tableName: string,
+    rows: T[]
+  ): Promise<T[]> {
+    try {
+      if (rows.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from(tableName)
+        .insert(rows as any)
+        .select();
+
+      if (error) throw error;
+
+      return (data ?? []) as T[];
+    } catch (error) {
+      throw new DataRepositoryError(
+        `Failed to insert data into "${tableName}".`,
+        error
+      );
+    }
+  }
+
+  async update<T extends object>(
+    tableName: string,
+    id: string,
+    patch: Partial<T>
+  ): Promise<T> {
+    try {
+      const { data, error } = await supabase
+        .from(tableName)
+        .update(patch as any)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return data as T;
+    } catch (error) {
+      throw new DataRepositoryError(
+        `Failed to update data in "${tableName}".`,
+        error
+      );
+    }
+  }
+
+  async delete(
+    tableName: string,
+    id: string
+  ): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+    } catch (error) {
+      throw new DataRepositoryError(
+        `Failed to delete data from "${tableName}".`,
+        error
+      );
+    }
+  }
+}
+
+export const supabaseRepository = new SupabaseRepository();
+
+
+---------- .\src\data\sqliteRepository.ts ----------
+import type { DataRepository, DataRow, ListOptions } from "./repository";
+
+export class SqliteRepository implements DataRepository {
+  private notEnabled(): never {
+    throw new Error(
+      "SQLite backend is intentionally not enabled in Phase 1A."
+    );
+  }
+
+  async list<T extends DataRow = DataRow>(
+    _tableName: string,
+    _options?: ListOptions
+  ): Promise<T[]> {
+    return this.notEnabled();
+  }
+
+  async insert<T extends DataRow = DataRow>(
+    _tableName: string,
+    _row: T
+  ): Promise<T> {
+    return this.notEnabled();
+  }
+
+  async insertMany<T extends DataRow = DataRow>(
+    _tableName: string,
+    _rows: T[]
+  ): Promise<T[]> {
+    return this.notEnabled();
+  }
+
+  async update<T extends DataRow = DataRow>(
+    _tableName: string,
+    _id: string,
+    _patch: Partial<T>
+  ): Promise<T> {
+    return this.notEnabled();
+  }
+
+  async delete(_tableName: string, _id: string): Promise<void> {
+    return this.notEnabled();
+  }
+}
+
+
+---------- .\src\data\index.ts ----------
+import type { DataRepository } from "./repository";
+import { supabaseRepository } from "./supabaseRepository";
+
+export type { DataRepository } from "./repository";
+export { DataRepositoryError } from "./repository";
+export { SupabaseRepository } from "./supabaseRepository";
+export { SqliteRepository } from "./sqliteRepository";
+
+export const dataRepository: DataRepository = supabaseRepository;
+
+
+---------- .\src\hooks\useData.ts ----------
+import { useState, useEffect, useCallback } from 'react';
+import { dataRepository } from '@/data';
+import type {
+  Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry,
+  Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
+  ClientInvoice, Variation, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet,
+} from '@/types';
+
+export function useData() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [costs, setCosts] = useState<Cost[]>([]);
+  const [costEntries, setCostEntries] = useState<CostEntry[]>([]);
+  const [procurement, setProcurement] = useState<Procurement[]>([]);
+  const [safety, setSafety] = useState<Safety[]>([]);
+  const [progress, setProgress] = useState<ProgressEntry[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [boqHeaders, setBoqHeaders] = useState<BOQHeader[]>([]);
+  const [boqItems, setBoqItems] = useState<BOQItem[]>([]);
+  const [cashFlow, setCashFlow] = useState<CashFlowEntry[]>([]);
+  const [subInvoices, setSubInvoices] = useState<SubcontractorInvoice[]>([]);
+  const [clientInvoices, setClientInvoices] = useState<ClientInvoice[]>([]);
+  const [variations, setVariations] = useState<Variation[]>([]);
+  const [documents, setDocuments] = useState<DocumentEntry[]>([]);
+  const [wirEntries, setWirEntries] = useState<WIREntry[]>([]);
+  const [laborDuty, setLaborDuty] = useState<LaborDuty[]>([]);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [tracking, setTracking] = useState<TrackingSheet[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const [
+        p, t, c, ce, pr, s, pg, sc, ct, bh, bq, cf, si, ci, va, dc, wr, ld, eq, tr,
+      ] = await Promise.all([
+        dataRepository.list<Project>('projects'),
+        dataRepository.list<Task>('tasks'),
+        dataRepository.list<Cost>('costs'),
+        dataRepository.list<CostEntry>('cost_entries'),
+        dataRepository.list<Procurement>('procurement'),
+        dataRepository.list<Safety>('safety'),
+        dataRepository.list<ProgressEntry>('progress_entries'),
+        dataRepository.list<Schedule>('schedules'),
+        dataRepository.list<Contract>('contracts'),
+        dataRepository.list<BOQHeader>('boq_headers'),
+        dataRepository.list<BOQItem>('boq_items'),
+        dataRepository.list<CashFlowEntry>('cash_flow'),
+        dataRepository.list<SubcontractorInvoice>('subcontractor_invoices'),
+        dataRepository.list<ClientInvoice>('client_invoices'),
+        dataRepository.list<Variation>('variations'),
+        dataRepository.list<DocumentEntry>('documents'),
+        dataRepository.list<WIREntry>('wir_entries'),
+        dataRepository.list<LaborDuty>('labor_duty'),
+        dataRepository.list<Equipment>('equipment'),
+        dataRepository.list<TrackingSheet>('tracking_sheet'),
+      ]);
+
+      setProjects(p);
+      setTasks(t);
+      setCosts(c);
+      setCostEntries(ce);
+      setProcurement(pr);
+      setSafety(s);
+      setProgress(pg);
+      setSchedules(sc);
+      setContracts(ct);
+      setBoqHeaders(bh);
+      setBoqItems(bq);
+      setCashFlow(cf);
+      setSubInvoices(si);
+      setClientInvoices(ci);
+      setVariations(va);
+      setDocuments(dc);
+      setWirEntries(wr);
+      setLaborDuty(ld);
+      setEquipment(eq);
+      setTracking(tr);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  return {
+    projects, tasks, costs, costEntries, procurement, safety, progress, schedules,
+    contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices, variations,
+    documents, wirEntries, laborDuty, equipment, tracking, loading, reload: loadAll,
+  };
+}
+

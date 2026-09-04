@@ -38,6 +38,8 @@ export function parseXerFileContent(content: string): XerParseResult {
   const lines = content.split(/\r?\n/);
   let currentTable = '';
   let currentFields: string[] = [];
+
+  // Index map of task_id to task_code for relationship resolution in Primavera P6
   const taskIdToCodeMap = new Map<string, string>();
 
   for (let i = 0; i < lines.length; i++) {
@@ -111,11 +113,15 @@ export function generateCleanXer(tasks: XerTask[], preds: XerPred[]): string {
   const lines: string[] = [];
   const now = new Date().toISOString().slice(0, 10);
 
+  // ERMHDR
   lines.push(`ERMHDR\t8.4\t${now}\tUSER\tBuildTrack P6 Round-Trip Suite\tUSD`);
+
+  // Table: PROJECT
   lines.push('%T\tPROJECT');
   lines.push('%F\tproj_id\tproj_short_name\tproj_name');
   lines.push('%R\t1\tBT-2026\tBuildTrack Master Schedule');
 
+  // Table: TASK
   lines.push('%T\tTASK');
   lines.push('%F\ttask_id\tproj_id\ttask_code\ttask_name\ttarget_start_date\ttarget_end_date\tremain_drtn_hr_cnt\tphys_complete_pct');
   tasks.forEach((t, index) => {
@@ -123,6 +129,7 @@ export function generateCleanXer(tasks: XerTask[], preds: XerPred[]): string {
     lines.push(`%R\t${taskId}\t1\t${t.task_code}\t${t.task_name}\t${t.target_start_date} 08:00\t${t.target_end_date} 17:00\t${t.remain_drtn_hr_cnt}\t${t.phys_complete_pct}`);
   });
 
+  // Table: TASKPRED
   lines.push('%T\tTASKPRED');
   lines.push('%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt');
   preds.forEach((p, index) => {
@@ -132,6 +139,7 @@ export function generateCleanXer(tasks: XerTask[], preds: XerPred[]): string {
   lines.push('%T\tCALENDAR');
   lines.push('%F\tclndr_id\tclndr_name');
   lines.push('%R\t1\tStandard 6-Day Site Calendar');
-  lines.push('%E');
+
+  lines.push('%E'); // End of File marker in standard Primavera XER
   return lines.join('\r\n');
 }
