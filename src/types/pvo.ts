@@ -1,4 +1,4 @@
-export type PvoStatus = 'Identified' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected';
+﻿export type PvoStatus = 'Identified' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected';
 
 export interface PotentialVariationOrder {
   id: string;
@@ -16,3 +16,4 @@ export interface PotentialVariationOrder {
   claimReference?: string;
   submittedBy?: string;
 }
+

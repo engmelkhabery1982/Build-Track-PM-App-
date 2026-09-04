@@ -1,4 +1,4 @@
-import { VarianceActionItem } from '@/types';
+﻿import type { VarianceActionItem } from '../types/index.ts';
 
 export type Warning = {
   severity: 'critical' | 'warning';
@@ -9,7 +9,7 @@ export type Warning = {
 
 /**
  * Creates a new VarianceActionItem from a warning object
- * 
+ *
  * @param warning - The warning object from earlyWarningSystem.ts
  * @returns A new VarianceActionItem with default values
  */

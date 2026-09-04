@@ -1,4 +1,4 @@
-export interface Project {
+﻿export interface Project {
   id: string;
   name: string;
   client: string;
@@ -1368,4 +1368,7 @@ export interface GanttOverlaySummary {
   activities: GanttOverlayActivity[];
 }
 
-export * from './pvo';
+export * from './pvo.ts';
+
+
+
