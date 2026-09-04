@@ -1,0 +1,6 @@
+{
+  "name": "BuildTrack - Zero-Clutter Role-Based Workspaces",
+  "description": "Zero-Clutter Role-Based Workspaces (UX-01) for Site Engineers, Project Managers, Planning, and Commercial Teams",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
