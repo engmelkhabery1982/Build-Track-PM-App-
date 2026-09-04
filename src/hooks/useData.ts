@@ -6,6 +6,7 @@ import type {
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
   InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar, ProgressCorrection,
 } from '@/types';
+import { syncWirApprovalProgress, evaluateBackToBackPaymentAuthorization } from '@/utils/commercialControl';
 
 export type LocalDataMutation =
   | { type: 'insert'; row: Record<string, any> }
@@ -190,6 +191,83 @@ export function useData() {
     void loadAll(true);
   }, [loadAll]);
 
+  const syncWirApproval = useCallback((wirRow: Record<string, any>) => {
+    const isApproved = wirRow.status === 'Approved' || wirRow.result === 'Pass' || wirRow.result === 'Conditional Pass';
+
+    const linkedBoq = boqItems.find(
+      (b) => b.id === wirRow.boq_item_id || (b.project_id === wirRow.project_id && b.item_code === wirRow.item_code)
+    );
+    const linkedSchedule = schedules.find(
+      (s) => s.id === wirRow.schedule_id || (linkedBoq && s.boq_item_id === linkedBoq.id)
+    );
+
+    const calc = syncWirApprovalProgress({
+      wir: wirRow,
+      allWirs: wirEntries,
+      boqItem: linkedBoq,
+      schedule: linkedSchedule,
+    });
+
+    if (linkedBoq) {
+      setBoqItems((prev) =>
+        prev.map((b) =>
+          b.id === linkedBoq.id
+            ? {
+                ...b,
+                verified_quantity: calc.cumulativeQuantity,
+                executed_quantity: calc.cumulativeQuantity,
+                verified_amount: calc.verifiedAmount,
+              }
+            : b
+        )
+      );
+    }
+
+    if (linkedSchedule) {
+      setSchedules((prev) =>
+        prev.map((s) =>
+          s.id === linkedSchedule.id
+            ? {
+                ...s,
+                progress: calc.progressPct,
+                activity_status: calc.nextActivityStatus,
+                earned_work_value: calc.earnedWorkValue,
+              }
+            : s
+        )
+      );
+    }
+  }, [boqItems, schedules, wirEntries]);
+
+  const unlockBackToBackPayments = useCallback((clientCertRow: Record<string, any>) => {
+    const auth = evaluateBackToBackPaymentAuthorization({
+      clientCertificate: clientCertRow,
+      subcontractCertificates: paymentCertificates,
+      subcontractInvoiceTracking: subcontractorInvoiceTracking,
+    });
+
+    if (auth.pwpUnlocked) {
+      if (auth.unlockedCertificateIds.length > 0) {
+        setPaymentCertificates((prev) =>
+          prev.map((c) =>
+            auth.unlockedCertificateIds.includes(c.id)
+              ? { ...c, pwp_unlocked: true, unlocked_for_subcontractors: true }
+              : c
+          )
+        );
+      }
+      if (auth.unlockedTrackingIds.length > 0) {
+        setSubcontractorInvoiceTracking((prev) =>
+          prev.map((t) =>
+            auth.unlockedTrackingIds.includes(t.id)
+              ? { ...t, pwp_unlocked: true }
+              : t
+          )
+        );
+      }
+    }
+  }, [paymentCertificates, subcontractorInvoiceTracking]);
+
   const applyLocalMutation = useCallback((tableName: string, mutation: LocalDataMutation) => {
     const apply = (setRows: any) => {
       setRows((previous: Record<string, any>[]) => {
@@ -244,7 +322,13 @@ export function useData() {
       case 'variations': apply(setVariations); break;
       case 'variation_lines': apply(setVariationLines); break;
       case 'documents': apply(setDocuments); break;
-      case 'wir_entries': apply(setWirEntries); break;
+      case 'wir_entries': {
+        apply(setWirEntries);
+        if (mutation.type === 'insert' || mutation.type === 'update') {
+          syncWirApproval(mutation.row);
+        }
+        break;
+      }
       case 'progress_corrections': apply(setProgressCorrections); break;
       case 'labor_duty': apply(setLaborDuty); break;
       case 'equipment': apply(setEquipment); break;
@@ -259,9 +343,17 @@ export function useData() {
       case 'contract_sov_lines': apply(setContractSovLines); break;
       case 'control_accounts': apply(setControlAccounts); break;
       case 'cost_changes': apply(setCostChanges); break;
-      case 'payment_certificates': apply(setPaymentCertificates); break;
+      case 'payment_certificates': {
+        apply(setPaymentCertificates);
+        if (mutation.type === 'insert' || mutation.type === 'update') {
+          if (mutation.row.certificate_type === 'Client' && ['Approved', 'Paid'].includes(mutation.row.status)) {
+            unlockBackToBackPayments(mutation.row);
+          }
+        }
+        break;
+      }
     }
-  }, []);
+  }, [syncWirApproval, unlockBackToBackPayments]);
 
   const reloadInvoiceTracking = useCallback(async (tableName: 'client_invoice_tracking' | 'subcontractor_invoice_tracking') => {
     const rows = await listOptional<InvoiceTracking>(tableName);
@@ -274,6 +366,6 @@ export function useData() {
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, progressCorrections, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, controlAccounts, costChanges, paymentCertificates, loading,
-    reload: loadAll, applyLocalMutation, reloadInvoiceTracking,
+    reload: loadAll, applyLocalMutation, reloadInvoiceTracking, syncWirApproval, unlockBackToBackPayments,
   };
 }
