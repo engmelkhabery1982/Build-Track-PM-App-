@@ -8,6 +8,7 @@ import { PvoRegisterTable } from '@/components/PvoRegisterTable';
 import type { PotentialVariationOrder, PvoStatus } from '@/types/pvo';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer, X } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
+import { ThreeWayGanttOverlay } from './ThreeWayGanttOverlay';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
@@ -1600,6 +1601,10 @@ export function Dashboard({
                 <SCurveChart data={sCurve} />
               </div>
             )}
+
+            <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
+              <ThreeWayGanttOverlay />
+            </div>
           </div>
         )}
 
