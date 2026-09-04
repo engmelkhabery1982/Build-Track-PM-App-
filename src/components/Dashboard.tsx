@@ -10,6 +10,7 @@ import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as Chec
 import { SCurveChart } from './SCurveChart';
 import { ThreeWayGanttOverlay } from './ThreeWayGanttOverlay';
 import { XerReconciliationBoard } from './XerReconciliationBoard';
+import { BackToBackRetentionBoard } from './BackToBackRetentionBoard';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
@@ -1534,6 +1535,10 @@ export function Dashboard({
                 onStatusChange={handlePvoStatusChange}
                 onAddNewPvo={handleAddNewPvo}
               />
+            </div>
+
+            <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
+              <BackToBackRetentionBoard />
             </div>
           </div>
         )}
