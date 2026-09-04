@@ -341,6 +341,9 @@ export interface Schedule {
   contract_id: string | null;
   boq_header_id: string | null;
   boq_item_id: string | null;
+  /** Direct mapping to Subcontract Package or Subcontract Contract */
+  package_id?: string | null;
+  subcontract_id?: string | null;
   /** Explicit governed link to the main-contract Control Account. */
   control_account_id?: string | null;
   project_code: string;
@@ -489,6 +492,10 @@ export interface BOQItem {
   boq_header_id: string | null;
   /** Required for subcontractor items; links to the priced main BOQ item. */
   main_boq_item_id?: string | null;
+  /** Verified executed quantity from approved WIR inspections */
+  verified_quantity?: number;
+  executed_quantity?: number;
+  verified_amount?: number;
   /** Frozen schedule dates captured from the approved project baseline. */
   baseline_start_date?: string | null;
   baseline_end_date?: string | null;
@@ -595,6 +602,9 @@ export interface PaymentCertificate {
   status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Paid' | string;
   approved_by: string;
   approved_date: string | null;
+  /** Back-to-Back (PWP) flag for subcontract settlements */
+  pwp_unlocked?: boolean;
+  unlocked_for_subcontractors?: boolean;
   notes: string;
   created_at: string;
 }
@@ -698,6 +708,8 @@ export interface InvoiceTracking {
   status: string;
   payment_status: string;
   payment_date: string | null;
+  total_work_value?: number;
+  pwp_unlocked?: boolean;
   notes: string;
   created_at: string;
 }
@@ -959,6 +971,8 @@ export interface WIREntry {
   boq_header_id: string | null;
   boq_item_id: string | null;
   schedule_id?: string | null;
+  /** Subcontract package or subcontract contract */
+  package_id?: string | null;
   /** Explicit governed link to the main-contract Control Account. */
   control_account_id?: string | null;
   company_name: string;
@@ -1037,7 +1051,7 @@ export interface Party {
   party_code: string;
   legal_name: string;
   trading_name: string;
-  party_type: 'Client' | 'Supplier' | 'Subcontractor' | 'Consultant' | string;
+  party_type: 'Client' | 'Supplier' | 'Contractor' | 'Subcontractor' | 'Consultant' | string;
   tax_number: string;
   registration_number: string;
   payment_terms_days: number;

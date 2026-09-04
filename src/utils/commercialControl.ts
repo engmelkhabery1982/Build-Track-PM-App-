@@ -150,3 +150,74 @@ export function calculateBudgetAvailability(input: BudgetAvailabilityInput) {
     exceedsBudget: projectedAvailableBudget < -0.01,
   };
 }
+
+/**
+ * Feature B & A Mechanical Link:
+ * Evaluates progress and executed amounts upon Work Inspection Request (WIR) verification/approval.
+ * Calculates the verified executed quantity and progress % for the linked BOQ item and schedule activity.
+ */
+export function syncWirApprovalProgress(params: {
+  wir: Record<string, any>;
+  allWirs: Record<string, any>[];
+  boqItem?: Record<string, any>;
+  schedule?: Record<string, any>;
+}) {
+  const { wir, allWirs, boqItem, schedule } = params;
+  const isApproved = wir.status === 'Approved' || wir.result === 'Pass' || wir.result === 'Conditional Pass';
+
+  const matchingWirs = allWirs.filter((candidate) => {
+    const active = candidate.id === wir.id ? isApproved : (candidate.status === 'Approved' || candidate.result === 'Pass' || candidate.result === 'Conditional Pass');
+    if (!active) return false;
+    if (schedule?.id && candidate.schedule_id === schedule.id) return true;
+    if (boqItem?.id && candidate.boq_item_id === boqItem.id) return true;
+    return false;
+  });
+
+  const cumulativeQuantity = Math.round(matchingWirs.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) * 1000) / 1000;
+  const unitRate = Number(boqItem?.unit_rate) || Number(wir.unit_price) || 0;
+  const verifiedAmount = Math.round(cumulativeQuantity * unitRate * 100) / 100;
+
+  const totalPlannedQty = Number(schedule?.planned_quantity) || Number(boqItem?.quantity) || 0;
+  const progressPct = totalPlannedQty > 0
+    ? Math.min(100, Math.round((cumulativeQuantity / totalPlannedQty) * 10000) / 100)
+    : (isApproved ? 100 : 0);
+
+  const nextActivityStatus = progressPct >= 100 ? 'Completed' : progressPct > 0 ? 'In Progress' : 'Not Started';
+
+  return {
+    cumulativeQuantity,
+    verifiedAmount,
+    progressPct,
+    nextActivityStatus,
+    earnedWorkValue: verifiedAmount,
+  };
+}
+
+/**
+ * Back-to-Back (PWP / Pay-When-Paid) Authorization Engine:
+ * When an Employer / Client IPC is approved or paid, evaluate eligible subcontractor payment authorizations.
+ */
+export function evaluateBackToBackPaymentAuthorization(params: {
+  clientCertificate: Record<string, any>;
+  subcontractCertificates: Record<string, any>[];
+  subcontractInvoiceTracking: Record<string, any>[];
+}) {
+  const { clientCertificate, subcontractCertificates, subcontractInvoiceTracking } = params;
+  const isCertified = ['Approved', 'Paid'].includes(String(clientCertificate.status || ''));
+  if (!isCertified) return { unlockedCertificateIds: [], unlockedTrackingIds: [] };
+
+  const targetProjectId = clientCertificate.project_id;
+  const unlockedCertificateIds = subcontractCertificates
+    .filter((cert) => cert.project_id === targetProjectId && cert.certificate_type === 'Subcontractor')
+    .map((cert) => cert.id);
+
+  const unlockedTrackingIds = subcontractInvoiceTracking
+    .filter((track) => track.project_id === targetProjectId)
+    .map((track) => track.id);
+
+  return {
+    unlockedCertificateIds,
+    unlockedTrackingIds,
+    pwpUnlocked: true,
+  };
+}
