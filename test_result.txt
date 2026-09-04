@@ -1,0 +1,228 @@
+﻿
+> construction-management@1.0.0 test
+> node --experimental-strip-types --test tests/*.test.mjs
+
+[32mظ£¤ baseline/current/forecast comparison keeps the three schedule states separate [90m(4.0536ms)[39m[39m
+[32mظ£¤ baseline/current/forecast comparison declares missing CPM forecast rather than inventing it [90m(0.4776ms)[39m[39m
+Running BOQ-Activity Link Tests...
+
+Test 1: Single BOQ item split across 3 activities
+ظ£ô Test 1 passed
+
+Test 2: Multiple BOQ items linked to a single Activity
+ظ£ô Test 2 passed
+
+Test 3: Over-allocation detection
+ظ£ô Test 3 passed
+
+Test 4: Quantity-based vs Percentage-based distribution
+ظ£ô Test 4 passed
+
+All BOQ-Activity Link Tests Passed! ظ£ô
+[32mظ£¤ tests\boq-activity-link.test.mjs [90m(217.1362ms)[39m[39m
+[32mظ£¤ acceptance contract hierarchy keeps subcontract progress and finance under its main contract [90m(4.2716ms)[39m[39m
+[32mظ£¤ acceptance data rejects cross-project subcontract, BOQ, activity and WIR scope [90m(9.2339ms)[39m[39m
+[32mظ£¤ acceptance schedule quantities consume exactly the main BOQ quantity and identify an over-plan [90m(4.2085ms)[39m[39m
+[32mظ£¤ acceptance WIR quantities allow governed work and reject an accepted total above the BOQ quantity [90m(5.8879ms)[39m[39m
+[32mظ£¤ acceptance CPM honors predecessor relationship type, lag, and detects a logic cycle [90m(0.878ms)[39m[39m
+[32mظ£¤ approved time-impact variation has a governed financial value and an explicit revised completion expectation [90m(2.6189ms)[39m[39m
+[32mظ£¤ Control Account migration enforces one scoped main-contract account [90m(291.3689ms)[39m[39m
+[32mظ£¤ Control Account source assignment prevents cross-scope operational postings [90m(168.0967ms)[39m[39m
+[32mظ£¤ Data Quality exposes unassigned and invalid Control Account facts [90m(3.9199ms)[39m[39m
+[32mظ£¤ Control Account total is traceable and does not double-count an accepted GRN [90m(2.0235ms)[39m[39m
+[32mظ£¤ Quantity ledger rolls subcontract work to its main BOQ once and applies approved variations only [90m(0.47ms)[39m[39m
+[32mظ£¤ Data Quality escalates a Quantity Ledger over-plan against revised scope [90m(1.4358ms)[39m[39m
+[32mظ£¤ Posted progress correction reverses accepted quantity and invalid corrections are surfaced [90m(0.6617ms)[39m[39m
+[32mظ£¤ Control Account periodic profile tracks time-phased planned value, EV, AC and commitments across periods [90m(23.1861ms)[39m[39m
+[32mظ£¤ Overhead Allocation distributes indirect expense across direct control accounts by Direct Cost [90m(4.7515ms)[39m[39m
+[32mظ£¤ Overhead Allocation reconciles penny rounding differences exactly [90m(0.4774ms)[39m[39m
+[32mظ£¤ Overhead Allocation handles zero-denominator safely by falling back to uniform distribution [90m(0.6083ms)[39m[39m
+[32mظ£¤ Control Account loaded cost calculates direct and overhead-loaded actuals and FAC [90m(0.8579ms)[39m[39m
+Running Multi-Method EAC Forecasting Tests...
+
+Test 1: Standard PMI benchmark project (BAC=1M, EV=400K, AC=500K, PV=500K)
+ظ£ô Test 1 passed
+
+Test 2: Edge cases - zero progress and completed project
+ظ£ô Zero progress edge case passed
+ظ£ô Completed project edge case passed
+ظ£ô Division by zero resilience passed
+
+Test 3: Bottom-up ETC override calculations
+ظ£ô Test 3 passed
+
+Test 4: Recommendation heuristics based on CPI and SPI thresholds
+ظ£ô Good performance recommendation passed
+ظ£ô Cost overrun recommendation passed
+ظ£ô Severe issues recommendation passed
+ظ£ô Schedule delay recommendation passed
+
+All Multi-Method EAC Forecasting Tests Passed! ظ£ô
+[32mظ£¤ tests\eac-multi-method.test.mjs [90m(222.0582ms)[39m[39m
+[32mظ£¤ generateWarnings flags critical CPI below threshold [90m(1.8126ms)[39m[39m
+[32mظ£¤ generateWarnings returns empty array when all metrics are healthy [90m(0.4659ms)[39m[39m
+[32mظ£¤ generateWarnings returns multiple warnings when many metrics are poor [90m(0.322ms)[39m[39m
+[32mظ£¤ EVM uses the approved baseline and only dated contract facts [90m(5.6845ms)[39m[39m
+[32mظ£¤ EVM rolls subcontract execution and cost to its main-contract plan once [90m(0.8264ms)[39m[39m
+[32mظ£¤ EVM honors explicit activity measurement rules without double-counting linked WIR [90m(2.8289ms)[39m[39m
+[32mظ£¤ EVM applies posted progress reversals in their effective reporting period without rewriting the WIR [90m(0.5762ms)[39m[39m
+[32mظ£¤ financial-ledger migration executes and remains synchronized in SQLite [90m(343.7884ms)[39m[39m
+[32mظ£¤ commercial ledger migration allocates Cost Changes and commitments in SQLite [90m(160.367ms)[39m[39m
+[32mظ£¤ schedule scope repair derives missing project IDs from the selected contract [90m(146.5456ms)[39m[39m
+[32mظ£¤ work-calendar master migration creates a reusable local SQLite register [90m(124.9916ms)[39m[39m
+[32mظ£¤ resource master migration creates a reusable local resource register [90m(126.5366ms)[39m[39m
+[32mظ£¤ procurement receipt migration creates a controlled actual-cost source table [90m(115.0623ms)[39m[39m
+[32mظ£¤ supplier AP migration protects vendor invoice and payment references [90m(111.8062ms)[39m[39m
+[32mظ£¤ purchase-order governance migration blocks direct commitment and GRN acceptance [90m(120.8431ms)[39m[39m
+[32mظ£¤ purchase-order cancellation migration blocks direct cancellation [90m(118.0395ms)[39m[39m
+[32mظ£¤ certificate balance migration exposes governed financial columns [90m(108.9032ms)[39m[39m
+[32mظ£¤ governed cash timeline is time-phased and excludes cancelled movements [90m(109.1335ms)[39m[39m
+[32mظ£¤ SOV availability migration blocks backend cost and commitment overruns without double-counting accepted GRNs [90m(117.2094ms)[39m[39m
+[32mظ£¤ financial period lock migration blocks direct actual-cost and cash rewrites in SQLite [90m(127.3266ms)[39m[39m
+[32mظ£¤ procurement period lock migration blocks backdated PO and GRN rewrites in SQLite [90m(119.4902ms)[39m[39m
+[32mظ£¤ progress correction migration protects locked WIR history and requires an approved scoped original [90m(128.6444ms)[39m[39m
+Running Fragnet & Time Impact Analysis (TIA) Tests...
+Test 1: Critical Path Delay with Owner Responsibility
+? Test 1 passed
+Test 2: Non-Critical Delay within Available Float
+? Test 2 passed
+Test 3: Delay Exceeding Available Float
+? Test 3 passed
+Test 4: Contractor Culpable Delay on Critical Path
+? Test 4 passed
+All Fragnet & TIA tests passed successfully!
+[32mظ£¤ tests\fragnet-tia-engine.test.mjs [90m(217.608ms)[39m[39m
+Running Gantt Overlay 3-Way Engine Tests...
+Test 1: Verify Completed Activity (ACT-001)
+? Test 1 passed
+Test 2: Verify Critical Delayed Activity (ACT-002: 14 days delay on CP)
+? Test 2 passed
+Test 3: Verify Non-Critical Delayed Activity (ACT-003: 9 days delay with float 20)
+? Test 3 passed
+Test 4: Verify Ahead Activity (ACT-004: finishes 6 days early)
+? Test 4 passed
+Test 5: Max project slippage verification
+? Test 5 passed
+All Gantt Overlay 3-Way tests passed successfully!
+[32mظ£¤ tests\gantt-overlay-engine.test.mjs [90m(233.0393ms)[39m[39m
+Running Milestone Ladders Tests...
+
+Test 1: Standard 4-step MEP Ladder (20% Delivery, 40% Installation, 30% Testing, 10% Handover)
+ظ£ô Partial completion (60%) test passed
+ظ£ô Full completion (100%) test passed
+
+Test 2: Validation of step weights
+ظ£ô Weight normalization test passed
+
+Test 3: Multiple activities with independent progress
+ظ£ô Independent activity progress test passed
+
+Test 4: Edge cases - 0% and 100% completion
+ظ£ô Zero completion (0%) test passed
+ظ£ô Empty steps test passed
+ظ£ô Integer boolean handling test passed
+
+All Milestone Ladders Tests Passed! ظ£ô
+[32mظ£¤ tests\milestone-ladders.test.mjs [90m(257.7776ms)[39m[39m
+[32mظ£¤ canonical status dictionary rejects synonyms [90m(3.1095ms)[39m[39m
+[32mظ£¤ PMO Snapshot uses only dated PV, approved WIR and actual-cost facts through its data date [90m(3.3696ms)[39m[39m
+[32mظ£¤ governed PMO Snapshot requires a frozen approved baseline when requested [90m(1.2231ms)[39m[39m
+[32mظ£¤ financial and date governance catches invalid data [90m(0.8533ms)[39m[39m
+[32mظ£¤ SOV rates and purchase-order codes are governed by contract scope [90m(0.6857ms)[39m[39m
+[32mظ£¤ codes remain unique inside the governed scope [90m(0.3392ms)[39m[39m
+[32mظ£¤ import dictionary maps governed schedule and commercial headers [90m(0.1896ms)[39m[39m
+[32mظ£¤ Primavera XER import preserves calendar, logic, dates and duplicate activity IDs [90m(2.203ms)[39m[39m
+[32mظ£¤ Primavera XER retains planned labour and equipment assignments on the activity [90m(0.9112ms)[39m[39m
+[32mظ£¤ Primavera XER calendar data preserves custom working days and exceptions [90m(1.7704ms)[39m[39m
+[32mظ£¤ Primavera XER converts lag hours using the activity calendar day-hours [90m(0.8457ms)[39m[39m
+[32mظ£¤ planned resource loading uses the governed activity work days, not weekends [90m(12.0165ms)[39m[39m
+[32mظ£¤ Primavera import preserves every predecessor relationship and CPM applies each link [90m(1.2876ms)[39m[39m
+[32mظ£¤ Primavera XER import retains supported constraints and milestones [90m(0.2599ms)[39m[39m
+[32mظ£¤ Primavera XER import resolves the P6 WBS code, name and parent [90m(0.302ms)[39m[39m
+[32mظ£¤ approved baselines freeze activity-level schedule scope and require a governed revision [90m(3.0144ms)[39m[39m
+[32mظ£¤ data quality flags approved legacy baselines without an activity snapshot [90m(2.9999ms)[39m[39m
+[32mظ£¤ data quality rejects a schedule activity assigned to a cross-project WBS node [90m(1.7211ms)[39m[39m
+[32mظ£¤ data quality rejects invalid and cyclic schedule dependencies [90m(0.6156ms)[39m[39m
+[32mظ£¤ data quality rejects an activity using an inactive work calendar [90m(0.441ms)[39m[39m
+[32mظ£¤ data quality rejects a legacy free-text Primavera calendar without a governed master [90m(0.3315ms)[39m[39m
+[32mظ£¤ resource productivity is traceable only from linked quantity and labour hours [90m(0.2584ms)[39m[39m
+[32mظ£¤ resource loading spreads assignments and flags daily over-allocation [90m(0.794ms)[39m[39m
+[32mظ£¤ data quality rejects resource records outside their linked activity scope [90m(0.4315ms)[39m[39m
+[32mظ£¤ cash forecast separates settled cash from open forecast and excludes cancelled movements [90m(0.344ms)[39m[39m
+[32mظ£¤ executive forecast horizon includes CPM, cash and resource dates beyond the original plan [90m(0.3017ms)[39m[39m
+[32mظ£¤ payment terms produce a governed invoice due date [90m(0.2782ms)[39m[39m
+[32mظ£¤ new governed commercial and field records receive scoped codes [90m(0.5382ms)[39m[39m
+[32mظ£¤ planned value uses approved distribution before linear fallback [90m(12.3758ms)[39m[39m
+[32mظ£¤ calendar additions preserve the ISO date contract [90m(0.5849ms)[39m[39m
+[32mظ£¤ CPM respects relationship types and reports dependency cycles [90m(0.4058ms)[39m[39m
+[32mظ£¤ CPM forecast writes separate forecast dates without changing planned dates [90m(0.3732ms)[39m[39m
+[32mظ£¤ CPM status forecast honors Data Date, actuals, remaining duration, and retained logic [90m(0.7629ms)[39m[39m
+[32mظ£¤ CPM status forecast applies governed constraints and reports breached finish limit [90m(0.2771ms)[39m[39m
+[32mظ£¤ data quality identifies inconsistent schedule status updates [90m(0.4788ms)[39m[39m
+[32mظ£¤ locked reporting periods block dated inserts, updates and deletes [90m(0.7521ms)[39m[39m
+[32mظ£¤ reporting periods require a clean, non-overlapping governed range [90m(0.3891ms)[39m[39m
+[32mظ£¤ acceptance data-quality dashboard detects relationship, quantity and period failures [90m(0.8057ms)[39m[39m
+[32mظ£¤ field and document controls detect scope, coordinate, review and revision failures [90m(0.8174ms)[39m[39m
+[32mظ£¤ planned resource assignments are governed by activity scope, dates and resource type [90m(0.9831ms)[39m[39m
+[32mظ£¤ planned resource load profile detects capacity overload before site actuals are posted [90m(0.1713ms)[39m[39m
+[32mظ£¤ planned resource load respects the governed resource availability window [90m(0.2322ms)[39m[39m
+[32mظ£¤ resource calendar controls planned resource dates and shift hours override generic day hours [90m(0.6294ms)[39m[39m
+[32mظ£¤ recorded site hours remain visible and become an exception on a resource non-working day [90m(0.2118ms)[39m[39m
+[32mظ£¤ resource leveling recommendations identify affected activities without changing the plan [90m(0.6133ms)[39m[39m
+[32mظ£¤ planned resource cost forecast is time-phased by the activity calendar and remains separate from cash [90m(1.8424ms)[39m[39m
+[32mظ£¤ approved baseline freezes the time-phased PV profile instead of using later live edits [90m(0.632ms)[39m[39m
+[32mظ£¤ variation package preview is line-derived and blocks incomplete scope before approval [90m(3.8499ms)[39m[39m
+[32mظ£¤ data quality makes an approved variation pending baseline revision visible [90m(4.2329ms)[39m[39m
+[32mظ£¤ Cost Change is allocated once to its selected SOV line only [90m(0.4387ms)[39m[39m
+[32mظ£¤ CBS and WBS reject parent cycles [90m(1.229ms)[39m[39m
+[32mظ£¤ CBS and WBS hierarchy levels are derived from the selected parent [90m(0.8923ms)[39m[39m
+[32mظ£¤ certificate cash uses the net certified value and one governed movement state [90m(0.4877ms)[39m[39m
+[32mظ£¤ certificate balances cannot exceed contractual advance or retention cap [90m(0.3686ms)[39m[39m
+[32mظ£¤ purchase orders remain commitment/forecast events until an accepted cost fact exists [90m(0.325ms)[39m[39m
+[32mظ£¤ SOV forecast consumes accepted procurement cost before carrying open commitment [90m(0.5183ms)[39m[39m
+[32mظ£¤ SOV forecast rejects a manual override that hides actual cost or open PO commitment [90m(0.4712ms)[39m[39m
+[32mظ£¤ budget availability consumes actuals plus open commitment without double-counting accepted procurement [90m(0.4228ms)[39m[39m
+[32mظ£¤ data quality exposes missing and unreconciled SOV coverage instead of hiding it [90m(2.0135ms)[39m[39m
+[32mظ£¤ data quality rejects accepted receipt quantities above the purchase order [90m(0.8257ms)[39m[39m
+[32mظ£¤ data quality detects missing or duplicate governed PO cash forecasts [90m(1.0411ms)[39m[39m
+[32mظ£¤ data quality exposes supplier AP over-billing and over-payment [90m(0.906ms)[39m[39m
+[32mظ£¤ data quality exposes governed commercial records with invalid scope or net value [90m(0.8852ms)[39m[39m
+[32mظ£¤ data quality flags a manual SOV forecast below the governed floor [90m(0.7141ms)[39m[39m
+[32mظ£¤ data quality exposes approved variation scope that is missing SOV or commercial forecast [90m(0.7302ms)[39m[39m
+[32mظ£¤ data quality rejects an approved budget transfer without two SOV allocations [90m(0.5292ms)[39m[39m
+[32mظ£¤ portfolio finish uses CPM forecast before planned finish [90m(2.6805ms)[39m[39m
+[32mظ£¤ portfolio makes its planned fallback explicit when CPM is unavailable [90m(0.4192ms)[39m[39m
+[32mظ£¤ reference project is internally consistent before it is used as an acceptance oracle [90m(7.8997ms)[39m[39m
+[32mظ£¤ reference project preserves the agreed commercial, schedule and EVM figures [90m(0.6468ms)[39m[39m
+[32mظ£¤ reference project exposes the critical negative acceptance case [90m(0.9913ms)[39m[39m
+Running Time-Phased Cost Phasing Tests...
+
+Test 1: Linear distribution across 6 periods ($60,000 total)
+ظ£ô Test 1 passed
+
+Test 2: Bell curve distribution across 5 periods
+ظ£ô Test 2 passed
+
+Test 3: S-Curve distribution with cumulative progression
+ظ£ô Test 3 passed
+
+Test 4: Penny reconciliation - odd total ($100,000 across 3 periods)
+ظ£ô Test 4 passed
+
+Test 5: Front-loaded distribution (higher at start)
+ظ£ô Test 5 passed
+
+Test 6: Back-loaded distribution (higher at end)
+ظ£ô Test 6 passed
+
+All Time-Phased Cost Phasing Tests Passed! ظ£ô
+[32mظ£¤ tests\time-phased-cost-phasing.test.mjs [90m(209.2355ms)[39m[39m
+[32mظ£¤ createActionFromWarning creates an Open action with empty assignment fields [90m(8.478ms)[39m[39m
+[34mظ╣ tests 120[39m
+[34mظ╣ suites 0[39m
+[34mظ╣ pass 120[39m
+[34mظ╣ fail 0[39m
+[34mظ╣ cancelled 0[39m
+[34mظ╣ skipped 0[39m
+[34mظ╣ todo 0[39m
+[34mظ╣ duration_ms 2306.2486[39m
