@@ -1,4 +1,4 @@
-import { ProjectMasterState } from '../types/projectModel';
+import type { ProjectMasterState } from '../types/projectModel.ts';
 
 export const INITIAL_PROJECT_STATE: ProjectMasterState = {
   projectCode: 'BT-2026-H04',
