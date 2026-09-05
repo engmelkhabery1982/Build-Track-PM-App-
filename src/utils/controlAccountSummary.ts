@@ -1,5 +1,6 @@
 import { procurementPostingState } from './commercialControl.ts';
 import { distributedPlannedValueToDate } from './schedulePlanning.ts';
+import { calculateEvmAtDataDate } from './evm.ts';
 import {
   calculateCostVariance,
   calculateMixVariance,
@@ -26,7 +27,7 @@ export function calculateControlAccountSummary(input: {
   const dataDate = String(account.data_date || '');
   const boq = input.boqItems.find((row) => row.id === account.boq_item_id);
   const sov = input.sovLines.find((row) => row.id === account.contract_sov_line_id);
-  const budget = Number(sov?.revised_budget ?? sov?.original_budget) || 0;
+  const budget = Number(sov?.revised_budget ?? sov?.original_budget ?? account.control_budget ?? account.budget) || 0;
   const baseline = (input.baselines || []).find((row) => row.contract_id === account.contract_id && row.status === 'Approved');
   if (!dataDate || !baseline) return {
     scope_quantity: Number(boq?.quantity) || 0, control_budget: money(budget),
@@ -39,23 +40,41 @@ export function calculateControlAccountSummary(input: {
   const linked = (rows: Record<string, any>[]) => rows.filter((row) => row.control_account_id === account.id);
   const schedules = linked(input.schedules); const wirs = linked(input.wirEntries); const costs = linked(input.costEntries);
   const orders = linked(input.procurement); const receipts = linked(input.procurementReceipts);
-  const pv = schedules.reduce((sum, row) => sum + distributedPlannedValueToDate(row, input.scheduleDistributions || [], dataDate), 0);
-  const ev = wirs.filter((row) => onOrBefore(row.inspection_date) && (['Pass', 'Conditional Pass'].includes(String(row.result || '')) || row.status === 'Approved'))
-    .reduce((sum, row) => sum + (Number(row.item_amount) || ((Number(row.quantity) || 0) * (Number(row.unit_price) || 0))), 0);
-  const directActual = costs.filter((row) => onOrBefore(row.date)).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-  const receiptActual = receipts.filter((row) => onOrBefore(row.receipt_date) && row.status === 'Accepted').reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
-  const postedReceiptIds = new Set(costs.filter((row) => row.source_type === 'procurement_receipt').map((row) => row.source_id));
-  const missingReceiptActual = receipts.filter((row) => onOrBefore(row.receipt_date) && row.status === 'Accepted' && !postedReceiptIds.has(row.id)).reduce((sum, row) => sum + (Number(row.accepted_amount) || 0), 0);
-  const ac = directActual + missingReceiptActual;
-  const committed = orders.filter((row) => onOrBefore(row.order_date) && procurementPostingState(row).isCommitment).reduce((sum, row) => sum + (Number(row.total_cost) || ((Number(row.quantity) || 0) * (Number(row.unit_cost) || 0))), 0);
-  const openCommitment = Math.max(0, committed - receiptActual);
-  const fac = Math.max(budget, ac + openCommitment);
+  const scoped = (rows: Record<string, any>[]): Record<string, any>[] => rows.map((row) => ({ ...row, contract_id: row.contract_id || account.contract_id }));
+  const accountEvm = calculateEvmAtDataDate({
+    contractIds: [String(account.contract_id || '')],
+    dataDate,
+    schedules: scoped(schedules),
+    scheduleDistributions: input.scheduleDistributions || [],
+    baselines: input.baselines || [],
+    wirEntries: scoped(wirs).map((row) => ({ ...row, boq_item_id: row.boq_item_id || account.boq_item_id })),
+    boqItems: input.boqItems,
+    costEntries: scoped(costs),
+    controlAccounts: [{ ...account, status: account.status || 'Active' }],
+    contractSovLines: input.sovLines.map((line) => ({ ...line, status: line.status || 'Active' })),
+    procurement: scoped(orders),
+    procurementReceipts: scoped(receipts),
+  });
+  const revenuePv = accountEvm.revenue.PV;
+  const ac = accountEvm.cost.AC;
+  const openCommitment = accountEvm.cost.openCommitment;
 
   const plannedQty = Number(boq?.quantity) || 0;
-  const plannedRate = Number(boq?.unit_rate) || (plannedQty > 0 ? budget / plannedQty : 0);
+  const sellingRate = Number(boq?.unit_rate) || 0;
+  const revenueBudget = money(plannedQty * sellingRate);
+  const plannedRate = plannedQty > 0 ? budget / plannedQty : (sellingRate || 0);
   const actualQty = wirs.filter((row) => onOrBefore(row.inspection_date) && (['Pass', 'Conditional Pass'].includes(String(row.result || '')) || row.status === 'Approved'))
     .reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
   const actualRate = actualQty > 0 ? ac / actualQty : 0;
+  const revenueEv = accountEvm.revenue.EV;
+  const deliveryEv = accountEvm.cost.EV ?? 0;
+  const deliveryPv = accountEvm.cost.PV ?? 0;
+  const costCpi = accountEvm.cost.CPI ?? 0;
+  const fac = Math.max(budget, ac + openCommitment);
+  const ctc = money(Math.max(0, fac - ac));
+  const evmEac = accountEvm.cost.EAC ?? fac;
+  const projectedMargin = revenueBudget > 0 ? money(revenueBudget - fac) : null;
+  const progressMargin = money(revenueEv - ac);
 
   const costVar = calculateCostVariance({ qty: plannedQty, rate: plannedRate }, { qty: actualQty, rate: actualRate });
   const mixVar = calculateMixVariance({
@@ -77,10 +96,26 @@ export function calculateControlAccountSummary(input: {
   });
 
   return {
-    scope_quantity: Number(boq?.quantity) || 0, control_budget: money(budget), planned_value: money(pv), earned_value: money(ev), actual_cost: money(ac),
-    open_commitment: money(openCommitment), cost_to_complete: money(Math.max(0, fac - ac)), forecast_at_completion: money(fac),
+    scope_quantity: plannedQty,
+    selling_rate: sellingRate,
+    revenue_budget: revenueBudget,
+    control_budget: money(budget),
+    cost_rate: money(plannedRate),
+    planned_value: deliveryPv,
+    earned_value: deliveryEv,
+    revenue_earned_value: revenueEv,
+    actual_cost: money(ac),
+    open_commitment: money(openCommitment),
+    cost_to_complete: ctc,
+    forecast_at_completion: fac,
+    evm_eac: evmEac,
+    projected_margin: projectedMargin,
+    progress_margin: progressMargin,
+    cpi: costCpi,
     source_count: schedules.length + wirs.length + costs.length + orders.length + receipts.length,
-    data_date: dataDate, control_status: 'Ready', source_summary: `Activities ${schedules.length} · WIR ${wirs.length} · Costs ${costs.length} · PO ${orders.length} · GRN ${receipts.length}`,
+    data_date: dataDate,
+    control_status: 'Ready',
+    source_summary: `Activities ${schedules.length} · WIR ${wirs.length} · Costs ${costs.length} · PO ${orders.length} · GRN ${receipts.length}`,
     usageVariance: costVar.usageVariance,
     rateVariance: costVar.rateVariance,
     mixVariance: mixVar.mixVariance,

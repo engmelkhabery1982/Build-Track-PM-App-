@@ -77,6 +77,10 @@ function fmtMoney(n: number): string {
   return `${n < 0 ? '-' : ''}$${v.toFixed(0)}`;
 }
 
+function fmtAvailableMoney(n: number | null): string {
+  return n === null ? 'Unavailable' : fmtMoney(n);
+}
+
 function useAnimatedNumber(target: number, duration = 800): number {
   const [value, setValue] = useState(0);
   const rafRef = useRef<number | undefined>(undefined);
@@ -161,10 +165,21 @@ export function Dashboard({
     .filter((contract) => primaryContracts.some((mainContract) => contract.id === mainContract.id || contract.parent_main_contract_id === mainContract.id))
     .map((contract) => contract.id);
   const evm = useMemo(() => calculateEvmAtDataDate({
-    contractIds: primaryContracts.map((contract) => contract.id), performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
-    schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
-    wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
-  }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fProgressCorrections, fBOQ, fCostEntries]);
+    contractIds: primaryContracts.map((contract) => contract.id),
+    performanceContractIds: evmPerformanceContractIds,
+    dataDate: reportDate,
+    schedules: fSchedules as Record<string, any>[],
+    scheduleDistributions,
+    baselines: fBaselines as Record<string, any>[],
+    wirEntries: fWirs as Record<string, any>[],
+    progressCorrections: fProgressCorrections as Record<string, any>[],
+    boqItems: fBOQ as Record<string, any>[],
+    costEntries: fCostEntries as Record<string, any>[],
+    controlAccounts: fControlAccounts as Record<string, any>[],
+    contractSovLines: fContractSovLines as Record<string, any>[],
+    procurement: fProcurement as Record<string, any>[],
+    procurementReceipts: fProcurementReceipts as Record<string, any>[],
+  }), [primaryContracts, evmPerformanceContractIds, reportDate, fSchedules, scheduleDistributions, fBaselines, fWirs, fProgressCorrections, fBOQ, fCostEntries, fControlAccounts, fContractSovLines, fProcurement, fProcurementReceipts]);
 
   const controlAccountVariances = useMemo(() => {
     let usageVariance = 0;
@@ -244,11 +259,11 @@ export function Dashboard({
     fTasks.forEach((t) => { taskPriorityCounts[t.priority] = (taskPriorityCounts[t.priority] || 0) + 1; });
 
     const totalPlannedCosts = fCosts.reduce((s, c) => s + (c.planned || 0), 0);
-    const totalActualCosts = evm.AC;
+    const totalActualCosts = evm.cost.AC;
     const totalCommittedCosts = fCosts.reduce((s, c) => s + (c.committed || 0), 0);
-    const totalPlannedWork = evm.PV;
-    const totalEarnedWork = evm.EV;
-    const costVariance = evm.CV;
+    const totalPlannedWork = evm.revenue.PV;
+    const totalEarnedWork = evm.revenue.EV;
+    const costVariance = evm.cost.CV ?? 0;
 
     const openSafety = fSafety.filter((s) => s.status === 'Open').length;
     const closedSafety = fSafety.filter((s) => s.status === 'Closed').length;
@@ -533,6 +548,8 @@ export function Dashboard({
       contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: reportDate,
       schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
       wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+      controlAccounts: fControlAccounts as Record<string, any>[], contractSovLines: fContractSovLines as Record<string, any>[],
+      procurement: fProcurement as Record<string, any>[], procurementReceipts: fProcurementReceipts as Record<string, any>[],
     });
     const points: { label: string; planned: number; earned: number; actual: number; forecast: number; cash: number; estimate: number; resourceForecast: number; date: string }[] = [];
     const numPoints = Math.min(totalDays, 30);
@@ -544,22 +561,26 @@ export function Dashboard({
         contractIds: evmContractIds, performanceContractIds: evmPerformanceContractIds, dataDate: dateStr,
         schedules: fSchedules as Record<string, any>[], scheduleDistributions, baselines: fBaselines as Record<string, any>[],
         wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], boqItems: fBOQ as Record<string, any>[], costEntries: fCostEntries as Record<string, any>[],
+        controlAccounts: fControlAccounts as Record<string, any>[], contractSovLines: fContractSovLines as Record<string, any>[],
+        procurement: fProcurement as Record<string, any>[], procurementReceipts: fProcurementReceipts as Record<string, any>[],
       });
-      const planned = pointEvm.PV;
-      const earned = pointEvm.EV;
-      const actual = pointEvm.AC;
+      const planned = pointEvm.revenue.PV;
+      const earned = pointEvm.revenue.EV;
+      const actual = pointEvm.cost.AC;
       const cashPosition = cashForecastAt(fCashFlow as Record<string, any>[], dateStr);
       const dateEstimate = dateStr <= reportDate
         ? actual
         : (() => {
           const forecastDays = Math.max(1, Math.ceil((endMs - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
           const elapsedForecastDays = Math.max(0, Math.ceil((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${reportDate}T00:00:00`).getTime()) / 86400000));
-          return Math.min(dataDateEvm.EAC, dataDateEvm.AC + Math.max(0, dataDateEvm.EAC - dataDateEvm.AC) * Math.min(1, elapsedForecastDays / forecastDays));
+          const costEac = dataDateEvm.cost.EAC;
+          if (costEac === null) return dataDateEvm.cost.AC;
+          return Math.min(costEac, dataDateEvm.cost.AC + Math.max(0, costEac - dataDateEvm.cost.AC) * Math.min(1, elapsedForecastDays / forecastDays));
         })();
       points.push({ label: dateStr, planned, earned, actual, forecast: cashPosition.forecastNet, cash: cashPosition.actualNet, estimate: dateEstimate, resourceForecast: plannedResourceCostAt(resourceForecast, dateStr), date: dateStr });
     }
     return points;
-  }, [fSchedules, fWirs, fProgressCorrections, fCostEntries, fBOQ, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
+  }, [fSchedules, fWirs, fProgressCorrections, fCostEntries, fBOQ, fControlAccounts, fContractSovLines, fProcurement, fProcurementReceipts, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
   const operationalScope = useMemo(() => buildOperationalScopeReport({
     boqItems: fBOQ as Record<string, any>[], variations: fVariations as Record<string, any>[],
@@ -691,16 +712,16 @@ export function Dashboard({
       view: 'contracts' as ViewKey,
     },
     {
-      label: 'Planned Value (PV)',
+      label: 'Revenue Planned Value (PV)',
       value: fmtMoney(stats.totalPlannedWork),
-      sub: `As of ${reportDate} · BAC ${fmtMoney(evm.BAC)}`,
+      sub: `As of ${reportDate} · Revenue BAC ${fmtMoney(evm.revenue.BAC)}`,
       icon: CheckCircle2,
       color: 'from-primary-500 to-primary-600',
       trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
       view: 'schedule' as ViewKey,
     },
     {
-      label: 'Earned Value (EV)',
+      label: 'Revenue Earned Value (EV)',
       value: fmtMoney(stats.totalEarnedWork),
       sub: `SPI ${evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'} · ${evm.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'}`,
       icon: TrendingUp,
@@ -709,12 +730,12 @@ export function Dashboard({
       view: 'progress' as ViewKey,
     },
     {
-      label: 'Actual Cost (AC)',
-      value: fmtMoney(evm.AC),
-      sub: `CPI ${evm.CPI > 0 ? evm.CPI.toFixed(2) : '—'} · ${evm.CPI >= 1 ? 'cost efficient' : 'cost exposure'}`,
+      label: 'Delivery Actual Cost (AC)',
+      value: fmtMoney(evm.cost.AC),
+      sub: `Cost CPI ${evm.cost.CPI !== null ? evm.cost.CPI.toFixed(2) : 'Unavailable'} · ${evm.cost.CPI !== null && evm.cost.CPI >= 1 ? 'cost efficient' : evm.cost.CPI === null ? 'approved cost plan required' : 'cost exposure'}`,
       icon: DollarSign,
-      color: evm.CPI >= 1 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
-      trend: evm.CPI >= 1 ? ('up' as const) : ('down' as const),
+      color: evm.cost.CPI !== null && evm.cost.CPI >= 1 ? 'from-success-500 to-success-600' : evm.cost.CPI === null ? 'from-neutral-400 to-neutral-500' : 'from-error-500 to-error-600',
+      trend: evm.cost.CPI !== null && evm.cost.CPI >= 1 ? ('up' as const) : ('down' as const),
       view: 'costs' as ViewKey,
     },
     {
@@ -747,18 +768,18 @@ export function Dashboard({
   ];
 
   const evmCards = [
-    { label: 'BAC', desc: 'Budget at Completion', value: fmtMoney(evm.BAC), icon: Target, color: 'text-neutral-700 bg-neutral-100' },
-    { label: 'PV', desc: 'Planned Value', value: fmtMoney(evm.PV), icon: Clock, color: 'text-secondary-600 bg-secondary-50' },
-    { label: 'EV', desc: 'Earned Value', value: fmtMoney(evm.EV), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50' },
-    { label: 'AC', desc: 'Actual Cost', value: fmtMoney(evm.AC), icon: DollarSign, color: 'text-accent-600 bg-accent-50' },
-    { label: 'CV', desc: 'Cost Variance', value: fmtMoney(evm.CV), icon: evm.CV >= 0 ? TrendingUp : TrendingDown, color: evm.CV >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.CV >= 0 ? 'Under budget' : 'Over budget' },
-    { label: 'SV', desc: 'Schedule Variance', value: fmtMoney(evm.SV), icon: evm.SV >= 0 ? TrendingUp : TrendingDown, color: evm.SV >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.SV >= 0 ? 'Ahead of schedule' : 'Behind schedule' },
-    { label: 'CPI', desc: 'Cost Performance Index', value: evm.CPI > 0 ? evm.CPI.toFixed(2) : '—', icon: Gauge, color: evm.CPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.CPI >= 1 ? 'Cost efficient' : 'Cost overrun' },
-    { label: 'SPI', desc: 'Schedule Performance Index', value: evm.SPI > 0 ? evm.SPI.toFixed(2) : '—', icon: Gauge, color: evm.SPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.SPI >= 1 ? 'On schedule' : 'Behind schedule' },
-    { label: 'EAC', desc: 'Estimate at Completion', value: fmtMoney(evm.EAC), icon: Activity, color: evm.VAC >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50' },
-    { label: 'ETC', desc: 'Estimate to Complete', value: fmtMoney(evm.ETC), icon: ArrowRightCircle, color: 'text-primary-600 bg-primary-50' },
-    { label: 'VAC', desc: 'Variance at Completion', value: fmtMoney(evm.VAC), icon: evm.VAC >= 0 ? TrendingUp : TrendingDown, color: evm.VAC >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.VAC >= 0 ? 'Under budget' : 'Over budget' },
-    { label: 'TCPI', desc: 'To-Complete Performance Index', value: evm.TCPI > 0 ? evm.TCPI.toFixed(2) : '—', icon: Gauge, color: evm.TCPI <= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.TCPI <= 1 ? 'Achievable' : 'Hard to achieve' },
+    { label: 'Revenue BAC', desc: 'Approved selling baseline', value: fmtMoney(evm.revenue.BAC), icon: Target, color: 'text-neutral-700 bg-neutral-100' },
+    { label: 'Revenue PV', desc: 'Selling value planned to date', value: fmtMoney(evm.revenue.PV), icon: Clock, color: 'text-secondary-600 bg-secondary-50' },
+    { label: 'Revenue EV', desc: 'Approved work at selling rate', value: fmtMoney(evm.revenue.EV), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50' },
+    { label: 'Revenue SPI', desc: 'Revenue EV / Revenue PV', value: evm.revenue.SPI > 0 ? evm.revenue.SPI.toFixed(2) : '—', icon: Gauge, color: evm.revenue.SPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.revenue.SPI >= 1 ? 'On/ahead of plan' : 'Behind plan' },
+    { label: 'Cost BAC', desc: 'Approved delivery-cost plan', value: fmtAvailableMoney(evm.cost.BAC), icon: Target, color: 'text-neutral-700 bg-neutral-100' },
+    { label: 'Cost PV', desc: 'Delivery cost planned to date', value: fmtAvailableMoney(evm.cost.PV), icon: Clock, color: 'text-secondary-600 bg-secondary-50' },
+    { label: 'Cost EV', desc: 'Earned work at delivery-cost rate', value: fmtAvailableMoney(evm.cost.EV), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50' },
+    { label: 'AC', desc: 'Delivery actual cost', value: fmtMoney(evm.cost.AC), icon: DollarSign, color: 'text-accent-600 bg-accent-50' },
+    { label: 'Cost CV', desc: 'Cost EV - AC', value: fmtAvailableMoney(evm.cost.CV), icon: (evm.cost.CV ?? 0) >= 0 ? TrendingUp : TrendingDown, color: evm.cost.CV === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.CV >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.cost.CV === null ? 'Approved cost plan required' : evm.cost.CV >= 0 ? 'Under budget' : 'Over budget' },
+    { label: 'Cost CPI', desc: 'Cost EV / AC', value: evm.cost.CPI !== null && evm.cost.CPI > 0 ? evm.cost.CPI.toFixed(2) : 'Unavailable', icon: Gauge, color: evm.cost.CPI === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.CPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.cost.CPI === null ? 'Approved cost plan required' : evm.cost.CPI >= 1 ? 'Cost efficient' : 'Cost overrun' },
+    { label: 'Cost EAC', desc: 'Delivery estimate at completion', value: fmtAvailableMoney(evm.cost.EAC), icon: Activity, color: evm.cost.VAC === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.VAC >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50' },
+    { label: 'Margin BAC', desc: 'Revenue BAC - Cost BAC', value: fmtAvailableMoney(evm.margin.grossMarginBAC), icon: Wallet, color: 'text-primary-600 bg-primary-50' },
   ];
 
   const severityStyles = {
@@ -1227,22 +1248,22 @@ export function Dashboard({
                   <div className="rounded-lg bg-neutral-50 border border-neutral-100 p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-neutral-600">Cost Performance (CPI)</span>
-                      <span className={`text-sm font-bold ${evm.CPI >= 1 ? 'text-success-600' : 'text-error-600'}`}>{evm.CPI > 0 ? evm.CPI.toFixed(2) : '—'}</span>
+                      <span className={`text-sm font-bold ${evm.cost.CPI === null ? 'text-neutral-500' : evm.cost.CPI >= 1 ? 'text-success-600' : 'text-error-600'}`}>{evm.cost.CPI !== null && evm.cost.CPI > 0 ? evm.cost.CPI.toFixed(2) : 'Unavailable'}</span>
                     </div>
                     <div className="relative h-2.5 bg-neutral-200 rounded-full overflow-hidden">
                       <div className="absolute inset-0 flex"><div className="w-1/2 bg-error-300" /><div className="w-1/2 bg-success-300" /></div>
-                      {evm.CPI > 0 && (<div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-primary-500 shadow-sm transition-all duration-500" style={{ left: `calc(${Math.min(evm.CPI / 2, 1) * 100}% - 6px)` }} />)}
+                      {evm.cost.CPI !== null && evm.cost.CPI > 0 && (<div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-primary-500 shadow-sm transition-all duration-500" style={{ left: `calc(${Math.min(evm.cost.CPI / 2, 1) * 100}% - 6px)` }} />)}
                     </div>
                     <div className="flex justify-between mt-1.5 text-[10px] text-neutral-400"><span>Over Budget</span><span>1.0</span><span>Under Budget</span></div>
                   </div>
                   <div className="rounded-lg bg-neutral-50 border border-neutral-100 p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-neutral-600">Schedule Performance (SPI)</span>
-                      <span className={`text-sm font-bold ${evm.SPI >= 1 ? 'text-success-600' : 'text-error-600'}`}>{evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'}</span>
+                      <span className={`text-sm font-bold ${evm.revenue.SPI >= 1 ? 'text-success-600' : 'text-error-600'}`}>{evm.revenue.SPI > 0 ? evm.revenue.SPI.toFixed(2) : '—'}</span>
                     </div>
                     <div className="relative h-2.5 bg-neutral-200 rounded-full overflow-hidden">
                       <div className="absolute inset-0 flex"><div className="w-1/2 bg-error-300" /><div className="w-1/2 bg-success-300" /></div>
-                      {evm.SPI > 0 && (<div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-secondary-500 shadow-sm transition-all duration-500" style={{ left: `calc(${Math.min(evm.SPI / 2, 1) * 100}% - 6px)` }} />)}
+                      {evm.revenue.SPI > 0 && (<div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-secondary-500 shadow-sm transition-all duration-500" style={{ left: `calc(${Math.min(evm.revenue.SPI / 2, 1) * 100}% - 6px)` }} />)}
                     </div>
                     <div className="flex justify-between mt-1.5 text-[10px] text-neutral-400"><span>Behind</span><span>1.0</span><span>Ahead</span></div>
                   </div>
@@ -1257,22 +1278,22 @@ export function Dashboard({
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-neutral-600">Cost Variance (CV = EV - AC)</span>
-                    <span className={`text-sm font-bold ${evm.CV >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(evm.CV)}</span>
+                    <span className={`text-sm font-bold ${evm.cost.CV === null ? 'text-neutral-500' : evm.cost.CV >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtAvailableMoney(evm.cost.CV)}</span>
                   </div>
                   <div className="relative h-6 bg-neutral-100 rounded-lg overflow-hidden">
                     <div className="absolute inset-0 flex items-center justify-center"><div className="w-px h-full bg-neutral-300" /></div>
-                    {evm.CV !== 0 && (<div className={`absolute top-0 h-full ${evm.CV >= 0 ? 'bg-success-400' : 'bg-error-400'} transition-all duration-700`} style={{ left: evm.CV >= 0 ? '50%' : `${50 - Math.min(Math.abs(evm.CV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%`, width: `${Math.min(Math.abs(evm.CV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%` }} />)}
+                    {evm.cost.CV !== null && evm.cost.CV !== 0 && (<div className={`absolute top-0 h-full ${evm.cost.CV >= 0 ? 'bg-success-400' : 'bg-error-400'} transition-all duration-700`} style={{ left: evm.cost.CV >= 0 ? '50%' : `${50 - Math.min(Math.abs(evm.cost.CV) / Math.max(Math.abs(evm.cost.EV ?? 0), 1) * 50, 50)}%`, width: `${Math.min(Math.abs(evm.cost.CV) / Math.max(Math.abs(evm.cost.EV ?? 0), 1) * 50, 50)}%` }} />)}
                   </div>
                   <div className="flex justify-between mt-1 text-[10px] text-neutral-400"><span>Over Budget</span><span>0</span><span>Under Budget</span></div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-neutral-600">Schedule Variance (SV = EV - PV)</span>
-                    <span className={`text-sm font-bold ${evm.SV >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(evm.SV)}</span>
+                    <span className={`text-sm font-bold ${evm.revenue.SV >= 0 ? 'text-success-600' : 'text-error-600'}`}>{fmtMoney(evm.revenue.SV)}</span>
                   </div>
                   <div className="relative h-6 bg-neutral-100 rounded-lg overflow-hidden">
                     <div className="absolute inset-0 flex items-center justify-center"><div className="w-px h-full bg-neutral-300" /></div>
-                    {evm.SV !== 0 && (<div className={`absolute top-0 h-full ${evm.SV >= 0 ? 'bg-success-400' : 'bg-error-400'} transition-all duration-700`} style={{ left: evm.SV >= 0 ? '50%' : `${50 - Math.min(Math.abs(evm.SV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%`, width: `${Math.min(Math.abs(evm.SV) / Math.max(Math.abs(evm.EV), 1) * 50, 50)}%` }} />)}
+                    {evm.revenue.SV !== 0 && (<div className={`absolute top-0 h-full ${evm.revenue.SV >= 0 ? 'bg-success-400' : 'bg-error-400'} transition-all duration-700`} style={{ left: evm.revenue.SV >= 0 ? '50%' : `${50 - Math.min(Math.abs(evm.revenue.SV) / Math.max(Math.abs(evm.revenue.EV), 1) * 50, 50)}%`, width: `${Math.min(Math.abs(evm.revenue.SV) / Math.max(Math.abs(evm.revenue.EV), 1) * 50, 50)}%` }} />)}
                   </div>
                   <div className="flex justify-between mt-1 text-[10px] text-neutral-400"><span>Behind</span><span>0</span><span>Ahead</span></div>
                 </div>
@@ -1463,7 +1484,7 @@ export function Dashboard({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-primary-600" />
-                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — PV, EV, AC, EAC, Cash &amp; Resource Forecast</h3>
+                    <h3 className="text-sm font-semibold text-neutral-700">Project S-Curve — Revenue PV/EV, Delivery AC/EAC, Cash &amp; Resource Forecast</h3>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500" /><span className="text-neutral-600">PV</span></span>
@@ -1699,9 +1720,9 @@ export function Dashboard({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { label: 'Modified Contract Value', value: fmtMoney(stats.modifiedContractValue), sub: `${stats.approvedVariations} approved variation(s)` },
-                { label: 'Planned Value to Date', value: fmtMoney(evm.PV), sub: `BAC ${fmtMoney(evm.BAC)}` },
-                { label: 'Earned Value', value: fmtMoney(evm.EV), sub: `SPI ${evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'}` },
-                { label: 'Actual Cost', value: fmtMoney(evm.AC), sub: `CPI ${evm.CPI > 0 ? evm.CPI.toFixed(2) : '—'}` },
+                { label: 'Revenue PV to Date', value: fmtMoney(evm.revenue.PV), sub: `Revenue BAC ${fmtMoney(evm.revenue.BAC)}` },
+                { label: 'Revenue Earned Value', value: fmtMoney(evm.revenue.EV), sub: `Revenue SPI ${evm.revenue.SPI > 0 ? evm.revenue.SPI.toFixed(2) : '—'}` },
+                { label: 'Delivery Actual Cost', value: fmtMoney(evm.cost.AC), sub: `Cost CPI ${evm.cost.CPI !== null ? evm.cost.CPI.toFixed(2) : 'Unavailable'}` },
               ].map((item) => (
                 <div key={item.label} className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
                   <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{item.label}</p>
@@ -1718,8 +1739,8 @@ export function Dashboard({
                   {[
                     ['Original contract value', fmtMoney(stats.totalContractValue)],
                     ['Approved variation impact', fmtMoney(stats.approvedVariationCostImpact)],
-                    ['Estimate at completion', fmtMoney(evm.EAC)],
-                    ['Variance at completion', fmtMoney(evm.VAC)],
+                    ['Delivery Cost EAC', fmtAvailableMoney(evm.cost.EAC)],
+                    ['Delivery Cost VAC', fmtAvailableMoney(evm.cost.VAC)],
                     ['Net cash flow', fmtMoney(stats.netCashFlow)],
                     ['Outstanding client invoices', fmtMoney(stats.clientOutstanding)],
                     ['Outstanding subcontractor invoices', fmtMoney(stats.subOutstanding)],

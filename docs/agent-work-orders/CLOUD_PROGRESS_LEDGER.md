@@ -5,20 +5,23 @@
 
 ## الحالة الحالية
 
-- Official reviewed commit: `2d73c49764c9a24d7fd80f5dd030e9519508dcc0`
-- Agent-cloud synchronized commit: `d10fe8d39c9f92a6ef437008528adf906bcbbc64`
-- Current capability: `A3 — Revenue vs Delivery Cost Separation`
+- Official reviewed commit: `9a3f7f7336121ac7a00c6d074e862e13e28b7d52`
+- Agent-cloud synchronized commit: `95c34d2bb8183e6ccb277cb2088c21ef0e858156`
+- Current capability: `A4 — KPI Source Drill-down & Reconciliation`
 - Status: `READY — NOT STARTED`
-- Last accepted capability: `A2 — Unified Project Data Date — CLOSED 8/10`
+- Last accepted capability: `A3 — Revenue vs Delivery Cost Separation — CLOSED 8/10`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
 
 ## آخر نتيجة مثبتة
 
-- `npm test`: 136/136 passed.
+- `npm test`: 142/142 passed.
 - `npm run build`: passed.
 - `cargo test`: 21/21 passed.
-- Agent-cloud tree is identical to the reviewed official tree at the synchronization point.
+- A3 was recovered, reviewed and corrected by Codex; Google AI Studio metadata was excluded.
+- Revenue and Delivery Cost are separated across the engine, Dashboard, Portfolio, Control Accounts and Report Pack.
+- Missing or draft cost plans cannot fabricate Cost EAC from Revenue BAC.
+- Ollama review was deferred by explicit user request; automated acceptance and Codex review passed.
 
 ## ما يجب على الوكيل التالي فعله
 
@@ -26,8 +29,8 @@
 2. تحقق أن working tree نظيفة وسجل HEAD في تقرير البداية.
 3. اقرأ الملفات بالترتيب المذكور في الأمر الموحد.
 4. راجع أي عمل جزئي موجود للميزة الحالية؛ لا تبدأها من الصفر ولا تحذف الجزء الصحيح.
-5. أكمل **A3 فقط** طبقًا لمعاييرها في `MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`.
-6. لا تبدأ A4 قبل أن تصبح حالة A3 `READY FOR CODEX REVIEW` وتنجح أوامر الاختبار المحددة.
+5. أكمل **A4 فقط** طبقًا لمعاييرها في `MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`.
+6. لا تبدأ C2 قبل أن تصبح حالة A4 `READY FOR CODEX REVIEW` وتنجح أوامر الاختبار المحددة.
 
 ## قالب تحديث التسليم
 

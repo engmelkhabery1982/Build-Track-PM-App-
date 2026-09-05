@@ -15,8 +15,11 @@ test('EVM uses the approved baseline and only dated contract facts', () => {
   assert.equal(result.BAC, 1000);
   assert.equal(result.EV, 300);
   assert.equal(result.AC, 250);
-  assert.equal(result.CV, 50);
-  assert.equal(result.EAC, 833.33);
+  assert.equal(result.cost.status, 'Unavailable');
+  assert.equal(result.cost.CV, null);
+  assert.equal(result.cost.EAC, null);
+  assert.equal(result.CV, 0, 'legacy cost fields must not fabricate variance from revenue EV');
+  assert.equal(result.EAC, 0, 'legacy cost fields must not fabricate EAC from revenue BAC');
 });
 
 test('EVM rolls subcontract execution and cost to its main-contract plan once', () => {

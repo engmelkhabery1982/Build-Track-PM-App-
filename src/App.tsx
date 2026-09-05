@@ -2277,7 +2277,24 @@ function AppWorkspace() {
       return <AuditTrailExplorer records={data.auditLog as Record<string, any>[]} />;
     }
     if (activeView === 'reportPack') {
-      return <ReportPack projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} variations={data.variations as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} cashFlow={data.cashFlow as Record<string, any>[]} costEntries={data.costEntries as Record<string, any>[]} scheduleDistributions={data.scheduleDistributions as Record<string, any>[]} boqItems={data.boqItems as Record<string, any>[]} />;
+      return (
+        <ReportPack
+          projects={data.projects as Record<string, any>[]}
+          contracts={data.contracts as Record<string, any>[]}
+          variations={data.variations as Record<string, any>[]}
+          schedules={data.schedules as Record<string, any>[]}
+          wirs={data.wirEntries as Record<string, any>[]}
+          cashFlow={data.cashFlow as Record<string, any>[]}
+          costEntries={data.costEntries as Record<string, any>[]}
+          scheduleDistributions={data.scheduleDistributions as Record<string, any>[]}
+          boqItems={data.boqItems as Record<string, any>[]}
+          baselines={data.baselines as Record<string, any>[]}
+          controlAccounts={data.controlAccounts as Record<string, any>[]}
+          contractSovLines={data.contractSovLines as Record<string, any>[]}
+          procurement={data.procurement as Record<string, any>[]}
+          procurementReceipts={data.procurementReceipts as Record<string, any>[]}
+        />
+      );
     }
     if (activeView === 'help') {
       return <HelpCenter onNavigate={setActiveView} />;
@@ -2374,7 +2391,7 @@ function AppWorkspace() {
     }
 
     if (activeView === 'portfolio') {
-      const money = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      const money = (value: number | null) => value === null ? 'Unavailable' : value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
       const portfolioRows = data.projects.map((project: any) => {
         const mainContract = data.contracts.find((contract: any) => contract.project_id === project.id && !contract.parent_main_contract_id) as Record<string, any> | undefined;
         const contractIds = new Set(data.contracts
@@ -2388,20 +2405,22 @@ function AppWorkspace() {
         const evm = mainContract ? calculateEvmAtDataDate({
           contractIds: [mainContract.id], performanceContractIds: [...contractIds], dataDate: unifiedDataDate,
           schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[],
-          baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[],
-          boqItems: data.boqItems as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[],
-        }) : null;
-        const actualCost = evm?.AC || 0;
-        const earnedValue = evm?.EV || 0;
-        const plannedValue = evm?.PV || 0;
-        const budgetAtCompletion = evm?.BAC || 0;
-        const estimateAtCompletion = evm?.EAC || 0;
-        const estimateToComplete = evm?.ETC || 0;
+           baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[],
+           boqItems: data.boqItems as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[],
+           controlAccounts: data.controlAccounts as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[],
+           procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[],
+         }) : null;
+        const actualCost = evm?.cost.AC || 0;
+        const earnedValue = evm?.revenue.EV || 0;
+        const plannedValue = evm?.revenue.PV || 0;
+        const budgetAtCompletion = evm?.cost.BAC ?? null;
+        const estimateAtCompletion = evm?.cost.EAC ?? null;
+        const estimateToComplete = evm?.cost.ETC ?? null;
         const subcontractCount = Math.max(0, contractIds.size - (mainContract ? 1 : 0));
         const revisedEnd = addCalendarDays(mainContract?.end_date || project.end_date, timeImpact) || mainContract?.end_date || project.end_date;
         const finish = deriveContractForecastFinish(data.schedules as Record<string, any>[], mainContract?.id);
         const forecastFinish = finish.date || revisedEnd;
-        return { project, mainContract, variationValue, originalValue, modifiedValue, actualCost, earnedValue, plannedValue, budgetAtCompletion, estimateAtCompletion, estimateToComplete, cpi: evm?.CPI || 0, spi: evm?.SPI || 0, subcontractCount, revisedEnd, forecastFinish, forecastSource: finish.date ? finish.source : 'Contract fallback' };
+        return { project, mainContract, variationValue, originalValue, modifiedValue, actualCost, earnedValue, plannedValue, budgetAtCompletion, estimateAtCompletion, estimateToComplete, cpi: evm?.cost.CPI ?? null, spi: evm?.revenue.SPI || 0, subcontractCount, revisedEnd, forecastFinish, forecastSource: finish.date ? finish.source : 'Contract fallback' };
       });
       const totals = portfolioRows.reduce((sum, row) => ({
         originalValue: sum.originalValue + row.originalValue,
@@ -2422,12 +2441,12 @@ function AppWorkspace() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
             {[
               ['Original contracts', totals.originalValue], ['Approved variations', totals.variationValue], ['Modified contracts', totals.modifiedValue],
-              ['Planned value to date', totals.plannedValue], ['Earned value', totals.earnedValue], ['Actual cost', totals.actualCost],
+              ['Revenue PV to date', totals.plannedValue], ['Revenue EV', totals.earnedValue], ['Delivery AC', totals.actualCost],
             ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm"><p className="text-xs text-neutral-500">{label}</p><p className="mt-1 text-lg font-bold text-neutral-900">{money(Number(value))}</p></div>)}
           </div>
           <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
             <table className="min-w-[1480px] w-full text-sm"><thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500"><tr><th className="px-4 py-3">Project</th><th className="px-4 py-3">Main contract</th><th className="px-4 py-3">Original</th><th className="px-4 py-3">Variations</th><th className="px-4 py-3">Modified</th><th className="px-4 py-3">Start</th><th className="px-4 py-3">Revised finish</th><th className="px-4 py-3">PV / EV / AC</th><th className="px-4 py-3">Performance</th><th className="px-4 py-3">Forecast</th><th className="px-4 py-3">Progress</th><th className="px-4 py-3">Subcontracts</th></tr></thead><tbody>
-              {portfolioRows.map((row) => { const progress = row.modifiedValue > 0 ? Math.min(100, row.earnedValue / row.modifiedValue * 100) : 0; const overBudget = row.budgetAtCompletion > 0 && row.estimateAtCompletion > row.budgetAtCompletion; const late = row.forecastFinish && row.revisedEnd && row.forecastFinish > row.revisedEnd; return <tr key={row.project.id} onClick={() => openProject(row.project.id)} className="cursor-pointer border-b border-neutral-100 hover:bg-primary-50"><td className="px-4 py-3"><p className="font-semibold text-neutral-900">{row.project.name}</p><p className="text-xs text-neutral-500">{row.project.project_code}</p></td><td className="px-4 py-3"><p className="font-medium text-neutral-800">{row.mainContract?.contract_number || '—'}</p><p className="max-w-48 truncate text-xs text-neutral-500">{row.mainContract?.title || 'No main contract'}</p></td><td className="px-4 py-3">{money(row.originalValue)}</td><td className="px-4 py-3 text-primary-700">{money(row.variationValue)}</td><td className="px-4 py-3 font-semibold">{money(row.modifiedValue)}</td><td className="px-4 py-3">{row.mainContract?.start_date || row.project.start_date || '—'}</td><td className="px-4 py-3">{row.revisedEnd || '—'}</td><td className="px-4 py-3 text-xs"><p>PV {money(row.plannedValue)}</p><p>EV {money(row.earnedValue)}</p><p>AC {money(row.actualCost)}</p></td><td className="px-4 py-3 text-xs"><p className={row.cpi >= 1 ? 'text-success-700' : row.cpi > 0 ? 'font-semibold text-error-600' : 'text-neutral-500'}>CPI {row.cpi > 0 ? row.cpi.toFixed(2) : '—'}</p><p className={row.spi >= 1 ? 'text-success-700' : row.spi > 0 ? 'font-semibold text-error-600' : 'text-neutral-500'}>SPI {row.spi > 0 ? row.spi.toFixed(2) : '—'}</p></td><td className="px-4 py-3 text-xs"><p className={overBudget ? 'font-semibold text-error-600' : ''}>EAC {money(row.estimateAtCompletion)}</p><p>ETC {money(row.estimateToComplete)}</p><p className={late ? 'font-semibold text-error-600' : ''}>Finish {row.forecastFinish || '—'}{late ? ' · late' : ''}</p><p className="text-[10px] text-neutral-500">{row.forecastSource}</p></td><td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-20 overflow-hidden rounded-full bg-neutral-100"><div className="h-full bg-primary-600" style={{ width: `${progress}%` }} /></div><span>{progress.toFixed(1)}%</span></div></td><td className="px-4 py-3">{row.subcontractCount}</td></tr>; })}
+              {portfolioRows.map((row) => { const progress = row.modifiedValue > 0 ? Math.min(100, row.earnedValue / row.modifiedValue * 100) : 0; const overBudget = row.budgetAtCompletion !== null && row.estimateAtCompletion !== null && row.estimateAtCompletion > row.budgetAtCompletion; const late = row.forecastFinish && row.revisedEnd && row.forecastFinish > row.revisedEnd; return <tr key={row.project.id} onClick={() => openProject(row.project.id)} className="cursor-pointer border-b border-neutral-100 hover:bg-primary-50"><td className="px-4 py-3"><p className="font-semibold text-neutral-900">{row.project.name}</p><p className="text-xs text-neutral-500">{row.project.project_code}</p></td><td className="px-4 py-3"><p className="font-medium text-neutral-800">{row.mainContract?.contract_number || '—'}</p><p className="max-w-48 truncate text-xs text-neutral-500">{row.mainContract?.title || 'No main contract'}</p></td><td className="px-4 py-3">{money(row.originalValue)}</td><td className="px-4 py-3 text-primary-700">{money(row.variationValue)}</td><td className="px-4 py-3 font-semibold">{money(row.modifiedValue)}</td><td className="px-4 py-3">{row.mainContract?.start_date || row.project.start_date || '—'}</td><td className="px-4 py-3">{row.revisedEnd || '—'}</td><td className="px-4 py-3 text-xs"><p>Revenue PV {money(row.plannedValue)}</p><p>Revenue EV {money(row.earnedValue)}</p><p>Delivery AC {money(row.actualCost)}</p></td><td className="px-4 py-3 text-xs"><p className={row.cpi !== null && row.cpi >= 1 ? 'text-success-700' : row.cpi !== null && row.cpi > 0 ? 'font-semibold text-error-600' : 'text-neutral-500'}>Cost CPI {row.cpi !== null && row.cpi > 0 ? row.cpi.toFixed(2) : 'Unavailable'}</p><p className={row.spi >= 1 ? 'text-success-700' : row.spi > 0 ? 'font-semibold text-error-600' : 'text-neutral-500'}>Revenue SPI {row.spi > 0 ? row.spi.toFixed(2) : '—'}</p></td><td className="px-4 py-3 text-xs"><p className={overBudget ? 'font-semibold text-error-600' : ''}>Cost EAC {money(row.estimateAtCompletion)}</p><p>Cost ETC {money(row.estimateToComplete)}</p><p className={late ? 'font-semibold text-error-600' : ''}>Finish {row.forecastFinish || '—'}{late ? ' · late' : ''}</p><p className="text-[10px] text-neutral-500">{row.forecastSource}</p></td><td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-20 overflow-hidden rounded-full bg-neutral-100"><div className="h-full bg-primary-600" style={{ width: `${progress}%` }} /></div><span>{progress.toFixed(1)}%</span></div></td><td className="px-4 py-3">{row.subcontractCount}</td></tr>; })}
               {portfolioRows.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-neutral-500">No projects have been generated from main contracts yet.</td></tr>}
             </tbody></table>
           </div>

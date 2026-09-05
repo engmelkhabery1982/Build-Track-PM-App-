@@ -1,4 +1,4 @@
-﻿export interface Project {
+export interface Project {
   id: string;
   name: string;
   client: string;
@@ -1368,6 +1368,77 @@ export interface GanttOverlaySummary {
   aheadCount: number;
   maxSlippageDays: number;
   activities: GanttOverlayActivity[];
+}
+
+export interface EvmRevenueResult {
+  BAC: number;
+  PV: number;
+  EV: number;
+  SV: number;
+  SPI: number;
+}
+
+export interface EvmDeliveryCostResult {
+  hasCostPlan: boolean;
+  status: 'Ready' | 'Unavailable' | 'Approved Baseline Required';
+  BAC: number | null;
+  PV: number | null;
+  EV: number | null;
+  AC: number;
+  openCommitment: number;
+  CV: number | null;
+  SV: number | null;
+  CPI: number | null;
+  SPI: number | null;
+  EAC: number | null;
+  ETC: number | null;
+  VAC: number | null;
+  TCPI: number | null;
+}
+
+export interface EvmMarginResult {
+  grossMarginBAC: number | null;
+  grossMarginBACPct: number | null;
+  projectedMarginEAC: number | null;
+  projectedMarginEACPct: number | null;
+  progressMargin: number;
+  progressMarginPct: number | null;
+}
+
+export interface EvmCalculationResult {
+  revenue: EvmRevenueResult;
+  cost: EvmDeliveryCostResult;
+  margin: EvmMarginResult;
+  revenueBAC: number;
+  revenuePV: number;
+  revenueEV: number;
+  revenueSV: number;
+  revenueSPI: number;
+  costBAC: number | null;
+  costPV: number | null;
+  costEV: number | null;
+  costAC: number;
+  costCV: number | null;
+  costSV: number | null;
+  costCPI: number | null;
+  costSPI: number | null;
+  costEAC: number | null;
+  costETC: number | null;
+  costVAC: number | null;
+  costTCPI: number | null;
+  costStatus: 'Ready' | 'Unavailable' | 'Approved Baseline Required';
+  BAC: number;
+  PV: number;
+  EV: number;
+  AC: number;
+  CV: number;
+  SV: number;
+  CPI: number;
+  SPI: number;
+  EAC: number;
+  ETC: number;
+  VAC: number;
+  TCPI: number;
 }
 
 
