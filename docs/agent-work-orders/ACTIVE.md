@@ -1,49 +1,11 @@
-# أمر العمل النشط للوكلاء المحليين
+# أمر العمل النشط
 
-## C2.1 — Activity-level baseline/current/forecast comparison model
+## A2.1 — Unified Project Data Date
 
-**الهدف:** توسيع نموذج مقارنة نشاط واحد بحيث يعرض Baseline المعتمد والخطة الحالية
-وتوقع CPM كقيم منفصلة، دون تغيير أي من النسخ الثلاث أثناء العرض.
+المرجع التنفيذي الكامل:
 
-## معايير القبول
+`docs/agent-work-orders/GITHUB_CONTINUATION_WORK_ORDER_AR.md`
 
-1. يعرض سجل المقارنة، لكل activity code ثابت: الإضافة/الحذف/التغيير/دون تغيير.
-2. يعرض Baseline مقابل Current Plan مقابل CPM Forecast للتواريخ والمدة والمسار الحرج.
-3. يبقي الحقول الحالية متوافقة ولا يكتب على Baseline أو planned dates.
-4. لا يخترع Forecast عند غياب بيانات CPM؛ يعرض `Unavailable` أو fallback معلن.
-5. تتضمن الاختبارات حالة Forecast متغير وحالة غياب snapshot/Forecast.
+الحالة: **جاهز لوكيل GitHub — لم يبدأ**.
 
-## ملفات المراجعة الأولية
-
-- `src/data/baselineGovernance.ts`
-
-## حقائق المصدر التي يجب إثبات فهمها
-
-- الدالة القائمة هي `compareBaselineActivityDetails`، والـtype الناتج هو
-  `BaselineActivityVariance`.
-- المصدر الحالي يقارن Baseline مع Current فقط؛ لا توجد حقول Forecast في هذا
-  الـtype بعد.
-- `activity_code` هو الـidentity المستقر، و`predecessor_links` يقارن عبر
-  `stableJson`.
-- أي patch لا يذكر هذه الحقائق أو لا يعدل هذا المسار المحدد يعتبر خارج النطاق.
-
-## مخرجات مطلوبة من الوكيل المحلي
-
-- فهم صريح للمصادر الثلاثة قبل أي patch.
-- patch صغير لمسودة `baselineGovernance.ts` فقط.
-- اختبار قبول مقترح؛ لا تعديل ملفات.
-
-## Required scope terms
-
-- `Baseline`
-- `Current`
-- `Forecast`
-- `Critical`
-- `predecessor`
-
-## Forbidden off-scope terms
-
-- `resourceLoading`
-- `timePhasedPlannedResourceCost`
-- `pmoSnapshot`
-- `calculatePmoSnapshot`
+لا يبدأ أي بند آخر قبل أن يعيد Codex مراجعة فرع `agent/a2-unified-project-data-date` ويقرر قبول A2.1 أو رفضه.
