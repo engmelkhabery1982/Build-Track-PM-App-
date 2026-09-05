@@ -68,7 +68,7 @@
 
 ## ترتيب التطوير الملزم من هذه النسخة
 
-1. **A2 — Unified Project Data Date:** مصدر واحد في مستوى التطبيق تستهلكه Dashboard وReport Pack وPMO وControl Account وS-Curve وScope/Waste/XER.
+1. **A2 — Unified Project Data Date:** أغلقت A2.1 لـDashboard وReport Pack ونطاق المشروع. التالي A2.2 لترحيل مستهلكي Portfolio/PMO/Control Account/S-Curve/Scope/Waste/XER المتبقين من تواريخ اليوم المستقلة.
 2. **A3 — Revenue vs Delivery Cost separation:** تعريفات وحسابات وتسميات منفصلة، ومنع استعمال EV الإيرادي كتنبؤ تكلفة.
 3. **A4 — KPI source drill-down:** بطاقة → صفوف المصدر → reconciliation total.
 4. **C2 — Schedule versions and comparison:** persistence للنسخ/scenarios ومقارنة Baseline/Current/Forecast.

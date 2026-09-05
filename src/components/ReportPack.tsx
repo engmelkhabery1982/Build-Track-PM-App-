@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, Printer } from 'lucide-react';
+import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { distributedPlannedValueToDate } from '@/utils/schedulePlanning';
 
 const money = (value: number) => value.toLocaleString(undefined, {
@@ -33,9 +34,8 @@ const isOnOrBefore = (value: unknown, cutoff: string) => {
 };
 
 export function ReportPack({ projects, contracts, variations, schedules, wirs, cashFlow, costEntries, scheduleDistributions, boqItems }: ReportPackProps) {
-  const [projectId, setProjectId] = useState(projects[0]?.id || 'all');
   const [packType, setPackType] = useState('Weekly Project Review');
-  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
+  const { dataDate: reportDate, projectId, setProjectId } = useProjectDataDate();
 
   const data = useMemo(() => {
     const selectedProjects = projectId === 'all' ? projects : projects.filter((project) => project.id === projectId);
@@ -86,11 +86,14 @@ export function ReportPack({ projects, contracts, variations, schedules, wirs, c
             <div className="flex flex-wrap gap-2 print:hidden">
               <select value={packType} onChange={(event) => setPackType(event.target.value)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"><option>Weekly Project Review</option><option>Monthly PMO Review</option><option>Commercial & Payment Review</option></select>
               <select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"><option value="all">All projects</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.project_code || project.id} — {project.name}</option>)}</select>
-              <label className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2 py-2 text-sm"><CalendarDays size={15} className="text-neutral-400" /><input aria-label="Report date" type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} className="border-0 bg-transparent outline-none" /></label>
+              <div className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-sm" title="Controlled by the application Data Date selector; this reporting cut-off does not modify records">
+                <CalendarDays size={15} className="text-neutral-400" />
+                <span className="text-xs font-medium text-neutral-600">As of {reportDate}</span>
+              </div>
               <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white"><Printer size={16} /> Print / PDF</button>
             </div>
           </div>
-          <p className="mt-3 text-xs text-neutral-400">All cumulative values are calculated through {reportDate}: contract effective date, approved variation date, plan distribution, inspection date, cost-entry date and cash-flow date.</p>
+          <p className="mt-3 text-xs text-neutral-400">All cumulative values are calculated through {reportDate} (Reporting cut-off only; underlying records are not modified): contract effective date, approved variation date, plan distribution, inspection date, cost-entry date and cash-flow date.</p>
         </section>
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

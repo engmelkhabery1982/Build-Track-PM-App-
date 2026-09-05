@@ -14,6 +14,7 @@ import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
+import { ProjectDataDateProvider, useProjectDataDate } from '@/context/ProjectDataDateContext';
 import type { ViewKey, Project } from '@/types';
 import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, reconcileScheduleDistributions, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
@@ -1007,7 +1008,28 @@ const VIEW_TITLES: Record<string, string> = {
   parties: 'Clients, Vendors & Subcontractors', partyContacts: 'Party Contacts', rateHistory: 'Rate History',
 };
 
-export default function App() {
+function UnifiedDataDateSelector() {
+  const { dataDate, setDataDate } = useProjectDataDate();
+  return (
+    <label
+      className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-600 shadow-sm hover:border-primary-300 transition-colors"
+      title="Reporting cut-off date (All dashboard and report metrics are evaluated through this date — does not modify data records)"
+    >
+      <CalendarClock size={14} className="text-neutral-400" />
+      <span className="hidden sm:inline font-medium text-neutral-500">Data Date:</span>
+      <input
+        aria-label="Project reporting data date"
+        type="date"
+        value={dataDate}
+        onChange={(event) => setDataDate(event.target.value)}
+        className="border-0 bg-transparent p-0 text-xs font-semibold text-neutral-800 outline-none cursor-pointer"
+      />
+      <span className="text-[10px] text-neutral-400 hidden xl:inline" title="Reporting cut-off only">(Cut-off)</span>
+    </label>
+  );
+}
+
+function AppWorkspace() {
   const [activeView, setActiveView] = useState<ViewKey>(() => (localStorage.getItem('buildtrack:default-view') as ViewKey) || 'dashboard');
   const [navigationHistory, setNavigationHistory] = useState<ViewKey[]>(() => [(localStorage.getItem('buildtrack:default-view') as ViewKey) || 'dashboard']);
   const navigationIndex = useRef(0);
@@ -4321,7 +4343,15 @@ export default function App() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="hidden shrink-0 items-center justify-end gap-2 border-b border-neutral-200 bg-white px-5 py-2 lg:flex"><div className="mr-auto flex items-center gap-1"><button onClick={goBack} disabled={navigationIndex.current <= 0} className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-50 disabled:opacity-35" title="Back"><ArrowLeft size={16}/></button><button onClick={goForward} disabled={navigationIndex.current >= navigationHistory.length - 1} className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-50 disabled:opacity-35" title="Forward"><ArrowRight size={16}/></button></div><button onClick={() => setFocusMode((value) => !value)} className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50" title="Hide or show navigation for focused table work">{focusMode ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}{focusMode ? 'Exit focus' : 'Focus mode'}</button><CommandPalette destinations={NAV_ITEMS.map(({ key, label, group }) => ({ key, label, group }))} projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} onNavigate={setActiveView} onOpenProject={(projectId) => { setWorkspaceProjectId(projectId); setActiveView('projects'); }}/></div>
+        <div className="hidden shrink-0 items-center justify-end gap-2 border-b border-neutral-200 bg-white px-5 py-2 lg:flex">
+          <div className="mr-auto flex items-center gap-1">
+            <button onClick={goBack} disabled={navigationIndex.current <= 0} className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-50 disabled:opacity-35" title="Back"><ArrowLeft size={16}/></button>
+            <button onClick={goForward} disabled={navigationIndex.current >= navigationHistory.length - 1} className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-50 disabled:opacity-35" title="Forward"><ArrowRight size={16}/></button>
+          </div>
+          <UnifiedDataDateSelector />
+          <button onClick={() => setFocusMode((value) => !value)} className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50" title="Hide or show navigation for focused table work">{focusMode ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}{focusMode ? 'Exit focus' : 'Focus mode'}</button>
+          <CommandPalette destinations={NAV_ITEMS.map(({ key, label, group }) => ({ key, label, group }))} projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} onNavigate={setActiveView} onOpenProject={(projectId) => { setWorkspaceProjectId(projectId); setActiveView('projects'); }}/>
+        </div>
         {/* Top bar (mobile) */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-neutral-200">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-neutral-100">
@@ -4331,7 +4361,7 @@ export default function App() {
             <Building2 size={16} className="text-primary-600" />
             <span className="text-sm font-bold text-neutral-900">BuildTrack</span>
           </div>
-          <div className="w-7" />
+          <UnifiedDataDateSelector />
         </div>
 
         {/* Content */}
@@ -4347,5 +4377,13 @@ export default function App() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ProjectDataDateProvider>
+      <AppWorkspace />
+    </ProjectDataDateProvider>
   );
 }

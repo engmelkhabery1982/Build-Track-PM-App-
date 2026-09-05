@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { generateWarnings } from '@/utils/earlyWarningSystem';
 import { useVarianceActions } from '@/hooks/useVarianceActions';
 import type { Warning } from '@/utils/varianceActionRegister';
@@ -100,11 +101,10 @@ export function Dashboard({
   projects, tasks, costs, costEntries, procurement, procurementReceipts, safety, progress, schedules, contracts,
   boqHeaders, boqItems, contractSovLines, controlAccounts, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
 }: DashboardProps) {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { dataDate: asOfDate, projectId: selectedProjectId, setProjectId: setSelectedProjectId } = useProjectDataDate();
 
   const { varianceActionItems, handleCreateAction, handleUpdateActionStatus } = useVarianceActions();
   const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
@@ -803,11 +803,10 @@ export function Dashboard({
             <button onClick={() => window.print()} className="no-print flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-xl bg-white shadow-sm hover:border-primary-300 transition-colors">
               <Printer size={15} /> Print
             </button>
-            <label className="no-print flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-xl bg-white shadow-sm hover:border-primary-300 transition-colors" title="All dashboard values are calculated through this date">
+            <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-medium text-neutral-600 shadow-sm" title="Controlled by the application Data Date selector; this reporting cut-off does not modify records">
               <CalendarClock size={15} className="text-neutral-400" />
-              <span className="hidden xl:inline">As of</span>
-              <input aria-label="Dashboard as of date" type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} className="border-0 bg-transparent p-0 text-sm outline-none" />
-            </label>
+              <span>As of {asOfDate}</span>
+            </div>
             <div className="relative">
               <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <select
