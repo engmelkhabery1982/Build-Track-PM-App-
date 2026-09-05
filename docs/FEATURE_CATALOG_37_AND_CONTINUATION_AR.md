@@ -21,7 +21,7 @@
 | 1 | Code Locking & Immutability | ✅ | `src/data/codeControls.ts` وربط SQLite/UI | إبقاء اختبارات عدم تغيير الأكواد بعد الاعتماد ضمن regression. |
 | 2 | CPM Predecessor Engine (FS/SS/FF/SF) | ✅ | `src/utils/cpm.ts` واختبارات CPM/XER | لا تغيير دون اختبار network متعدد الروابط. |
 | 3 | Critical Path Analyzer | ✅ | CPM + حقول float/critical + dashboard | الحفاظ على فصل الخطة عن forecast. |
-| 4 | EVM ذو المؤشرات القياسية | 🟡 | `src/utils/evm.ts` وS-Curve وPMO Snapshot | A2 تاريخ بيانات واحد، A3 فصل revenue عن delivery cost، drill-down لكل قيمة. |
+| 4 | EVM ذو المؤشرات القياسية | 🟡 | `src/utils/evm.ts` وS-Curve وPMO Snapshot؛ أُغلق A2 بتاريخ قياس موحد | A3 فصل revenue عن delivery cost، ثم A4 drill-down لكل قيمة. |
 | 5 | Audit Trail Explorer | 🟡 | audit/approval records موجودة | سجل SQLite append-only موحد، هوية المستخدم، شاشة بحث، اختبار منع العبث. |
 | 6 | WIR Register | ✅ | `wir_entries`، UI، repository واختبارات | regression فقط. |
 | 7 | WIR Quantity Over-run Protection | ✅ | Quantity Ledger + تحقق الزيادة واختبارات قبول | regression مع Variations/corrections. |
@@ -68,8 +68,8 @@
 
 ## ترتيب التطوير الملزم من هذه النسخة
 
-1. **A2 — Unified Project Data Date:** أغلقت A2.1 لـDashboard وReport Pack ونطاق المشروع. التالي A2.2 لترحيل مستهلكي Portfolio/PMO/Control Account/S-Curve/Scope/Waste/XER المتبقين من تواريخ اليوم المستقلة.
-2. **A3 — Revenue vs Delivery Cost separation:** تعريفات وحسابات وتسميات منفصلة، ومنع استعمال EV الإيرادي كتنبؤ تكلفة.
+1. ✅ **A2 — Unified Project Data Date:** أُغلق عبر A2.1 وA2.2؛ مصدر واحد في مستوى التطبيق تستهلكه Dashboard وReport Pack وPortfolio وPMO وControl Account وS-Curve وScope/Waste/XER.
+2. **A3 — Revenue vs Delivery Cost separation:** التالي؛ يلزم أولًا تعريف حقول تكلفة حقيقية في Data Dictionary وSQLite/UI، ثم حسابات وتسميات منفصلة ومنع استعمال EV الإيرادي كتنبؤ تكلفة.
 3. **A4 — KPI source drill-down:** بطاقة → صفوف المصدر → reconciliation total.
 4. **C2 — Schedule versions and comparison:** persistence للنسخ/scenarios ومقارنة Baseline/Current/Forecast.
 5. **C4 — Governed XER reconciliation workflow:** preview ثم commit ذري ثم report فرق قابل للتدقيق.

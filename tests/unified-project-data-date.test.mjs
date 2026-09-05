@@ -131,3 +131,24 @@ test('A2.1 - default reporting date uses the local calendar day rather than UTC 
   const localLateEvening = new Date(2026, 0, 2, 23, 30, 0);
   assert.equal(localTodayIso(localLateEvening), '2026-01-02');
 });
+
+test('A2.2 - portfolio, workspace, schedule rows and PMO insights consume the unified cut-off', () => {
+  const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const pmoSource = readFileSync(new URL('../src/components/PmoInsights.tsx', import.meta.url), 'utf8');
+  const dashboardSource = readFileSync(new URL('../src/components/Dashboard.tsx', import.meta.url), 'utf8');
+
+  assert.match(appSource, /const \{ dataDate: unifiedDataDate \} = useProjectDataDate\(\)/);
+  assert.match(appSource, /performanceContractIds: \[\.\.\.contractIds\], dataDate: unifiedDataDate/);
+  assert.match(appSource, /const reportDate = unifiedDataDate/);
+  assert.match(appSource, /const dataDate = unifiedDataDate/);
+  assert.match(pmoSource, /const \{ dataDate \} = useProjectDataDate\(\)/);
+  assert.match(pmoSource, /row\.end_date < dataDate/);
+  assert.match(pmoSource, /row\.due_date < dataDate/);
+  assert.match(dashboardSource, /Reporting date: \{reportDate\}/);
+
+  const reportingSlices = [
+    appSource.slice(appSource.indexOf("if (activeView === 'alerts')"), appSource.indexOf("if (activeView === 'dataQuality')")),
+    pmoSource,
+  ].join('\n');
+  assert.doesNotMatch(reportingSlices, /new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
+});

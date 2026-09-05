@@ -1,11 +1,17 @@
 # أمر العمل النشط
 
-## A2.1 — Unified Project Data Date
+## A2 — Unified Project Data Date
 
 المرجع التنفيذي الكامل:
 
 `docs/agent-work-orders/GITHUB_CONTINUATION_WORK_ORDER_AR.md`
 
-الحالة: **منفذ ومراجع ومعتمد ضمن نطاق A2.1 — اختبارات 135/135 والبناء ناجح**.
+الحالة: **مغلق ضمن النطاق المتفق عليه عبر A2.1 وA2.2 — اختبارات 136/136 والبناء ناجح**.
 
-لا يبدأ الوكيل عملًا جديدًا قبل إصدار أمر عمل A2.2 من Codex.
+تستهلك Dashboard وReport Pack وPortfolio وProject Workspace وPMO Alerts وPMO Insights
+وصفوف التخطيط وCPM/S-Curve/Scope/Waste/XER تاريخ القياس العام نفسه. تاريخ القياس
+للقراءة والحساب فقط ولا يكتب أو يغيّر السجلات المصدرية.
+
+العمل التالي المخطط: **A3 — Revenue vs Delivery Cost Separation**، لكنه لم يبدأ
+ولم يعتمد. تنفيذ الوكيل في `agent-cloud` رُفض لأنه افترض حقول تكلفة غير موجودة في
+نموذج البيانات وخلط A3 وA4 في commit واحد.

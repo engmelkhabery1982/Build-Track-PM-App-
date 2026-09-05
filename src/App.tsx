@@ -1046,6 +1046,7 @@ function AppWorkspace() {
   const [loginName, setLoginName] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const { dataDate: unifiedDataDate } = useProjectDataDate();
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
   const synchronizingCostControl = useRef(false);
@@ -2335,7 +2336,7 @@ function AppWorkspace() {
     }
 
     if (activeView === 'alerts') {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = unifiedDataDate;
       const alerts: { severity: 'Critical' | 'Warning' | 'Info'; title: string; detail: string; view: ViewKey }[] = [];
       const delayedActivities = data.schedules.filter((row: any) => row.status === 'Delayed' || (row.end_date && row.end_date < today && row.status !== 'Completed'));
       if (delayedActivities.length) alerts.push({ severity: 'Critical', title: 'Schedule delay requires action', detail: `${delayedActivities.length} activity(s) are delayed or past their finish date.`, view: 'schedule' });
@@ -2385,7 +2386,7 @@ function AppWorkspace() {
         const originalValue = Number(mainContract?.contract_value) || 0;
         const modifiedValue = originalValue + variationValue;
         const evm = mainContract ? calculateEvmAtDataDate({
-          contractIds: [mainContract.id], performanceContractIds: [...contractIds], dataDate: new Date().toISOString().slice(0, 10),
+          contractIds: [mainContract.id], performanceContractIds: [...contractIds], dataDate: unifiedDataDate,
           schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[],
           baselines: data.baselines as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[],
           boqItems: data.boqItems as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[],
@@ -2511,7 +2512,7 @@ function AppWorkspace() {
         { order: '4', label: 'Field progress', detail: `${relatedWirs.length} inspection request(s)`, count: relatedWirs.length, view: 'wir' as ViewKey },
         { order: '5', label: 'Cost & payment', detail: `${costEntryCount} cost entry(s) · ${invoiceCount} invoice line(s)`, count: costEntryCount + invoiceCount, view: 'costEntries' as ViewKey },
       ];
-      const delayedActivities = data.schedules.filter((activity: any) => activity.project_id === selectedProject.id && activity.activity && (activity.status === 'Delayed' || (activity.end_date && activity.end_date < new Date().toISOString().slice(0, 10) && activity.status !== 'Completed'))).length;
+      const delayedActivities = data.schedules.filter((activity: any) => activity.project_id === selectedProject.id && activity.activity && (activity.status === 'Delayed' || (activity.end_date && activity.end_date < unifiedDataDate && activity.status !== 'Completed'))).length;
       const overBudgetLines = projectCosts.filter((cost: any) => (Number(cost.actual) || 0) > (Number(cost.budget) || Number(cost.planned) || 0)).length;
       const pendingVariations = data.variations.filter((variation: any) => variation.project_id === selectedProject.id && ['Draft', 'Submitted', 'Pending'].includes(variation.status)).length;
       const pendingApprovals = data.approvals.filter((approval: any) => approval.project_id === selectedProject.id && !['Approved', 'Rejected', 'Cancelled'].includes(approval.status)).length;
@@ -2944,7 +2945,7 @@ function AppWorkspace() {
             const childActivities = itemRows.filter((activity: any) => String(activity.activity || '').trim());
             const isSummaryRow = !String(schedule.activity || '').trim();
             const activitiesForItem = childActivities.length > 0 ? childActivities : itemRows;
-            const reportDate = new Date().toISOString().slice(0, 10);
+            const reportDate = unifiedDataDate;
             // EV and AC are allocated only among activities which have a PV
             // at the report date. Budget is never used as the allocation key.
             const itemPVToDate = activitiesForItem
@@ -3734,14 +3735,10 @@ function AppWorkspace() {
               if (!anchor) continue;
               const idByReference = new Map<string, string>();
               rows.forEach((row) => [row.id, row.activity_code, row.source_activity_code].filter(Boolean).forEach((reference) => idByReference.set(String(reference).trim(), row.id)));
-              const reportingDates = data.reportingPeriods
-                .filter((period: any) => period.contract_id === contractId && period.data_date)
-                .map((period: any) => String(period.data_date))
-                .sort();
-              const reportingDataDate = reportingDates[reportingDates.length - 1];
-              const activityDates = rows.map((row) => String(row.status_data_date || '')).filter(Boolean).sort();
-              const activityDataDate = activityDates[activityDates.length - 1];
-              const dataDate = reportingDataDate || activityDataDate || new Date().toISOString().slice(0, 10);
+              // Forecast every contract against the one application-level cut-off.
+              // Imported/status dates remain source facts; they do not silently
+              // replace the user's governed reporting date.
+              const dataDate = unifiedDataDate;
               const forecast = calculateCpmStatusForecast(rows.map((row) => ({
                 id: row.id,
                 duration_days: row.duration_days,

@@ -1690,7 +1690,7 @@ export function Dashboard({
               <p className="text-xs font-semibold uppercase tracking-widest text-primary-100">PMO Periodic Report</p>
               <h3 className="mt-2 text-2xl font-bold">{selectedProject?.name || 'Portfolio Executive Report'}</h3>
               <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-primary-100">
-                <span>Reporting date: {new Date().toLocaleDateString()}</span>
+                <span>Reporting date: {reportDate}</span>
                 <span>{pid === 'all' ? `${fProjects.length} projects in scope` : 'Project control summary'}</span>
                 <span>Health: <strong className="text-white">{healthLabel} ({healthScore}/100)</strong></span>
               </div>
