@@ -10,7 +10,7 @@
 
 `https://github.com/engmelkhabery1982/Build-Track-PM-App-.git`
 
-ابدأ من آخر `origin/main` بعد التأكد أن commit الأساس هو المكتوب في `docs/FEATURE_CATALOG_37_AND_CONTINUATION_AR.md`. أنشئ فرعًا باسم:
+ابدأ من آخر `origin/main` بعد التأكد أنه يحتوي `docs/FEATURE_CATALOG_37_AND_CONTINUATION_AR.md` وأن commit خط الأساس البرمجي الموثوق المكتوب فيه هو ancestor لـ`origin/main`؛ لا تشترط أن يكون هو HEAD لأن commits التسليم التوثيقية تأتي بعده. أنشئ فرعًا باسم:
 
 `agent/a2-unified-project-data-date`
 
