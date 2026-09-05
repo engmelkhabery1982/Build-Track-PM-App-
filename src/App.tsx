@@ -639,6 +639,7 @@ const BOQ_ITEM_COLUMNS: ColumnDef[] = [
   { key: 'quantity', label: 'Qty', type: 'number', editable: true },
   { key: 'unit_rate', label: 'Unit Rate', type: 'money', editable: true },
   { key: 'amount', label: 'Amount', type: 'money' },
+  { key: 'waste_allowance_percent', label: 'Waste Allowance %', type: 'number', editable: true },
   { key: 'baseline_start_date', label: 'Baseline Start', type: 'date', editable: true },
   { key: 'baseline_end_date', label: 'Baseline Finish', type: 'date', editable: true },
   { key: 'planned_start_date', label: 'Current Plan Start', type: 'date', editable: true },
@@ -3425,7 +3426,7 @@ export default function App() {
     }
 
     const tailoredFormKeys: Record<string, string[]> = {
-      boq_items: ['contract_id', 'boq_header_id', 'item_name', 'description', 'category', 'unit', 'quantity', 'unit_rate', 'planned_start_date', 'planned_end_date', 'notes'],
+      boq_items: ['contract_id', 'boq_header_id', 'item_name', 'description', 'category', 'unit', 'quantity', 'unit_rate', 'waste_allowance_percent', 'planned_start_date', 'planned_end_date', 'notes'],
       schedules: ['contract_id', 'boq_item_id', 'activity', 'predecessor_item', 'relationship_type', 'lag_days', 'start_date', 'end_date', 'duration_days', 'activity_status', 'status_data_date', 'actual_start_date', 'actual_finish_date', 'remaining_duration_days', 'planned_quantity', 'calendar_name', 'critical_path', 'responsible', 'status', 'notes'],
       wir_entries: ['contract_id', 'boq_item_id', 'inspection_date', 'area', 'work_type', 'quantity', 'inspector', 'result', 'remarks', 'status'],
       progress_corrections: ['original_wir_id', 'correction_type', 'effective_date', 'quantity', 'reason', 'status'],

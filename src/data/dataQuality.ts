@@ -5,6 +5,7 @@ import { calculateCpm } from '../utils/cpm.ts';
 import { calculatePlannedResourceLoads, calculateResourceLoads } from '../utils/resourceLoading.ts';
 import { calendarShiftHours } from '../utils/schedulePlanning.ts';
 import { buildQuantityLedger } from '../utils/quantityLedger.ts';
+import { buildBoqWasteLedger, buildOperationalScopeReport } from '../utils/projectControlAnalytics.ts';
 
 export type DataQualitySeverity = 'Error' | 'Warning' | 'Pass';
 export interface DataQualityFinding {
@@ -109,6 +110,21 @@ export function runDataQualityChecks(data: DataQualitySource): DataQualityFindin
   const overMeasuredLedger = quantityLedger.filter((row) => row.quantity_status === 'Over Measured');
   pushIf(findings, overPlannedLedger.length > 0, { severity: 'Error', title: 'Planned quantities exceed revised BOQ scope', detail: `${overPlannedLedger.length} main BOQ item(s) have activity quantities above original plus approved variation quantity. Re-plan or approve a quantity change.`, view: 'quantityLedger' });
   pushIf(findings, overMeasuredLedger.length > 0, { severity: 'Error', title: 'Accepted quantities exceed revised BOQ scope', detail: `${overMeasuredLedger.length} main BOQ item(s) have accepted WIR quantity above original plus approved variation quantity. Correct the record or approve a quantity change.`, view: 'quantityLedger' });
+  const operationalScope = buildOperationalScopeReport({
+    boqItems: data.boqItems, variations, schedules: data.schedules, wirEntries: data.wirEntries,
+    costEntries: data.costEntries, procurementReceipts,
+  });
+  pushIf(findings, operationalScope.unmappedTasks.length > 0, {
+    severity: 'Error', title: 'Operational records outside authorised scope',
+    detail: `${operationalScope.unmappedTasks.length} quantity-bearing schedule, WIR, cost or receipt record(s) do not reference a valid BOQ item or approved variation.`, view: 'dataQuality',
+  });
+  const wasteLedger = buildBoqWasteLedger({ boqItems: data.boqItems, procurementReceipts, wirEntries: data.wirEntries, progressCorrections });
+  const wasteUnitMismatches = wasteLedger.reduce((sum, row) => sum + row.unitMismatchCount, 0);
+  const missingWasteAllowances = wasteLedger.filter((row) => row.purchasedQty > 0 && !row.isAssessable).length;
+  const excessiveWasteItems = wasteLedger.filter((row) => row.isExcessiveWaste);
+  pushIf(findings, wasteUnitMismatches > 0, { severity: 'Error', title: 'Receipt unit conflicts with BOQ unit', detail: `${wasteUnitMismatches} accepted receipt(s) cannot enter the waste ledger until their unit matches the linked main BOQ item.`, view: 'procurementReceipts' });
+  pushIf(findings, missingWasteAllowances > 0, { severity: 'Warning', title: 'Waste assessment needs a contractual allowance', detail: `${missingWasteAllowances} main BOQ item(s) have accepted receipts but no valid waste allowance. No excess-waste conclusion is generated for them.`, view: 'boqItems' });
+  pushIf(findings, excessiveWasteItems.length > 0, { severity: 'Warning', title: 'Material waste exceeds contractual allowance', detail: `${excessiveWasteItems.length} main BOQ item(s) exceed their recorded contractual waste allowance.`, view: 'boqItems' });
   const controlAccounts = data.controlAccounts || [];
 
   const orphanMainContracts = data.contracts.filter((row) => !row.parent_main_contract_id && (!row.project_id || !projectIds.has(row.project_id)));

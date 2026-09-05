@@ -4,13 +4,10 @@ import { useVarianceActions } from '@/hooks/useVarianceActions';
 import type { Warning } from '@/utils/varianceActionRegister';
 import { VarianceActionTable } from '@/components/VarianceActionTable';
 import { CashFlowForecastBoard } from '@/components/CashFlowForecastBoard';
-import { PvoRegisterTable } from '@/components/PvoRegisterTable';
-import type { PotentialVariationOrder, PvoStatus } from '@/types/pvo';
 import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Clock, Package, ShieldAlert, Users, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, Target, Gauge, Activity, CircleAlert as AlertCircle, CircleArrowRight as ArrowRightCircle, Lightbulb, ChevronDown, Building2, Layers, Zap, ArrowUpRight, ArrowDownRight, Wallet, ChartBar as BarChart3, LayoutDashboard, Search, PackageCheck, Truck, FileCheck as FileCheck2, HeartPulse, CircleDollarSign, ListChecks, Hash, Printer, X } from 'lucide-react';
 import { SCurveChart } from './SCurveChart';
 import { ThreeWayGanttOverlay } from './ThreeWayGanttOverlay';
 import { XerReconciliationBoard } from './XerReconciliationBoard';
-import { BackToBackRetentionBoard } from './BackToBackRetentionBoard';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
@@ -18,6 +15,7 @@ import { deriveForecastHorizon } from '@/utils/forecastHorizon';
 import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/resourceLoading';
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
+import { buildBoqWasteLedger, buildOperationalScopeReport, calculateEarnedScheduleFromSeries } from '@/utils/projectControlAnalytics';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, ContractSOVLine, ControlAccount, ProcurementReceipt, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -112,83 +110,6 @@ export function Dashboard({
   const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
   const [actionAssignedTo, setActionAssignedTo] = useState('');
   const [actionDueDate, setActionDueDate] = useState('');
-
-  const [pvoList, setPvoList] = useState<PotentialVariationOrder[]>([
-    {
-      id: 'pvo-1',
-      pvoNumber: 'PVO-001',
-      title: 'Subsurface Rock Excavation',
-      description: 'Unexpected basalt rock encountered during foundation excavation requiring pneumatic breaker',
-      identifiedDate: '2026-08-10',
-      submittedDate: '2026-08-14',
-      estimatedCostImpact: 45000,
-      estimatedTimeImpactDays: 12,
-      status: 'Under Review',
-      claimReference: 'CLM-FOUND-01',
-      submittedBy: 'Earthworks Contractor',
-    },
-    {
-      id: 'pvo-2',
-      pvoNumber: 'PVO-002',
-      title: 'Client Architectural Revisions',
-      description: 'Lobby partition wall layout reconfigured per client instruction bulletin #4',
-      identifiedDate: '2026-08-18',
-      submittedDate: '2026-08-22',
-      estimatedCostImpact: 85000,
-      estimatedTimeImpactDays: 20,
-      status: 'Submitted',
-      claimReference: 'CLM-ARCH-03',
-      submittedBy: 'Lead Architect',
-    },
-    {
-      id: 'pvo-3',
-      pvoNumber: 'PVO-003',
-      title: 'Unforeseen Groundwater Dewatering',
-      description: 'High water table encountered during basement pit digging requiring 24/7 dewatering pumps',
-      identifiedDate: '2026-07-25',
-      submittedDate: '2026-08-01',
-      estimatedCostImpact: 30000,
-      approvedCostImpact: 28000,
-      estimatedTimeImpactDays: 7,
-      approvedTimeImpactDays: 7,
-      status: 'Approved',
-      claimReference: 'CLM-DEWATER-02',
-      submittedBy: 'Site Engineer',
-    },
-    {
-      id: 'pvo-4',
-      pvoNumber: 'PVO-004',
-      title: 'MEP Route Relocation',
-      description: 'Chilled water pipe clashes with structural beam B-12 requiring route redesign',
-      identifiedDate: '2026-08-28',
-      estimatedCostImpact: 15000,
-      estimatedTimeImpactDays: 3,
-      status: 'Identified',
-      submittedBy: 'MEP Coordinator',
-    },
-  ]);
-
-  const handlePvoStatusChange = (id: string, newStatus: PvoStatus) => {
-    setPvoList((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        return {
-          ...item,
-          status: newStatus,
-          approvedCostImpact: newStatus === 'Approved' ? (item.approvedCostImpact ?? item.estimatedCostImpact) : item.approvedCostImpact,
-          approvedTimeImpactDays: newStatus === 'Approved' ? (item.approvedTimeImpactDays ?? item.estimatedTimeImpactDays) : item.approvedTimeImpactDays,
-        };
-      })
-    );
-  };
-
-  const handleAddNewPvo = (newPvo: Omit<PotentialVariationOrder, 'id'>) => {
-    const item: PotentialVariationOrder = {
-      ...newPvo,
-      id: `pvo-${Date.now()}`,
-    };
-    setPvoList((prev) => [item, ...prev]);
-  };
 
   const pid = selectedProjectId;
   const reportDate = asOfDate;
@@ -640,13 +561,39 @@ export function Dashboard({
     return points;
   }, [fSchedules, fWirs, fProgressCorrections, fCostEntries, fBOQ, primaryContracts, evmPerformanceContractIds, scheduleDistributions, fCashFlow, fBaselines, reportDate, resourceForecast]);
 
+  const operationalScope = useMemo(() => buildOperationalScopeReport({
+    boqItems: fBOQ as Record<string, any>[], variations: fVariations as Record<string, any>[],
+    schedules: fSchedules as Record<string, any>[], wirEntries: fWirs as Record<string, any>[],
+    costEntries: fCostEntries as Record<string, any>[], procurementReceipts: fProcurementReceipts as Record<string, any>[], dataDate: reportDate,
+  }), [fBOQ, fVariations, fSchedules, fWirs, fCostEntries, fProcurementReceipts, reportDate]);
+
+  const wasteLedger = useMemo(() => buildBoqWasteLedger({
+    boqItems: fBOQ as Record<string, any>[], procurementReceipts: fProcurementReceipts as Record<string, any>[],
+    wirEntries: fWirs as Record<string, any>[], progressCorrections: fProgressCorrections as Record<string, any>[], dataDate: reportDate,
+  }), [fBOQ, fProcurementReceipts, fWirs, fProgressCorrections, reportDate]);
+
+  const earnedSchedule = useMemo(() => calculateEarnedScheduleFromSeries(sCurve, reportDate), [sCurve, reportDate]);
+
+  const ganttActivities = useMemo(() => fSchedules.map((schedule: any) => {
+    const baseline = approvedBaselinePlanForActivity(schedule, scheduleDistributions, fBaselines as Record<string, any>[]).activity;
+    const currentStart = String(schedule.start_date || schedule.forecast_start_date || '');
+    const currentFinish = String(schedule.end_date || schedule.forecast_end_date || currentStart);
+    return {
+      id: String(schedule.activity_code || schedule.id), name: String(schedule.activity || schedule.activity_code || 'Unnamed activity'),
+      wbs: String(schedule.wbs_code || ''), baselineStart: String(baseline.start_date || currentStart), baselineFinish: String(baseline.end_date || currentFinish),
+      currentStart, currentFinish, forecastStart: String(schedule.forecast_start_date || currentStart),
+      forecastFinish: String(schedule.forecast_end_date || currentFinish), progress: Number(schedule.progress) || 0,
+      isCritical: Boolean(schedule.critical_path), totalFloat: Number(schedule.total_float_days ?? schedule.total_float ?? 0),
+    };
+  }).filter((activity) => activity.currentStart && activity.currentFinish), [fSchedules, scheduleDistributions, fBaselines]);
+
   const projectCurrency = (selectedProject as any)?.currency || '$';
 
   const cashFlowData = useMemo(() => {
     // 1. Check if we have valid dated cash flow entries
     const validEntries = fCashFlow.filter((c) => Boolean(c.date) && !['Cancelled', 'Rejected'].includes(c.status || ''));
 
-    if (validEntries.length >= 2) {
+    if (validEntries.length > 0) {
       const monthMap = new Map<string, { plannedInflow: number; actualInflow: number; plannedOutflow: number; actualOutflow: number; hasActual: boolean }>();
 
       validEntries.forEach((c) => {
@@ -673,7 +620,7 @@ export function Dashboard({
       });
 
       const sortedPeriods = Array.from(monthMap.keys()).sort();
-      if (sortedPeriods.length >= 2) {
+      if (sortedPeriods.length > 0) {
         return sortedPeriods.map((period) => {
           const item = monthMap.get(period)!;
           return {
@@ -687,75 +634,9 @@ export function Dashboard({
       }
     }
 
-    // 2. Derive from sCurve / EVM time-phased data if available
-    if (sCurve && sCurve.length >= 2) {
-      const monthsMap = new Map<string, typeof sCurve>();
-      sCurve.forEach((pt) => {
-        const m = (pt.date || '').slice(0, 7);
-        if (!m) return;
-        if (!monthsMap.has(m)) monthsMap.set(m, []);
-        monthsMap.get(m)!.push(pt);
-      });
-
-      const sortedMonths = Array.from(monthsMap.keys()).sort();
-      if (sortedMonths.length >= 2) {
-        let prevPV = 0;
-        let prevEV = 0;
-        let prevAC = 0;
-
-        return sortedMonths.map((m) => {
-          const pts = monthsMap.get(m)!;
-          const lastPt = pts[pts.length - 1];
-
-          const incPV = Math.max(0, lastPt.planned - prevPV);
-          const incEV = Math.max(0, lastPt.earned - prevEV);
-          const incAC = Math.max(0, lastPt.actual - prevAC);
-
-          prevPV = lastPt.planned;
-          prevEV = lastPt.earned;
-          prevAC = lastPt.actual;
-
-          const isPastOrCurrent = (lastPt.date || '') <= reportDate;
-          const billingMultiplier = 1.12;
-
-          return {
-            period: m,
-            plannedInflow: Math.round(incPV * billingMultiplier),
-            actualInflow: isPastOrCurrent ? Math.round(incEV * billingMultiplier) : undefined,
-            plannedOutflow: Math.round(incPV),
-            actualOutflow: isPastOrCurrent ? Math.round(incAC) : undefined,
-          };
-        });
-      }
-    }
-
-    // 3. Fallback monthly derivation from project budget and schedule
-    const baseBudget = (selectedProject?.budget || stats.totalBudget) || 1200000;
-    const projectStartDate = selectedProject?.start_date || (reportDate.slice(0, 7) + '-01');
-    const startYear = parseInt(projectStartDate.slice(0, 4), 10) || new Date().getFullYear();
-    const startMonth = parseInt(projectStartDate.slice(5, 7), 10) || (new Date().getMonth() + 1);
-
-    const monthlyWeights = [0.08, 0.16, 0.28, 0.24, 0.16, 0.08];
-    const margin = 1.15;
-
-    return monthlyWeights.map((w, i) => {
-      const curM = (startMonth - 1 + i);
-      const y = startYear + Math.floor(curM / 12);
-      const m = (curM % 12) + 1;
-      const period = `${y}-${String(m).padStart(2, '0')}`;
-      const plannedOut = Math.round(baseBudget * w);
-      const plannedIn = Math.round(plannedOut * margin);
-      const isPastOrCurrent = period <= reportDate.slice(0, 7);
-
-      return {
-        period,
-        plannedInflow: plannedIn,
-        actualInflow: isPastOrCurrent ? Math.round(plannedIn * (0.95 + ((i % 3) * 0.04))) : undefined,
-        plannedOutflow: plannedOut,
-        actualOutflow: isPastOrCurrent ? Math.round(plannedOut * (0.97 + ((i % 2) * 0.05))) : undefined,
-      };
-    });
-  }, [fCashFlow, sCurve, reportDate, selectedProject, stats.totalBudget]);
+    // Never manufacture a forecast when the governed source data is absent.
+    return [];
+  }, [fCashFlow, reportDate]);
 
   const projectsWithStats: ProjectWithStats[] = useMemo(() => {
     return fProjects.map((p) => {
@@ -1520,25 +1401,16 @@ export function Dashboard({
               </button>
             </div>
 
-            {/* Potential Variation Orders (PVO) & Claims Register (COM-03) */}
             <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <FileSignature size={18} className="text-primary-600" />
-                <div>
-                  <h3 className="text-sm font-semibold text-neutral-700">Potential Variation Orders (PVO) & Claims Register (COM-03)</h3>
-                  <p className="text-xs text-neutral-400">Emerging scope changes, site conditions, and claims tracking</p>
-                </div>
+              <div className="flex items-center justify-between gap-3">
+                <div><h3 className="text-sm font-semibold text-neutral-700">Governed scope &amp; material controls</h3><p className="text-xs text-neutral-400">Calculated from BOQ, approved changes, schedule, WIR and accepted receipts at the selected data date.</p></div>
+                <button onClick={() => onNavigate('dataQuality')} className="text-xs font-semibold text-primary-600">Open evidence →</button>
               </div>
-              <PvoRegisterTable
-                pvoList={pvoList}
-                currency={projectCurrency || '$'}
-                onStatusChange={handlePvoStatusChange}
-                onAddNewPvo={handleAddNewPvo}
-              />
-            </div>
-
-            <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
-              <BackToBackRetentionBoard />
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className={`rounded-lg border p-3 ${operationalScope.unmappedTasks.length ? 'border-error-200 bg-error-50' : 'border-success-200 bg-success-50'}`}><p className="text-xs text-neutral-500">Unmapped operational records</p><p className="mt-1 text-xl font-bold">{operationalScope.unmappedTasks.length}</p><p className="text-xs text-neutral-500">Exposure {fmtMoney(operationalScope.creepCostEstimate)}</p></div>
+                <div className={`rounded-lg border p-3 ${wasteLedger.some((row) => row.isExcessiveWaste) ? 'border-warning-200 bg-warning-50' : 'border-neutral-200 bg-neutral-50'}`}><p className="text-xs text-neutral-500">BOQ items over waste allowance</p><p className="mt-1 text-xl font-bold">{wasteLedger.filter((row) => row.isExcessiveWaste).length}</p><p className="text-xs text-neutral-500">Only assessed where allowance exists</p></div>
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3"><p className="text-xs text-neutral-500">Earned Schedule SPI(t)</p><p className="mt-1 text-xl font-bold">{earnedSchedule ? earnedSchedule.timeSchedulePerformanceIndex.toFixed(2) : 'Unavailable'}</p><p className="text-xs text-neutral-500">{earnedSchedule ? `${earnedSchedule.timeScheduleVariance.toFixed(2)} reporting periods variance` : 'Needs time-phased PV and EV'}</p></div>
+              </div>
             </div>
           </div>
         )}
@@ -1609,11 +1481,11 @@ export function Dashboard({
             )}
 
             <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
-              <ThreeWayGanttOverlay />
+              <ThreeWayGanttOverlay activities={ganttActivities} dataDate={reportDate} />
             </div>
 
             <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
-              <XerReconciliationBoard />
+              <XerReconciliationBoard localActivities={fSchedules as Record<string, any>[]} dataDate={reportDate} />
             </div>
           </div>
         )}

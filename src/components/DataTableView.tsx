@@ -3115,6 +3115,10 @@ export function DataTableView({
       required('contract_id', 'Contract'); required('boq_header_id', 'BOQ header'); required('item_name', 'Item description');
       if (!(Number(newRow.quantity) > 0)) issues.push('Quantity must be greater than zero.');
       if (Number(newRow.unit_rate) < 0) issues.push('Unit rate cannot be negative.');
+      if (newRow.waste_allowance_percent !== undefined && newRow.waste_allowance_percent !== null && newRow.waste_allowance_percent !== '') {
+        const wasteAllowance = Number(newRow.waste_allowance_percent);
+        if (!Number.isFinite(wasteAllowance) || wasteAllowance < 0 || wasteAllowance > 100) issues.push('Waste allowance must be between 0 and 100%.');
+      }
     }
     if (tableName === 'schedules') {
       required('contract_id', 'Main contract'); required('boq_item_id', 'BOQ item'); required('activity', 'Activity');

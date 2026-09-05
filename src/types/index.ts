@@ -492,6 +492,8 @@ export interface BOQItem {
   boq_header_id: string | null;
   /** Required for subcontractor items; links to the priced main BOQ item. */
   main_boq_item_id?: string | null;
+  /** Contractual material-waste allowance used by the receipt-versus-installation ledger. */
+  waste_allowance_percent?: number | null;
   /** Verified executed quantity from approved WIR inspections */
   verified_quantity?: number;
   executed_quantity?: number;
@@ -1367,8 +1369,5 @@ export interface GanttOverlaySummary {
   maxSlippageDays: number;
   activities: GanttOverlayActivity[];
 }
-
-export * from './pvo.ts';
-
 
 

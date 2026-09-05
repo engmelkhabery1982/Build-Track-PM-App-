@@ -20,91 +20,16 @@ export interface ThreeWayGanttOverlayProps {
   dataDate?: string;
 }
 
-const DEFAULT_ACTIVITIES: GanttOverlayActivity[] = [
-  {
-    id: 'ACT-101',
-    name: 'Substructure Excavation & Deep Piling',
-    baselineStart: '2026-01-01',
-    baselineFinish: '2026-02-15',
-    currentStart: '2026-01-01',
-    currentFinish: '2026-02-15',
-    forecastFinish: '2026-02-15',
-    progress: 100,
-    isCritical: false,
-    totalFloat: 15
-  },
-  {
-    id: 'ACT-102',
-    name: 'Reinforced Concrete Core & Slabs (L1-L4)',
-    baselineStart: '2026-02-16',
-    baselineFinish: '2026-05-30',
-    currentStart: '2026-02-16',
-    currentFinish: '2026-06-10',
-    forecastFinish: '2026-06-10',
-    progress: 75,
-    isCritical: true,
-    totalFloat: 0
-  },
-  {
-    id: 'ACT-103',
-    name: 'Structural Steelwork & Trusses',
-    baselineStart: '2026-04-01',
-    baselineFinish: '2026-07-15',
-    currentStart: '2026-04-10',
-    currentFinish: '2026-07-25',
-    forecastFinish: '2026-07-25',
-    progress: 40,
-    isCritical: false,
-    totalFloat: 5
-  },
-  {
-    id: 'ACT-104',
-    name: 'MEP Primary Risers & Plant Rooms',
-    baselineStart: '2026-05-01',
-    baselineFinish: '2026-08-30',
-    currentStart: '2026-05-15',
-    currentFinish: '2026-09-15',
-    forecastFinish: '2026-09-15',
-    progress: 25,
-    isCritical: true,
-    totalFloat: 0
-  },
-  {
-    id: 'ACT-105',
-    name: 'Facade Unitized Glazing & Cladding',
-    baselineStart: '2026-06-15',
-    baselineFinish: '2026-09-30',
-    currentStart: '2026-07-01',
-    currentFinish: '2026-10-15',
-    forecastFinish: '2026-10-15',
-    progress: 10,
-    isCritical: false,
-    totalFloat: 8
-  },
-  {
-    id: 'ACT-106',
-    name: 'Testing, Commissioning & Handover',
-    baselineStart: '2026-09-01',
-    baselineFinish: '2026-11-15',
-    currentStart: '2026-09-15',
-    currentFinish: '2026-11-30',
-    forecastFinish: '2026-11-30',
-    progress: 0,
-    isCritical: true,
-    totalFloat: 0
-  }
-];
-
 export const ThreeWayGanttOverlay: React.FC<ThreeWayGanttOverlayProps> = ({
-  activities = DEFAULT_ACTIVITIES,
-  dataDate = '2026-05-15'
+  activities = [],
+  dataDate = new Date().toISOString().slice(0, 10)
 }) => {
   const [showBaseline, setShowBaseline] = useState(true);
   const [showCurrent, setShowCurrent] = useState(true);
   const [showForecast, setShowForecast] = useState(true);
   const [criticalOnly, setCriticalOnly] = useState(false);
 
-  const displayActivities = (activities.length > 0 ? activities : DEFAULT_ACTIVITIES).filter(
+  const displayActivities = activities.filter(
     (act) => (criticalOnly ? act.isCritical || (act.totalFloat !== undefined && act.totalFloat <= 0) : true)
   );
 
@@ -114,6 +39,10 @@ export const ThreeWayGanttOverlay: React.FC<ThreeWayGanttOverlayProps> = ({
     const comp = new Date(compareFinish).getTime();
     return Math.round((comp - base) / (1000 * 60 * 60 * 24));
   };
+
+  if (activities.length === 0) {
+    return <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center"><h3 className="text-sm font-semibold text-neutral-700">3-Way Gantt Overlay</h3><p className="mt-1 text-xs text-neutral-500">No dated schedule activities are available for the selected project and data date.</p></div>;
+  }
 
   return (
     <div className="space-y-4">
