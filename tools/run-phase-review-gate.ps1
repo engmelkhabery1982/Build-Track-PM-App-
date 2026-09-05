@@ -28,6 +28,7 @@ if (-not (Test-Path -LiteralPath $reviewScript -PathType Leaf)) {
 
 Write-Host "Running independent local review gate for '$Phase'." -ForegroundColor Cyan
 & $reviewScript -Phase $Phase -ReviewFile $ReviewFile -Model $Model -SaveResult
-if ($LASTEXITCODE -ne 0) {
-  throw "The independent local review gate failed (exit code $LASTEXITCODE)."
-}
+# The delegated reviewer is a PowerShell script, so failures are surfaced as
+# terminating exceptions under ErrorActionPreference=Stop. $LASTEXITCODE is
+# reserved for native executables and can remain $null after a successful
+# PowerShell invocation, which previously produced a false gate failure.

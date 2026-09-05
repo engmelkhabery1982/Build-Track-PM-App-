@@ -2040,11 +2040,39 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        .setup(|app| {
+            apply_staged_restore(app.handle()).map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::Other, error)
+            })?;
+            Ok(())
+        })
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:buildtrack.db", migrations)
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![
+            commit_governed_import,
+            reverse_governed_import,
+            reverse_supplier_ap_posting,
+            approve_supplier_invoice,
+            settle_supplier_invoice_payment,
+            approve_purchase_order,
+            accept_procurement_receipt,
+            cancel_purchase_order,
+            amend_purchase_order,
+            approve_cost_change,
+            approve_variation,
+            approve_payment_certificate,
+            settle_payment_certificate,
+            reverse_commercial_posting,
+            reverse_variation,
+            save_excel_download,
+            save_document_attachment,
+            backup_local_database,
+            verify_local_backup,
+            stage_local_restore,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
