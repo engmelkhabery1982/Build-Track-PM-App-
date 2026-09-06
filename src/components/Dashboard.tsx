@@ -9,6 +9,8 @@ import { TrendingUp, TrendingDown, DollarSign, FolderKanban, CircleCheck as Chec
 import { SCurveChart } from './SCurveChart';
 import { ThreeWayGanttOverlay } from './ThreeWayGanttOverlay';
 import { XerReconciliationBoard } from './XerReconciliationBoard';
+import { KpiDrilldownModal } from './KpiDrilldownModal';
+import { getKpiReconciliation, type KpiReconciliationInput } from '@/utils/kpiReconciliation';
 import { approvedBaselinePlanForActivity, selectPrimaryContracts } from '@/data';
 import { addCalendarDays, distributedPlannedValueToDate, scheduleBudget } from '@/utils/schedulePlanning';
 import { cashForecastAt } from '@/utils/cashForecast';
@@ -114,6 +116,7 @@ export function Dashboard({
   const [selectedWarningForAction, setSelectedWarningForAction] = useState<Warning | null>(null);
   const [actionAssignedTo, setActionAssignedTo] = useState('');
   const [actionDueDate, setActionDueDate] = useState('');
+  const [drilldownKpiKey, setDrilldownKpiKey] = useState<string | null>(null);
 
   const pid = selectedProjectId;
   const reportDate = asOfDate;
@@ -121,6 +124,38 @@ export function Dashboard({
     const date = String(value || '').slice(0, 10);
     return Boolean(date && date <= reportDate);
   };
+
+  const reconciliationInput: KpiReconciliationInput = useMemo(() => ({
+    projectId: selectedProjectId,
+    dataDate: reportDate,
+    projects: projects as Record<string, any>[],
+    contracts: contracts as Record<string, any>[],
+    variations: variations as Record<string, any>[],
+    schedules: schedules as Record<string, any>[],
+    scheduleDistributions: scheduleDistributions as Record<string, any>[],
+    baselines: baselines as Record<string, any>[],
+    wirEntries: wirEntries as Record<string, any>[],
+    progressCorrections: progressCorrections as Record<string, any>[],
+    boqItems: boqItems as Record<string, any>[],
+    costEntries: costEntries as Record<string, any>[],
+    procurement: procurement as Record<string, any>[],
+    procurementReceipts: procurementReceipts as Record<string, any>[],
+    cashFlow: cashFlow as Record<string, any>[],
+    controlAccounts: controlAccounts as Record<string, any>[],
+    contractSovLines: contractSovLines as Record<string, any>[],
+  }), [selectedProjectId, reportDate, projects, contracts, variations, schedules, scheduleDistributions, baselines, wirEntries, progressCorrections, boqItems, costEntries, procurement, procurementReceipts, cashFlow, controlAccounts, contractSovLines]);
+  const reconciledKpis = useMemo(() => ({
+    modifiedContractValue: getKpiReconciliation('modified_contract_value', reconciliationInput),
+    revenuePv: getKpiReconciliation('revenue_pv', reconciliationInput),
+    revenueEv: getKpiReconciliation('revenue_ev', reconciliationInput),
+    deliveryAc: getKpiReconciliation('delivery_ac', reconciliationInput),
+    openCommitment: getKpiReconciliation('open_commitment', reconciliationInput),
+    netCashFlow: getKpiReconciliation('net_cash_flow', reconciliationInput),
+    costBac: getKpiReconciliation('cost_bac', reconciliationInput),
+    costPv: getKpiReconciliation('cost_pv', reconciliationInput),
+    costEv: getKpiReconciliation('cost_ev', reconciliationInput),
+    costEac: getKpiReconciliation('cost_eac', reconciliationInput),
+  }), [reconciliationInput]);
   const effectiveProjects = useMemo(() => projects.map((project) => {
     const mainContractIds = new Set(contracts
       .filter((contract) => contract.project_id === project.id && !contract.parent_main_contract_id)
@@ -704,48 +739,53 @@ export function Dashboard({
     },
     {
       label: 'Modified Contract Value',
-      value: fmtMoney(stats.modifiedContractValue),
+      value: fmtMoney(reconciledKpis.modifiedContractValue.value ?? 0),
       sub: `${fmtMoney(stats.totalSpent)} spent (${stats.budgetUtilization}%)`,
       icon: FileSignature,
       color: 'from-secondary-500 to-secondary-600',
       trend: 'up' as const,
       view: 'contracts' as ViewKey,
+      reconciliationKey: 'modified_contract_value',
     },
     {
       label: 'Revenue Planned Value (PV)',
-      value: fmtMoney(stats.totalPlannedWork),
+      value: fmtMoney(reconciledKpis.revenuePv.value ?? 0),
       sub: `As of ${reportDate} · Revenue BAC ${fmtMoney(evm.revenue.BAC)}`,
       icon: CheckCircle2,
       color: 'from-primary-500 to-primary-600',
       trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
       view: 'schedule' as ViewKey,
+      reconciliationKey: 'revenue_pv',
     },
     {
       label: 'Revenue Earned Value (EV)',
-      value: fmtMoney(stats.totalEarnedWork),
+      value: fmtMoney(reconciledKpis.revenueEv.value ?? 0),
       sub: `SPI ${evm.SPI > 0 ? evm.SPI.toFixed(2) : '—'} · ${evm.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'}`,
       icon: TrendingUp,
       color: evm.SPI >= 1 ? 'from-success-500 to-success-600' : 'from-warning-500 to-warning-600',
       trend: evm.SPI >= 1 ? ('up' as const) : ('down' as const),
       view: 'progress' as ViewKey,
+      reconciliationKey: 'revenue_ev',
     },
     {
       label: 'Delivery Actual Cost (AC)',
-      value: fmtMoney(evm.cost.AC),
+      value: fmtMoney(reconciledKpis.deliveryAc.value ?? 0),
       sub: `Cost CPI ${evm.cost.CPI !== null ? evm.cost.CPI.toFixed(2) : 'Unavailable'} · ${evm.cost.CPI !== null && evm.cost.CPI >= 1 ? 'cost efficient' : evm.cost.CPI === null ? 'approved cost plan required' : 'cost exposure'}`,
       icon: DollarSign,
       color: evm.cost.CPI !== null && evm.cost.CPI >= 1 ? 'from-success-500 to-success-600' : evm.cost.CPI === null ? 'from-neutral-400 to-neutral-500' : 'from-error-500 to-error-600',
       trend: evm.cost.CPI !== null && evm.cost.CPI >= 1 ? ('up' as const) : ('down' as const),
       view: 'costs' as ViewKey,
+      reconciliationKey: 'delivery_ac',
     },
     {
       label: 'Net Cash Flow',
-      value: fmtMoney(stats.netCashFlow),
+      value: fmtMoney(reconciledKpis.netCashFlow.value ?? 0),
       sub: `Actual: In ${fmtMoney(stats.totalInflow)} · Out ${fmtMoney(stats.totalOutflow)} | F30 ${fmtMoney(stats.forecast30)} · F60 ${fmtMoney(stats.forecast60)} · F90 ${fmtMoney(stats.forecast90)}`,
       icon: CircleDollarSign,
       color: stats.netCashFlow >= 0 ? 'from-success-500 to-success-600' : 'from-error-500 to-error-600',
       trend: stats.netCashFlow >= 0 ? ('up' as const) : ('down' as const),
       view: 'cashflow' as ViewKey,
+      reconciliationKey: 'net_cash_flow',
     },
     {
       label: 'PMO Actions',
@@ -769,16 +809,17 @@ export function Dashboard({
 
   const evmCards = [
     { label: 'Revenue BAC', desc: 'Approved selling baseline', value: fmtMoney(evm.revenue.BAC), icon: Target, color: 'text-neutral-700 bg-neutral-100' },
-    { label: 'Revenue PV', desc: 'Selling value planned to date', value: fmtMoney(evm.revenue.PV), icon: Clock, color: 'text-secondary-600 bg-secondary-50' },
-    { label: 'Revenue EV', desc: 'Approved work at selling rate', value: fmtMoney(evm.revenue.EV), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50' },
+    { label: 'Revenue PV', desc: 'Selling value planned to date', value: fmtMoney(reconciledKpis.revenuePv.value ?? 0), icon: Clock, color: 'text-secondary-600 bg-secondary-50', reconciliationKey: 'revenue_pv' },
+    { label: 'Revenue EV', desc: 'Approved work at selling rate', value: fmtMoney(reconciledKpis.revenueEv.value ?? 0), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50', reconciliationKey: 'revenue_ev' },
     { label: 'Revenue SPI', desc: 'Revenue EV / Revenue PV', value: evm.revenue.SPI > 0 ? evm.revenue.SPI.toFixed(2) : '—', icon: Gauge, color: evm.revenue.SPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.revenue.SPI >= 1 ? 'On/ahead of plan' : 'Behind plan' },
-    { label: 'Cost BAC', desc: 'Approved delivery-cost plan', value: fmtAvailableMoney(evm.cost.BAC), icon: Target, color: 'text-neutral-700 bg-neutral-100' },
-    { label: 'Cost PV', desc: 'Delivery cost planned to date', value: fmtAvailableMoney(evm.cost.PV), icon: Clock, color: 'text-secondary-600 bg-secondary-50' },
-    { label: 'Cost EV', desc: 'Earned work at delivery-cost rate', value: fmtAvailableMoney(evm.cost.EV), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50' },
-    { label: 'AC', desc: 'Delivery actual cost', value: fmtMoney(evm.cost.AC), icon: DollarSign, color: 'text-accent-600 bg-accent-50' },
+    { label: 'Cost BAC', desc: 'Approved delivery-cost plan', value: fmtAvailableMoney(reconciledKpis.costBac.value), icon: Target, color: 'text-neutral-700 bg-neutral-100', reconciliationKey: 'cost_bac' },
+    { label: 'Cost PV', desc: 'Delivery cost planned to date', value: fmtAvailableMoney(reconciledKpis.costPv.value), icon: Clock, color: 'text-secondary-600 bg-secondary-50', reconciliationKey: 'cost_pv' },
+    { label: 'Cost EV', desc: 'Earned work at delivery-cost rate', value: fmtAvailableMoney(reconciledKpis.costEv.value), icon: CheckCircle2, color: 'text-primary-600 bg-primary-50', reconciliationKey: 'cost_ev' },
+    { label: 'AC', desc: 'Delivery actual cost', value: fmtMoney(reconciledKpis.deliveryAc.value ?? 0), icon: DollarSign, color: 'text-accent-600 bg-accent-50', reconciliationKey: 'delivery_ac' },
+    { label: 'Open Commitment', desc: 'Ordered value not yet received', value: fmtMoney(reconciledKpis.openCommitment.value ?? 0), icon: PackageCheck, color: 'text-warning-700 bg-warning-50', reconciliationKey: 'open_commitment' },
     { label: 'Cost CV', desc: 'Cost EV - AC', value: fmtAvailableMoney(evm.cost.CV), icon: (evm.cost.CV ?? 0) >= 0 ? TrendingUp : TrendingDown, color: evm.cost.CV === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.CV >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.cost.CV === null ? 'Approved cost plan required' : evm.cost.CV >= 0 ? 'Under budget' : 'Over budget' },
     { label: 'Cost CPI', desc: 'Cost EV / AC', value: evm.cost.CPI !== null && evm.cost.CPI > 0 ? evm.cost.CPI.toFixed(2) : 'Unavailable', icon: Gauge, color: evm.cost.CPI === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.CPI >= 1 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', sub: evm.cost.CPI === null ? 'Approved cost plan required' : evm.cost.CPI >= 1 ? 'Cost efficient' : 'Cost overrun' },
-    { label: 'Cost EAC', desc: 'Delivery estimate at completion', value: fmtAvailableMoney(evm.cost.EAC), icon: Activity, color: evm.cost.VAC === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.VAC >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50' },
+    { label: 'Cost EAC', desc: 'Delivery estimate at completion', value: fmtAvailableMoney(reconciledKpis.costEac.value), icon: Activity, color: evm.cost.VAC === null ? 'text-neutral-600 bg-neutral-100' : evm.cost.VAC >= 0 ? 'text-success-600 bg-success-50' : 'text-error-600 bg-error-50', reconciliationKey: 'cost_eac' },
     { label: 'Margin BAC', desc: 'Revenue BAC - Cost BAC', value: fmtAvailableMoney(evm.margin.grossMarginBAC), icon: Wallet, color: 'text-primary-600 bg-primary-50' },
   ];
 
@@ -851,6 +892,7 @@ export function Dashboard({
           {kpis.map((kpi, i) => {
             const Icon = kpi.icon;
             const TrendIcon = kpi.trend === 'up' ? ArrowUpRight : ArrowDownRight;
+            const hasDrilldown = 'reconciliationKey' in kpi && Boolean(kpi.reconciliationKey);
             return (
               <button
                 key={i}
@@ -862,8 +904,23 @@ export function Dashboard({
                   <div className={`w-11 h-11 rounded-lg bg-gradient-to-br ${kpi.color} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform`}>
                     <Icon size={20} className="text-white" />
                   </div>
-                  <div className={`flex items-center gap-1 text-xs font-medium ${kpi.trend === 'up' ? 'text-success-600' : 'text-error-600'}`}>
-                    <TrendIcon size={14} />
+                  <div className="flex items-center gap-2">
+                    {hasDrilldown && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDrilldownKpiKey((kpi as any).reconciliationKey);
+                        }}
+                        title="Open source drill-down & reconciliation audit"
+                        className="px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-primary-50 text-neutral-500 hover:text-primary-700 border border-neutral-200 text-[10px] font-semibold flex items-center gap-1 transition-colors z-10"
+                      >
+                        <Layers size={11} />
+                        Audit
+                      </span>
+                    )}
+                    <div className={`flex items-center gap-1 text-xs font-medium ${kpi.trend === 'up' ? 'text-success-600' : 'text-error-600'}`}>
+                      <TrendIcon size={14} />
+                    </div>
                   </div>
                 </div>
                 <p className="text-2xl font-bold text-neutral-900 relative">{kpi.value}</p>
@@ -1228,14 +1285,26 @@ export function Dashboard({
               <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {evmCards.map((card, i) => {
                   const Icon = card.icon;
+                  const hasDrilldown = 'reconciliationKey' in card && Boolean(card.reconciliationKey);
                   return (
-                    <div key={i} className="rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-7 h-7 rounded-md flex items-center justify-center ${card.color}`}><Icon size={14} /></div>
-                        <div>
-                          <p className="text-xs font-bold text-neutral-700">{card.label}</p>
-                          <p className="text-[10px] text-neutral-400 leading-tight">{card.desc}</p>
+                    <div
+                      key={i}
+                      onClick={() => hasDrilldown && setDrilldownKpiKey((card as any).reconciliationKey)}
+                      className={`rounded-lg border border-neutral-100 p-3 hover:border-neutral-200 hover:shadow-sm transition-all relative ${hasDrilldown ? 'cursor-pointer hover:border-primary-300 hover:bg-neutral-50/50' : ''}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-md flex items-center justify-center ${card.color}`}><Icon size={14} /></div>
+                          <div>
+                            <p className="text-xs font-bold text-neutral-700">{card.label}</p>
+                            <p className="text-[10px] text-neutral-400 leading-tight">{card.desc}</p>
+                          </div>
                         </div>
+                        {hasDrilldown && (
+                          <span title="Click to drill-down and audit source records" className="text-neutral-400 hover:text-primary-600 p-0.5">
+                            <Layers size={12} />
+                          </span>
+                        )}
                       </div>
                       <p className="text-base font-bold text-neutral-900">{card.value}</p>
                       {'sub' in card && card.sub && (<p className={`text-[10px] mt-0.5 font-medium ${card.color.split(' ')[0]}`}>{card.sub}</p>)}
@@ -1939,6 +2008,17 @@ export function Dashboard({
               </form>
             </div>
           </div>
+        )}
+        {/* KPI Reconciliation Drill-down Modal */}
+        {drilldownKpiKey && (
+          <KpiDrilldownModal
+            isOpen={Boolean(drilldownKpiKey)}
+            onClose={() => setDrilldownKpiKey(null)}
+            kpiKey={drilldownKpiKey}
+            onSelectKpiKey={(key) => setDrilldownKpiKey(key)}
+            inputData={reconciliationInput}
+            currency={(selectedProject as any)?.currency || 'USD'}
+          />
         )}
       </div>
     </div>

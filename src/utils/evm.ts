@@ -187,9 +187,21 @@ export function calculateEvmAtDataDate(input: {
     .filter((order) => performanceContractIds.has(String(order.contract_id || ''))
       && datedThrough(order.order_date, dataDate)
       && procurementPostingState(order).isCommitment);
-  const totalCommitted = procurementOrders.reduce((sum, order) => sum + (Number(order.total_cost) || ((Number(order.quantity) || 0) * (Number(order.unit_cost) || 0))), 0);
-  const totalReceiptCost = receipts.reduce((sum, receipt) => sum + (Number(receipt.accepted_amount) || ((Number(receipt.accepted_quantity) || 0) * (Number(receipt.unit_cost) || 0))), 0);
-  const openCommitment = money(Math.max(0, totalCommitted - totalReceiptCost));
+  const receiptCostByOrder = receipts.reduce((map, receipt) => {
+    const orderId = String(receipt.procurement_id || '');
+    const receiptCost = Number(receipt.accepted_amount)
+      || ((Number(receipt.accepted_quantity) || 0) * (Number(receipt.unit_cost) || 0));
+    map.set(orderId, (map.get(orderId) || 0) + receiptCost);
+    return map;
+  }, new Map<string, number>());
+  // Reconcile commitment at PO level. A surplus receipt against one PO must not
+  // conceal the remaining commitment on another PO.
+  const openCommitment = money(procurementOrders.reduce((sum, order) => {
+    const orderValue = Number(order.total_cost)
+      || ((Number(order.quantity) || 0) * (Number(order.unit_cost) || 0));
+    const receivedValue = receiptCostByOrder.get(String(order.id || '')) || 0;
+    return sum + Math.max(0, orderValue - receivedValue);
+  }, 0));
 
   // 3. DELIVERY COST PLAN (Internal Control Account / Cost Budget basis)
   const scopedControlAccounts = (input.controlAccounts || []).filter((account) => contractIds.has(String(account.contract_id || ''))
