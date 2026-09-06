@@ -5,8 +5,8 @@
 
 ## الحالة الحالية
 
-- Official reviewed commit: `36838edd4ebeac560a2b33279cd229f80c2f2869`
-- Agent-cloud synchronized commit: `6f5b598`
+- Official reviewed C2 feature commit: `4d04d8de92e8bfaf7ca845c81b0108b54284781e`
+- Agent-cloud C2 synchronization commit: `8d22f5295bb491ec5c31e70d8db2940ad4ae0090`
 - Current capability: `C3 — Delay & Time-Impact Register`
 - Status: `READY TO START — DO NOT START ANOTHER CAPABILITY`
 - Last accepted capability: `C2 — Schedule Versions, Scenarios & Comparison (Codex-reviewed 8/10)`
@@ -60,7 +60,7 @@
 
 - Agent/model:
 - Started from commit:
-- Current feature: `C2 — Schedule Versions, Scenarios & Comparison`
+- Current feature: `C3 — Delay & Time-Impact Register`
 - Status: `IN PROGRESS | BLOCKED | READY FOR CODEX REVIEW`
 - Commits created:
 - Files changed:
