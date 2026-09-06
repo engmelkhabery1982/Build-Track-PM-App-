@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPrimaveraReconciliation } from '../src/utils/primaveraReconciliation.ts';
 import { parsePrimaveraXerTasks } from '../src/data/primaveraImport.ts';
+import { readFileSync } from 'node:fs';
 
 test('Primavera Reconciliation - enforces project_id and contract_id scope parameters', () => {
   assert.throws(() => {
@@ -14,6 +15,13 @@ test('Primavera Reconciliation - enforces project_id and contract_id scope param
       localActivities: [],
     });
   }, /Project ID and Contract ID are required/);
+});
+
+test('Primavera Reconciliation - rejects empty or non-XER content instead of reporting success', () => {
+  assert.throws(() => buildPrimaveraReconciliation({
+    projectId: 'p-01', contractId: 'c-01', fileContent: 'not a primavera export', fileName: 'bad.xer',
+    duplicatePolicy: 'update', localActivities: [],
+  }), /no valid Primavera TASK records/i);
 });
 
 test('Primavera Reconciliation - parses XER content and identifies new activities vs local activities', () => {
@@ -133,6 +141,29 @@ test('Primavera Reconciliation - duplicate policy "skip" ignores existing activi
   assert.equal(result.preparedUpdatePatches.length, 0);
   assert.equal(result.preparedInsertRows.length, 1);
   assert.equal(result.preparedInsertRows[0].activity_code, 'ACT-NEW');
+});
+
+test('Primavera Reconciliation - code matching is case-insensitive and never borrows unscoped local rows', () => {
+  const xerContent = `%T\tTASK\n%F\ttask_id\ttask_code\ttask_name\ttarget_start_date\ttarget_end_date\ttarget_drtn\n%R\t10\tACT-01\tScoped Activity\t2026-06-01\t2026-06-05\t5\n`;
+  const result = buildPrimaveraReconciliation({
+    projectId: 'p-01', contractId: 'c-01', fileContent: xerContent, fileName: 'scope.xer', duplicatePolicy: 'update',
+    localActivities: [
+      { id: 'match', project_id: 'p-01', contract_id: 'c-01', activity_code: 'act-01', start_date: '2026-06-01', end_date: '2026-06-05', duration_days: 5 },
+      { id: 'wrong-scope', project_id: 'p-02', contract_id: 'c-02', activity_code: 'ACT-01', start_date: '2026-01-01', end_date: '2026-01-02', duration_days: 1 },
+    ],
+  });
+  assert.equal(result.stats.synced, 1);
+  assert.equal(result.preparedUpdatePatches[0].id, 'match');
+});
+
+test('Primavera Reconciliation UI commits through the atomic desktop gateway', () => {
+  const board = readFileSync(new URL('../src/components/XerReconciliationBoard.tsx', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../src/components/Dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(board, /await commitGovernedImport\(\{/);
+  assert.match(board, /Update the UI projection only after the SQLite transaction commits/);
+  assert.doesNotMatch(board, /p-01'\)/, 'The production board must not fabricate a project scope');
+  assert.doesNotMatch(board, /c-01'\)/, 'The production board must not fabricate a contract scope');
+  assert.match(dashboard, /onCommitSuccess=.*onDataReload/s);
 });
 
 test('Primavera Reconciliation - relationship comparison detects matched and mismatched links', () => {

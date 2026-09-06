@@ -1493,6 +1493,10 @@ export interface DelayEvent {
   wbs_id: string | null;
   schedule_activity_id: string | null;
   variation_id: string | null;
+  baseline_id?: string | null;
+  analysis_date?: string | null;
+  pre_impact_finish?: string | null;
+  post_impact_finish?: string | null;
   delay_code: string;
   event_name: string;
   event_category: DelayEventCategory;

@@ -58,6 +58,7 @@ interface DashboardProps {
   scheduleResourceAssignments: Record<string, any>[];
   workCalendars: Record<string, any>[];
   onNavigate: (view: ViewKey) => void;
+  onDataReload?: () => Promise<void>;
 }
 
 function statusColor(status: string): string {
@@ -105,7 +106,7 @@ type DashboardTab = 'overview' | 'report' | 'financials' | 'schedule' | 'safety'
 
 export function Dashboard({
   projects, tasks, costs, costEntries, procurement, procurementReceipts, safety, progress, schedules, contracts,
-  boqHeaders, boqItems, contractSovLines, controlAccounts, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate,
+  boqHeaders, boqItems, contractSovLines, controlAccounts, cashFlow, subInvoices, clientInvoices, variations, documents, wirEntries, progressCorrections, baselines, reportingPeriods, governanceRegister, scheduleDistributions, rfis, submittals, quality, resourceMasters, scheduleResourceAssignments, workCalendars, onNavigate, onDataReload,
 }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1574,7 +1575,15 @@ export function Dashboard({
             </div>
 
             <div className="mt-6 bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">
-              <XerReconciliationBoard localActivities={fSchedules as Record<string, any>[]} dataDate={reportDate} />
+              <XerReconciliationBoard
+                projectId={selectedProjectId || ''}
+                contractId={contracts.find((contract) => contract.project_id === selectedProjectId && !contract.parent_main_contract_id)?.id || ''}
+                projects={projects.map((project) => ({ id: project.id, name: project.name, code: project.project_code }))}
+                contracts={contracts.filter((contract) => !contract.parent_main_contract_id).map((contract) => ({ id: contract.id, project_id: contract.project_id, title: contract.title, code: contract.contract_number }))}
+                localActivities={fSchedules as Record<string, any>[]}
+                dataDate={reportDate}
+                onCommitSuccess={async () => { await onDataReload?.(); }}
+              />
             </div>
           </div>
         )}

@@ -20,7 +20,7 @@ import {
   DelayEvent,
   Project,
   Contract,
-  Task,
+  Schedule,
   WBSNode,
   Variation,
 } from '../types';
@@ -40,7 +40,10 @@ interface DelayRegisterModalProps {
   selectedContractId: string | null;
   projects: Project[];
   contracts: Contract[];
-  tasks: Task[];
+  schedules: Schedule[];
+  baselines: Record<string, any>[];
+  scheduleVersions: Record<string, any>[];
+  dataDate: string;
   wbsNodes: WBSNode[];
   variations: Variation[];
   delayEvents: DelayEvent[];
@@ -55,7 +58,10 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
   selectedContractId,
   projects,
   contracts,
-  tasks,
+  schedules,
+  baselines,
+  scheduleVersions,
+  dataDate,
   wbsNodes,
   variations,
   delayEvents,
@@ -71,12 +77,24 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
   const [editingEvent, setEditingEvent] = useState<Partial<DelayEvent> | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [selectedTiaEvent, setSelectedTiaEvent] = useState<DelayEvent | null>(null);
+  const [scopeProjectId, setScopeProjectId] = useState(selectedProjectId || '');
+  const [scopeContractId, setScopeContractId] = useState(selectedContractId || '');
+
+  React.useEffect(() => {
+    if (selectedProjectId) setScopeProjectId(selectedProjectId);
+    if (selectedContractId) setScopeContractId(selectedContractId);
+  }, [selectedProjectId, selectedContractId]);
+
+  const scopedContracts = contracts.filter((contract) => contract.project_id === scopeProjectId && !contract.parent_main_contract_id);
+  const scopedActivities = schedules.filter((activity) => activity.project_id === scopeProjectId && (!scopeContractId || activity.contract_id === scopeContractId) && String(activity.activity || '').trim());
+  const scopedWbs = wbsNodes.filter((node) => node.project_id === scopeProjectId && (!scopeContractId || !node.contract_id || node.contract_id === scopeContractId));
+  const scopedVariations = variations.filter((variation) => variation.project_id === scopeProjectId && (!scopeContractId || variation.contract_id === scopeContractId));
 
   // Filter delay events by project/contract scope
   const scopedEvents = useMemo(() => {
     return delayEvents.filter((e) => {
-      if (selectedProjectId && e.project_id !== selectedProjectId) return false;
-      if (selectedContractId && e.contract_id !== selectedContractId) return false;
+      if (scopeProjectId && e.project_id !== scopeProjectId) return false;
+      if (scopeContractId && e.contract_id !== scopeContractId) return false;
       if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
       if (categoryFilter !== 'ALL' && e.event_category !== categoryFilter) return false;
       if (searchTerm) {
@@ -90,30 +108,35 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
       }
       return true;
     });
-  }, [delayEvents, selectedProjectId, selectedContractId, statusFilter, categoryFilter, searchTerm]);
+  }, [delayEvents, scopeProjectId, scopeContractId, statusFilter, categoryFilter, searchTerm]);
 
   // Selected project / contract baseline finish
-  const activeProject = projects.find((p) => p.id === selectedProjectId);
-  const activeContract = contracts.find((c) => c.id === selectedContractId);
-  const baselineFinishDate = activeContract?.end_date || activeProject?.end_date || new Date().toISOString().slice(0, 10);
+  const activeProject = projects.find((p) => p.id === scopeProjectId);
+  const activeContract = contracts.find((c) => c.id === scopeContractId);
+  const approvedVersion = scheduleVersions.filter((version) => version.project_id === scopeProjectId && (!scopeContractId || version.contract_id === scopeContractId) && version.status === 'Approved' && version.version_type === 'Baseline').sort((a, b) => Number(b.revision_number || 0) - Number(a.revision_number || 0))[0];
+  const approvedBaseline = baselines.filter((baseline) => baseline.contract_id === scopeContractId && baseline.status === 'Approved' && Array.isArray(baseline.activity_snapshot)).sort((a, b) => Number(b.revision_number || 0) - Number(a.revision_number || 0))[0];
+  const baselineActivities = (approvedVersion?.activity_snapshot || approvedBaseline?.activity_snapshot || []) as Schedule[];
+  const baselineFinishes = baselineActivities.map((activity: any) => String(activity.end_date || '')).filter(Boolean).sort();
+  const baselineFinishDate = baselineFinishes[baselineFinishes.length - 1] || null;
 
   // Summary statistics
   const summary = useMemo(() => {
     return calculateProjectDelaySummary(
-      delayEvents.filter((e) => (!selectedProjectId || e.project_id === selectedProjectId)),
+      delayEvents.filter((e) => (!scopeProjectId || e.project_id === scopeProjectId) && (!scopeContractId || e.contract_id === scopeContractId)),
       baselineFinishDate
     );
-  }, [delayEvents, selectedProjectId, baselineFinishDate]);
+  }, [delayEvents, scopeProjectId, scopeContractId, baselineFinishDate]);
 
   if (!isOpen) return null;
 
   const handleOpenNew = () => {
-    const projId = selectedProjectId || (projects[0]?.id ?? '');
+    const projId = scopeProjectId || (projects[0]?.id ?? '');
+    const contractId = scopeContractId || contracts.find((contract) => contract.project_id === projId && !contract.parent_main_contract_id)?.id || '';
     const defaultCode = `DEL-${new Date().getFullYear()}-${String(delayEvents.length + 1).padStart(3, '0')}`;
     setEditingEvent({
       id: crypto.randomUUID(),
       project_id: projId,
-      contract_id: selectedContractId || null,
+      contract_id: contractId || null,
       delay_code: defaultCode,
       event_name: '',
       event_category: 'Employer Delay',
@@ -150,9 +173,17 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
     }
 
     // Calculate TIA
-    const tia = calculateTimeImpactAnalysis(editingEvent, tasks, baselineFinishDate);
+    if (['Approved', 'Closed'].includes(String(editingEvent.status)) && !baselineFinishDate) {
+      setFormErrors(['An approved frozen schedule baseline is required before approving a time impact.']);
+      return;
+    }
+    const tia = calculateTimeImpactAnalysis(editingEvent, baselineActivities.length ? baselineActivities : scopedActivities, baselineFinishDate, dataDate);
     const eventToSave: Partial<DelayEvent> = {
       ...editingEvent,
+      baseline_id: approvedVersion?.id || approvedBaseline?.id || null,
+      analysis_date: tia.analysisDate || dataDate,
+      pre_impact_finish: tia.preDelayFinishDate || null,
+      post_impact_finish: tia.postDelayFinishDate || null,
       cpm_impact_days: tia.netCpmImpactDays,
       time_impact_analysis: tia,
       updated_at: new Date().toISOString(),
@@ -409,6 +440,15 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-slate-400 font-medium mb-1">Project *</label><select required value={editingEvent.project_id || ''} onChange={(e) => { const projectId = e.target.value; const main = contracts.find((contract) => contract.project_id === projectId && !contract.parent_main_contract_id); setScopeProjectId(projectId); setScopeContractId(main?.id || ''); setEditingEvent({ ...editingEvent, project_id: projectId, contract_id: main?.id || null, wbs_id: null, schedule_activity_id: null, variation_id: null }); }} className="w-full rounded border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.project_code} — {project.name}</option>)}</select></div>
+                <div><label className="block text-slate-400 font-medium mb-1">Main Contract *</label><select required value={editingEvent.contract_id || ''} onChange={(e) => { setScopeContractId(e.target.value); setEditingEvent({ ...editingEvent, contract_id: e.target.value || null, wbs_id: null, schedule_activity_id: null, variation_id: null }); }} className="w-full rounded border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Select main contract</option>{scopedContracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.title}</option>)}</select></div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div><label className="block text-slate-400 font-medium mb-1">Affected Activity *</label><select required value={editingEvent.schedule_activity_id || ''} onChange={(e) => { const activity = scopedActivities.find((row) => row.id === e.target.value); setEditingEvent({ ...editingEvent, schedule_activity_id: e.target.value || null, wbs_id: activity?.wbs_id || editingEvent.wbs_id || null }); }} className="w-full rounded border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Select activity</option>{scopedActivities.map((activity) => <option key={activity.id} value={activity.id}>{activity.activity_code} — {activity.activity}</option>)}</select></div>
+                <div><label className="block text-slate-400 font-medium mb-1">WBS</label><select value={editingEvent.wbs_id || ''} onChange={(e) => setEditingEvent({ ...editingEvent, wbs_id: e.target.value || null })} className="w-full rounded border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Derived / none</option>{scopedWbs.map((node) => <option key={node.id} value={node.id}>{node.wbs_code} — {node.name}</option>)}</select></div>
+                <div><label className="block text-slate-400 font-medium mb-1">Related Variation</label><select value={editingEvent.variation_id || ''} onChange={(e) => setEditingEvent({ ...editingEvent, variation_id: e.target.value || null })} className="w-full rounded border border-slate-700 bg-slate-950 p-2 text-white"><option value="">None</option>{scopedVariations.map((variation) => <option key={variation.id} value={variation.id}>{variation.variation_number} — {variation.title}</option>)}</select></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-medium mb-1">Delay Code *</label>
                   <input
@@ -589,7 +629,7 @@ export const DelayRegisterModal: React.FC<DelayRegisterModalProps> = ({
               </div>
 
               {(() => {
-                const tia = calculateTimeImpactAnalysis(selectedTiaEvent, tasks, baselineFinishDate);
+                const tia = calculateTimeImpactAnalysis(selectedTiaEvent, baselineActivities.length ? baselineActivities : scopedActivities, baselineFinishDate, dataDate);
                 return (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">

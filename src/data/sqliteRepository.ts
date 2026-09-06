@@ -54,6 +54,10 @@ type StoredRow = {
   wbs_id?: string | null;
   schedule_activity_id?: string | null;
   variation_id?: string | null;
+  baseline_id?: string | null;
+  analysis_date?: string | null;
+  pre_impact_finish?: string | null;
+  post_impact_finish?: string | null;
   delay_code?: string;
   event_name?: string;
   event_category?: string;
@@ -132,6 +136,10 @@ export class SqliteRepository implements DataRepository {
         wbs_id: stored.wbs_id,
         schedule_activity_id: stored.schedule_activity_id,
         variation_id: stored.variation_id,
+        baseline_id: stored.baseline_id,
+        analysis_date: stored.analysis_date,
+        pre_impact_finish: stored.pre_impact_finish,
+        post_impact_finish: stored.post_impact_finish,
         delay_code: stored.delay_code,
         event_name: stored.event_name,
         event_category: stored.event_category,
@@ -159,6 +167,58 @@ export class SqliteRepository implements DataRepository {
     );
     if (!rows[0]) throw new Error(`Record ${id} was not found in ${tableName}.`);
     return rows[0];
+  }
+
+  private async assertDelayEventScope(
+    database: Awaited<ReturnType<SqliteRepository['database']>>,
+    record: Record<string, any>,
+  ): Promise<void> {
+    const projectId = nullableId(record.project_id);
+    const contractId = nullableId(record.contract_id);
+    const activityId = nullableId(record.schedule_activity_id);
+    if (!projectId || !contractId || !activityId) {
+      throw new Error('Delay events require a project, main contract, and affected schedule activity.');
+    }
+    const contractRows = await database.select<StoredRow[]>('SELECT * FROM contracts WHERE id = $1', [contractId]);
+    if (!contractRows[0]) throw new Error('The selected delay-event contract does not exist.');
+    const contract = this.unpack<Record<string, any>>(contractRows[0], 'contracts');
+    if (contract.project_id !== projectId || contract.parent_main_contract_id) {
+      throw new Error('Delay events must reference a main contract in the selected project.');
+    }
+    const activityRows = await database.select<StoredRow[]>('SELECT * FROM schedules WHERE id = $1', [activityId]);
+    if (!activityRows[0]) throw new Error('The selected delay-event activity does not exist.');
+    const activity = this.unpack<Record<string, any>>(activityRows[0], 'schedules');
+    if (activity.project_id !== projectId || activity.contract_id !== contractId) {
+      throw new Error('The selected activity is outside the delay-event project/contract scope.');
+    }
+    for (const [field, table, label] of [
+      ['wbs_id', 'wbs_nodes', 'WBS node'],
+      ['variation_id', 'variations', 'variation'],
+    ] as const) {
+      const linkedId = nullableId(record[field]);
+      if (!linkedId) continue;
+      const rows = await database.select<StoredRow[]>(`SELECT * FROM ${table} WHERE id = $1`, [linkedId]);
+      if (!rows[0]) throw new Error(`The selected ${label} does not exist.`);
+      const linked = this.unpack<Record<string, any>>(rows[0], table);
+      if (linked.project_id !== projectId || (linked.contract_id && linked.contract_id !== contractId)) {
+        throw new Error(`The selected ${label} is outside the delay-event project/contract scope.`);
+      }
+    }
+    const baselineId = nullableId(record.baseline_id);
+    if (['Approved', 'Closed'].includes(String(record.status)) && !baselineId) {
+      throw new Error('Approved delay events require an approved frozen baseline reference.');
+    }
+    if (baselineId) {
+      const versionRows = await database.select<StoredRow[]>('SELECT * FROM schedule_versions WHERE id = $1', [baselineId]);
+      const baselineRows = versionRows.length ? [] : await database.select<StoredRow[]>('SELECT * FROM project_baselines WHERE id = $1', [baselineId]);
+      const stored = versionRows[0] || baselineRows[0];
+      const table = versionRows[0] ? 'schedule_versions' : 'project_baselines';
+      if (!stored) throw new Error('The selected frozen baseline does not exist.');
+      const baseline = this.unpack<Record<string, any>>(stored, table);
+      if (baseline.project_id !== projectId || baseline.contract_id !== contractId || baseline.status !== 'Approved') {
+        throw new Error('The selected baseline is not approved for this delay-event scope.');
+      }
+    }
   }
 
   private async writeAudit(
@@ -292,16 +352,19 @@ export class SqliteRepository implements DataRepository {
         ],
       );
     } else if (tableName === "delay_events") {
+      await this.assertDelayEventScope(database, record);
       await database.execute(
         `INSERT INTO delay_events (
           id, created_at, updated_at, project_id, contract_id, wbs_id, schedule_activity_id, variation_id,
+          baseline_id, analysis_date, pre_impact_finish, post_impact_finish,
           delay_code, event_name, event_category, discovery_date, root_cause, responsible_party,
           entitlement_type, requested_extension_days, approved_extension_days, mitigation_action,
           status, cpm_impact_days, time_impact_analysis, notes, payload
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
         [
           record.id, record.created_at, record.updated_at || now, nullableId(record.project_id), nullableId(record.contract_id),
           nullableId(record.wbs_id), nullableId(record.schedule_activity_id), nullableId(record.variation_id),
+          nullableId(record.baseline_id), record.analysis_date || null, record.pre_impact_finish || null, record.post_impact_finish || null,
           record.delay_code, record.event_name, record.event_category, record.discovery_date, record.root_cause,
           record.responsible_party, record.entitlement_type, Number(record.requested_extension_days) || 0,
           Number(record.approved_extension_days) || 0, record.mitigation_action || '', record.status,
@@ -433,18 +496,21 @@ export class SqliteRepository implements DataRepository {
       );
     } else if (tableName === "delay_events") {
       record.updated_at = new Date().toISOString();
+      await this.assertDelayEventScope(database, record);
       await database.execute(
         `UPDATE delay_events SET
           project_id = $1, contract_id = $2, wbs_id = $3, schedule_activity_id = $4, variation_id = $5,
-          delay_code = $6, event_name = $7, event_category = $8, discovery_date = $9, root_cause = $10,
-          responsible_party = $11, entitlement_type = $12, requested_extension_days = $13,
-          approved_extension_days = $14, mitigation_action = $15, status = $16, cpm_impact_days = $17,
-          time_impact_analysis = $18, notes = $19, updated_at = $20, payload = $21
-         WHERE id = $22`,
+          baseline_id = $6, analysis_date = $7, pre_impact_finish = $8, post_impact_finish = $9,
+          delay_code = $10, event_name = $11, event_category = $12, discovery_date = $13, root_cause = $14,
+          responsible_party = $15, entitlement_type = $16, requested_extension_days = $17,
+          approved_extension_days = $18, mitigation_action = $19, status = $20, cpm_impact_days = $21,
+          time_impact_analysis = $22, notes = $23, updated_at = $24, payload = $25
+         WHERE id = $26`,
         [
           nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.wbs_id),
-          nullableId(record.schedule_activity_id), nullableId(record.variation_id), record.delay_code,
-          record.event_name, record.event_category, record.discovery_date, record.root_cause,
+          nullableId(record.schedule_activity_id), nullableId(record.variation_id),
+          nullableId(record.baseline_id), record.analysis_date || null, record.pre_impact_finish || null, record.post_impact_finish || null,
+          record.delay_code, record.event_name, record.event_category, record.discovery_date, record.root_cause,
           record.responsible_party, record.entitlement_type, Number(record.requested_extension_days) || 0,
           Number(record.approved_extension_days) || 0, record.mitigation_action || '', record.status,
           Number(record.cpm_impact_days) || 0, JSON.stringify(record.time_impact_analysis || {}),

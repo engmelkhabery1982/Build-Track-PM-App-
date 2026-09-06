@@ -2,15 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-
-const PYTHON_BIN = (() => {
-  try {
-    execFileSync('python3', ['--version'], { stdio: 'ignore' });
-    return 'python3';
-  } catch {
-    return 'python';
-  }
-})();
 import { runDataQualityChecks } from '../src/data/dataQuality.ts';
 import { calculateControlAccountSummary } from '../src/utils/controlAccountSummary.ts';
 import { buildQuantityLedger } from '../src/utils/quantityLedger.ts';
@@ -51,7 +42,7 @@ try:
 except sqlite3.IntegrityError: pass
 print('ok')
 `;
-  const result = execFileSync(PYTHON_BIN, ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const result = execFileSync('python', ['-c', sqliteAcceptance], { input: match[1], encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   assert.equal(result, 'ok');
 });
 
@@ -102,7 +93,7 @@ try:
 except sqlite3.IntegrityError: pass
 print('ok')
 `;
-  const result = execFileSync(PYTHON_BIN, ['-c', sqliteAcceptance], {
+  const result = execFileSync('python', ['-c', sqliteAcceptance], {
     input: `${model[1]}\n--MIGRATION--\n${sources[1]}`,
     encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
   }).trim();

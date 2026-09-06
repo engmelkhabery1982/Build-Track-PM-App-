@@ -2160,6 +2160,97 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 52,
+            description: "delay_events_scope_baseline_and_approval_governance",
+            sql: r#"
+      ALTER TABLE delay_events ADD COLUMN baseline_id TEXT;
+      ALTER TABLE delay_events ADD COLUMN analysis_date TEXT;
+      ALTER TABLE delay_events ADD COLUMN pre_impact_finish TEXT;
+      ALTER TABLE delay_events ADD COLUMN post_impact_finish TEXT;
+      CREATE INDEX IF NOT EXISTS idx_delay_events_activity ON delay_events(schedule_activity_id);
+      CREATE INDEX IF NOT EXISTS idx_delay_events_baseline ON delay_events(baseline_id);
+      CREATE TRIGGER IF NOT EXISTS delay_events_validate_insert_v2
+      BEFORE INSERT ON delay_events
+      BEGIN
+        SELECT CASE WHEN NEW.approved_extension_days > NEW.requested_extension_days
+          THEN RAISE(ABORT, 'Approved extension cannot exceed requested extension.') END;
+        SELECT CASE WHEN NEW.status NOT IN ('Approved', 'Closed') AND NEW.approved_extension_days <> 0
+          THEN RAISE(ABORT, 'Unapproved delay events cannot carry approved extension days.') END;
+        SELECT CASE WHEN NEW.status = 'Closed'
+          THEN RAISE(ABORT, 'A delay event cannot be inserted directly as Closed.') END;
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM contracts c
+          WHERE c.id = NEW.contract_id AND c.project_id = NEW.project_id AND c.parent_main_contract_id IS NULL
+        ) THEN RAISE(ABORT, 'Delay event requires a main contract in the same project.') END;
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM schedules s
+          WHERE s.id = NEW.schedule_activity_id AND s.project_id = NEW.project_id AND s.contract_id = NEW.contract_id
+        ) THEN RAISE(ABORT, 'Delay event activity is outside the project/contract scope.') END;
+        SELECT CASE WHEN NEW.wbs_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM wbs_nodes w
+          WHERE w.id = NEW.wbs_id AND w.project_id = NEW.project_id
+            AND (w.contract_id IS NULL OR w.contract_id = NEW.contract_id)
+        ) THEN RAISE(ABORT, 'Delay event WBS is outside the project/contract scope.') END;
+        SELECT CASE WHEN NEW.variation_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM variations v
+          WHERE v.id = NEW.variation_id AND v.project_id = NEW.project_id AND v.contract_id = NEW.contract_id
+        ) THEN RAISE(ABORT, 'Delay event variation is outside the project/contract scope.') END;
+        SELECT CASE WHEN NEW.status IN ('Approved', 'Closed') AND NOT (
+          EXISTS (SELECT 1 FROM schedule_versions sv WHERE sv.id = NEW.baseline_id AND sv.project_id = NEW.project_id AND sv.contract_id = NEW.contract_id AND sv.status = 'Approved')
+          OR EXISTS (SELECT 1 FROM project_baselines pb WHERE pb.id = NEW.baseline_id AND pb.project_id = NEW.project_id AND pb.contract_id = NEW.contract_id AND json_extract(pb.payload, '$.status') = 'Approved')
+        ) THEN RAISE(ABORT, 'Approved delay event requires an approved frozen baseline in the same scope.') END;
+      END;
+      CREATE TRIGGER IF NOT EXISTS delay_events_validate_update_v2
+      BEFORE UPDATE ON delay_events
+      BEGIN
+        SELECT CASE WHEN NOT (
+          NEW.status = OLD.status
+          OR (OLD.status = 'Identified' AND NEW.status IN ('Submitted', 'Rejected'))
+          OR (OLD.status = 'Submitted' AND NEW.status IN ('Approved', 'Rejected'))
+          OR (OLD.status = 'Approved' AND NEW.status = 'Closed')
+        ) THEN RAISE(ABORT, 'Invalid delay-event workflow transition.') END;
+        SELECT CASE WHEN NEW.approved_extension_days > NEW.requested_extension_days
+          THEN RAISE(ABORT, 'Approved extension cannot exceed requested extension.') END;
+        SELECT CASE WHEN NEW.status NOT IN ('Approved', 'Closed') AND NEW.approved_extension_days <> 0
+          THEN RAISE(ABORT, 'Unapproved delay events cannot carry approved extension days.') END;
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM contracts c
+          WHERE c.id = NEW.contract_id AND c.project_id = NEW.project_id AND c.parent_main_contract_id IS NULL
+        ) THEN RAISE(ABORT, 'Delay event requires a main contract in the same project.') END;
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM schedules s
+          WHERE s.id = NEW.schedule_activity_id AND s.project_id = NEW.project_id AND s.contract_id = NEW.contract_id
+        ) THEN RAISE(ABORT, 'Delay event activity is outside the project/contract scope.') END;
+        SELECT CASE WHEN NEW.status IN ('Approved', 'Closed') AND NOT (
+          EXISTS (SELECT 1 FROM schedule_versions sv WHERE sv.id = NEW.baseline_id AND sv.project_id = NEW.project_id AND sv.contract_id = NEW.contract_id AND sv.status = 'Approved')
+          OR EXISTS (SELECT 1 FROM project_baselines pb WHERE pb.id = NEW.baseline_id AND pb.project_id = NEW.project_id AND pb.contract_id = NEW.contract_id AND json_extract(pb.payload, '$.status') = 'Approved')
+        ) THEN RAISE(ABORT, 'Approved delay event requires an approved frozen baseline in the same scope.') END;
+      END;
+      CREATE TRIGGER IF NOT EXISTS delay_events_immutable_update_v2
+      BEFORE UPDATE ON delay_events
+      WHEN OLD.status = 'Closed' OR (
+        OLD.status = 'Approved' AND NOT (
+          NEW.status = 'Closed'
+          AND NEW.project_id IS OLD.project_id AND NEW.contract_id IS OLD.contract_id
+          AND NEW.wbs_id IS OLD.wbs_id AND NEW.schedule_activity_id IS OLD.schedule_activity_id
+          AND NEW.variation_id IS OLD.variation_id AND NEW.baseline_id IS OLD.baseline_id
+          AND NEW.analysis_date IS OLD.analysis_date AND NEW.pre_impact_finish IS OLD.pre_impact_finish
+          AND NEW.post_impact_finish IS OLD.post_impact_finish AND NEW.delay_code IS OLD.delay_code
+          AND NEW.event_name IS OLD.event_name AND NEW.event_category IS OLD.event_category
+          AND NEW.discovery_date IS OLD.discovery_date AND NEW.root_cause IS OLD.root_cause
+          AND NEW.responsible_party IS OLD.responsible_party AND NEW.entitlement_type IS OLD.entitlement_type
+          AND NEW.requested_extension_days IS OLD.requested_extension_days
+          AND NEW.approved_extension_days IS OLD.approved_extension_days
+          AND NEW.mitigation_action IS OLD.mitigation_action AND NEW.cpm_impact_days IS OLD.cpm_impact_days
+          AND NEW.time_impact_analysis IS OLD.time_impact_analysis AND NEW.notes IS OLD.notes
+          AND json_remove(NEW.payload, '$.status', '$.updated_at') = json_remove(OLD.payload, '$.status', '$.updated_at')
+        )
+      )
+      BEGIN SELECT RAISE(ABORT, 'Approved delay events are immutable and may only be closed.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

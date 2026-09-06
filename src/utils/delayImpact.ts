@@ -4,8 +4,9 @@ import type {
   DelayEntitlementType,
   DelayEventStatus,
   TimeImpactAnalysis,
-  Task,
+  Schedule,
 } from '../types/index.ts';
+import { calculateCpm } from './cpm.ts';
 
 export const DELAY_CATEGORIES: DelayEventCategory[] = [
   'Employer Delay',
@@ -56,6 +57,8 @@ export function validateDelayEventInput(input: Partial<DelayEvent>): { valid: bo
   if (!input.project_id || !input.project_id.trim()) {
     errors.push('Project ID is required.');
   }
+  if (!input.contract_id) errors.push('Main contract is required.');
+  if (!input.schedule_activity_id) errors.push('Affected schedule activity is required.');
 
   if (!input.event_category || !DELAY_CATEGORIES.includes(input.event_category as DelayEventCategory)) {
     errors.push(`Invalid event category. Must be one of: ${DELAY_CATEGORIES.join(', ')}`);
@@ -108,60 +111,44 @@ export function addDaysToIsoDate(isoDateStr: string, days: number): string {
 /** Performs Time Impact Analysis (TIA) for a delay event against schedule activities and baseline finish. */
 export function calculateTimeImpactAnalysis(
   delayEvent: Partial<DelayEvent>,
-  activities: Task[] = [],
-  baselineFinishDate?: string | null
+  activities: Schedule[] = [],
+  baselineFinishDate?: string | null,
+  analysisDate?: string | null,
 ): TimeImpactAnalysis {
-  // Find pre-delay finish date from activities or baseline finish
-  let preDelayFinish = baselineFinishDate && isValidIsoDate(baselineFinishDate) ? baselineFinishDate : '';
-  for (const act of activities) {
-    const actEnd = act.end_date ? act.end_date.slice(0, 10) : '';
-    if (isValidIsoDate(actEnd) && (!preDelayFinish || actEnd > preDelayFinish)) {
-      preDelayFinish = actEnd;
-    }
-  }
-  if (!preDelayFinish) {
-    preDelayFinish = new Date().toISOString().slice(0, 10);
-  }
-
-  // Affected activity lookup
-  const affectedActivity = activities.find(
-    (a) => a.id === delayEvent.schedule_activity_id || a.name === delayEvent.schedule_activity_id
-  );
-
-  const isCritical = affectedActivity
-    ? affectedActivity.priority === 'High' ||
-      affectedActivity.category === 'Critical' ||
-      (affectedActivity as any).is_critical === true
-    : false;
+  const scoped = activities.filter((activity) => String(activity.activity || '').trim());
+  const finishes = scoped.map((activity) => String(activity.forecast_end_date || activity.end_date || '')).filter(isValidIsoDate).sort();
+  const preDelayFinish = finishes[finishes.length - 1] || (baselineFinishDate && isValidIsoDate(baselineFinishDate) ? baselineFinishDate : '');
+  const affectedActivity = scoped.find((activity) => activity.id === delayEvent.schedule_activity_id);
+  const baseNetwork = calculateCpm(scoped);
+  const baseDuration = Math.max(0, ...[...baseNetwork.values()].filter((row) => !row.cycle).map((row) => row.earlyFinish));
   const reqDays = Math.max(0, Number(delayEvent.requested_extension_days) || 0);
   const appDays = Math.max(0, Number(delayEvent.approved_extension_days) || 0);
   const isApproved = delayEvent.status === 'Approved' || delayEvent.status === 'Closed';
-
-  // Float assumption: non-critical activities have default 10 days total float unless specified
-  const totalFloat = isCritical ? 0 : 10;
-  const effectiveDelayDays = isApproved ? appDays : reqDays;
-
-  // Net CPM impact: delay minus available float
-  const netCpmImpactDays = isCritical
-    ? effectiveDelayDays
-    : Math.max(0, effectiveDelayDays - totalFloat);
+  const impactedActivities = scoped.map((activity) => activity.id === affectedActivity?.id
+    ? { ...activity, duration_days: Math.max(0, Number(activity.duration_days) || 0) + reqDays }
+    : activity);
+  const impactedNetwork = calculateCpm(impactedActivities);
+  const impactedDuration = Math.max(0, ...[...impactedNetwork.values()].filter((row) => !row.cycle).map((row) => row.earlyFinish));
+  const netCpmImpactDays = affectedActivity ? Math.max(0, impactedDuration - baseDuration) : 0;
+  const affectedNetwork = affectedActivity ? baseNetwork.get(affectedActivity.id) : undefined;
+  const isCritical = Boolean(affectedNetwork?.critical);
 
   const postDelayFinish = addDaysToIsoDate(preDelayFinish, netCpmImpactDays);
 
   // Forecast revised finish uses ONLY approved extension days
-  const baseDate = baselineFinishDate && isValidIsoDate(baselineFinishDate) ? baselineFinishDate : preDelayFinish;
-  const forecastRevisedFinishDate = addDaysToIsoDate(baseDate, isApproved ? appDays : 0);
+  const baseDate = baselineFinishDate && isValidIsoDate(baselineFinishDate) ? baselineFinishDate : '';
+  const forecastRevisedFinishDate = baseDate ? addDaysToIsoDate(baseDate, isApproved ? appDays : 0) : '';
 
   return {
     preDelayFinishDate: preDelayFinish,
     postDelayFinishDate: postDelayFinish,
     netCpmImpactDays,
     criticalPathAffected: isCritical || netCpmImpactDays > 0,
-    affectedActivityCode: affectedActivity ? affectedActivity.id : delayEvent.schedule_activity_id || undefined,
-    affectedActivityName: affectedActivity ? affectedActivity.name : undefined,
+    affectedActivityCode: affectedActivity ? affectedActivity.activity_code : delayEvent.schedule_activity_id || undefined,
+    affectedActivityName: affectedActivity ? affectedActivity.activity : undefined,
     baselineFinishDate: baseDate,
     forecastRevisedFinishDate,
-    analysisDate: new Date().toISOString().slice(0, 10),
+    analysisDate: analysisDate && isValidIsoDate(analysisDate) ? analysisDate : delayEvent.discovery_date,
   };
 }
 
@@ -203,11 +190,8 @@ export function calculateProjectDelaySummary(
     }
   }
 
-  const baseDate = baselineFinishDate && isValidIsoDate(baselineFinishDate)
-    ? baselineFinishDate
-    : new Date().toISOString().slice(0, 10);
-
-  const revisedForecastFinish = addDaysToIsoDate(baseDate, totalApprovedEotDays);
+  const baseDate = baselineFinishDate && isValidIsoDate(baselineFinishDate) ? baselineFinishDate : '';
+  const revisedForecastFinish = baseDate ? addDaysToIsoDate(baseDate, totalApprovedEotDays) : '';
 
   return {
     totalIdentifiedDelays,

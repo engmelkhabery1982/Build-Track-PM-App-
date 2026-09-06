@@ -96,16 +96,18 @@ export function buildPrimaveraReconciliation(
   }
 
   const parsedTasks = parsePrimaveraXerTasks(fileContent || '');
+  if (!parsedTasks.length) {
+    throw new Error('The selected file contains no valid Primavera TASK records. Nothing can be committed.');
+  }
 
   // Scope filter local activities by project and contract
   const scopedLocal = localActivities.filter(
-    a => (a.project_id ? a.project_id === projectId : true) &&
-         (a.contract_id ? a.contract_id === contractId : true)
+    a => a.project_id === projectId && a.contract_id === contractId
   );
 
   const localByCode = new Map<string, Record<string, any>>();
   scopedLocal.forEach(act => {
-    const code = String(act.activity_code || act.id || '').trim();
+    const code = String(act.activity_code || act.id || '').trim().toLocaleLowerCase();
     if (code) localByCode.set(code, act);
   });
 
@@ -125,9 +127,10 @@ export function buildPrimaveraReconciliation(
   parsedTasks.forEach(p6Task => {
     const code = String(p6Task['Activity ID'] || p6Task['Source Activity ID'] || '').trim();
     if (!code) return;
-    p6Codes.add(code);
+    const normalizedCode = code.toLocaleLowerCase();
+    p6Codes.add(normalizedCode);
 
-    const localMatch = localByCode.get(code);
+    const localMatch = localByCode.get(normalizedCode);
     const p6Start = String(p6Task.Start || '—').slice(0, 10);
     const p6Finish = String(p6Task.Finish || '—').slice(0, 10);
     const p6Duration = Math.max(0, Number(p6Task['Original Duration']) || 0);
@@ -170,6 +173,16 @@ export function buildPrimaveraReconciliation(
             end_date: p6Finish,
             duration_days: p6Duration,
             activity: p6Task['Activity Name'] || localMatch.activity,
+            predecessors: String(p6Task.Predecessors || ''),
+            predecessor_links: p6Task['Predecessor Links'] || '[]',
+            relationship_type: p6Task.Relationship || 'FS',
+            lag_days: Number(p6Task['Lag (days)']) || 0,
+            calendar_name: p6Task.Calendar || localMatch.calendar_name || '',
+            calendar_working_days: p6Task['Calendar Working Days'] || localMatch.calendar_working_days || '[]',
+            calendar_exceptions: p6Task['Calendar Exceptions'] || localMatch.calendar_exceptions || '[]',
+            calendar_hours_per_day: Number(p6Task['Calendar Hours Per Day']) || Number(localMatch.calendar_hours_per_day) || 8,
+            wbs_code: p6Task.WBS || localMatch.wbs_code || '',
+            critical_path: Boolean(p6Task.Critical),
             notes: p6Task.Notes || localMatch.notes
           }
         });
@@ -194,10 +207,23 @@ export function buildPrimaveraReconciliation(
         start_date: p6Start,
         end_date: p6Finish,
         duration_days: p6Duration,
-        planned_quantity: Number(p6Task['Planned Qty']) || 1,
-        unit: 'LS',
+        planned_quantity: Number(p6Task['Planned Qty']) || 0,
+        unit: '',
         unit_rate: 0,
         planned_cost: Number(p6Task['Planned Resource Cost']) || 0,
+        planned_labor_hours: Number(p6Task['Planned Labor Hours']) || 0,
+        planned_equipment_hours: Number(p6Task['Planned Equipment Hours']) || 0,
+        predecessors: String(p6Task.Predecessors || ''),
+        predecessor_links: p6Task['Predecessor Links'] || '[]',
+        relationship_type: p6Task.Relationship || 'FS',
+        lag_days: Number(p6Task['Lag (days)']) || 0,
+        calendar_name: p6Task.Calendar || '',
+        calendar_working_days: p6Task['Calendar Working Days'] || '[]',
+        calendar_exceptions: p6Task['Calendar Exceptions'] || '[]',
+        calendar_hours_per_day: Number(p6Task['Calendar Hours Per Day']) || 8,
+        wbs_code: p6Task.WBS || '',
+        critical_path: Boolean(p6Task.Critical),
+        is_non_boq_activity: true,
         status: 'Draft',
         notes: p6Task.Notes || ''
       };
@@ -227,7 +253,7 @@ export function buildPrimaveraReconciliation(
   // Local activities missing in P6
   scopedLocal.forEach(localAct => {
     const code = String(localAct.activity_code || localAct.id || '').trim();
-    if (code && !p6Codes.has(code)) {
+    if (code && !p6Codes.has(code.toLocaleLowerCase())) {
       missingInP6++;
       activityDiffs.push({
         activityCode: code,
@@ -274,7 +300,7 @@ export function buildPrimaveraReconciliation(
       const p6Type = String(link.relationship_type || 'FS').toUpperCase();
       const p6Lag = Number(link.lag_days || 0);
 
-      const localSucc = localByCode.get(succCode);
+      const localSucc = localByCode.get(succCode.toLocaleLowerCase());
       let localLinkMatch: any = null;
 
       if (localSucc) {

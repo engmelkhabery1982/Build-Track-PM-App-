@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Upload, Download, FileText, CheckCircle2, AlertTriangle, GitFork, ShieldCheck, Database, RefreshCw, Undo2, ChevronDown, Eye } from 'lucide-react';
 import { generateCleanXer, parseXerFileContent, type XerPred, type XerTask } from '../utils/xerEngine';
 import {
@@ -8,6 +8,7 @@ import {
   type ActivityDiff,
   type RelationshipDiff
 } from '../utils/primaveraReconciliation';
+import { commitGovernedImport } from '../data/governedImport';
 
 export interface XerReconciliationProps {
   projectId?: string;
@@ -16,7 +17,7 @@ export interface XerReconciliationProps {
   localActivities?: Record<string, any>[];
   projects?: Array<{ id: string; name?: string; code?: string }>;
   contracts?: Array<{ id: string; project_id: string; title?: string; code?: string }>;
-  onCommitSuccess?: (batchId: string, summary: string) => void;
+  onCommitSuccess?: (batchId: string, summary: string) => void | Promise<void>;
   onMutated?: (mutation: any) => void;
 }
 
@@ -30,9 +31,9 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
   onCommitSuccess,
   onMutated
 }) => {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(propProjectId || (projects[0]?.id || 'p-01'));
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(propProjectId || '');
   const [selectedContractId, setSelectedContractId] = useState<string>(
-    propContractId || (contracts.find(c => c.project_id === selectedProjectId)?.id || 'c-01')
+    propContractId || ''
   );
 
   const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>('update');
@@ -50,6 +51,16 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
   const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const defaultProjectId = propProjectId || projects[0]?.id || '';
+  const defaultContractId = propContractId || contracts.find((contract) => contract.project_id === defaultProjectId)?.id || '';
+
+  useEffect(() => {
+    setSelectedProjectId(defaultProjectId);
+    setSelectedContractId(defaultContractId);
+    setReconciliationResult(null);
+    setFileContent('');
+    setCurrentFileName('No XER/P6 file loaded');
+  }, [defaultProjectId, defaultContractId]);
 
   // Filter contracts for selected project
   const availableContracts = useMemo(() => {
@@ -60,6 +71,11 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!selectedProjectId || !selectedContractId) {
+      setNotice({ kind: 'error', text: 'Select a project and its main contract before loading the XER file.' });
+      event.target.value = '';
+      return;
+    }
     setCurrentFileName(file.name);
     const reader = new FileReader();
 
@@ -122,7 +138,18 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
     const batchId = `xer-batch-${crypto.randomUUID().slice(0, 8)}`;
 
     try {
-      // Execute local mutation for inserted rows and refresh updates
+      const committed = await commitGovernedImport({
+        batchId,
+        source: 'Primavera XER Reconciliation',
+        fileName: currentFileName,
+        targetTable: 'schedules',
+        projectId: selectedProjectId,
+        contractId: selectedContractId,
+        rows: reconciliationResult.preparedInsertRows,
+        updates: reconciliationResult.preparedUpdatePatches,
+        auxiliaryRows: reconciliationResult.newAuxiliaryRows,
+      });
+      // Update the UI projection only after the SQLite transaction commits.
       if (reconciliationResult.preparedInsertRows.length) {
         onMutated?.({
           type: 'insertMany',
@@ -140,11 +167,11 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
         }
       });
 
-      setLastBatchId(batchId);
+      setLastBatchId(committed.batchId);
       const summaryText = `Governed Primavera import committed atomically. Inserted: ${reconciliationResult.preparedInsertRows.length}, Refreshed: ${reconciliationResult.preparedUpdatePatches.length}. Actuals preserved intact.`;
       setNotice({ kind: 'success', text: summaryText });
       setAuditMessage(`Batch ${batchId} committed successfully. All actuals preserved.`);
-      onCommitSuccess?.(batchId, summaryText);
+      await onCommitSuccess?.(committed.batchId, summaryText);
     } catch (err: any) {
       setNotice({ kind: 'error', text: `Commit failed: ${err.message || 'Unknown error'}` });
     } finally {
@@ -199,7 +226,9 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
               onChange={e => {
                 setSelectedProjectId(e.target.value);
                 const firstContract = contracts.find(c => c.project_id === e.target.value);
-                if (firstContract) setSelectedContractId(firstContract.id);
+                setSelectedContractId(firstContract?.id || '');
+                setReconciliationResult(null);
+                setFileContent('');
               }}
               className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700"
             >
@@ -212,7 +241,7 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
           {availableContracts.length > 0 && (
             <select
               value={selectedContractId}
-              onChange={e => setSelectedContractId(e.target.value)}
+              onChange={e => { setSelectedContractId(e.target.value); setReconciliationResult(null); setFileContent(''); }}
               className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700"
             >
               {availableContracts.map(c => (
@@ -234,7 +263,7 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xer,.txt,.csv,.xlsx,.xls"
+            accept=".xer,.txt"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -247,7 +276,7 @@ export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
           </button>
 
           <button
-            disabled={!reconciliationResult}
+            disabled={!reconciliationResult || !selectedProjectId || !selectedContractId || reconciliationResult.parsedCount === 0 || isCommitting}
             onClick={handleExecuteGovernedCommit}
             className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40"
           >

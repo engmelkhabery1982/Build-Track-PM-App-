@@ -2340,6 +2340,7 @@ function AppWorkspace() {
           resourceMasters={data.resourceMasters as Record<string, any>[]}
           scheduleResourceAssignments={data.scheduleResourceAssignments as Record<string, any>[]}
           workCalendars={data.workCalendars as Record<string, any>[]}
+          onDataReload={data.reload}
           onNavigate={setActiveView}
         />
       );
@@ -2688,13 +2689,26 @@ function AppWorkspace() {
         const approvedTimeImpact = data.variations
           .filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved')
           .reduce((sum: number, variation: any) => sum + (Number(variation.time_impact_days) || 0), 0);
+        const approvedVariationIds = new Set(data.variations
+          .filter((variation: any) => variation.contract_id === contract.id && variation.status === 'Approved')
+          .map((variation: any) => variation.id));
+        // A delay linked to an approved variation is already represented by
+        // that variation's EOT. Only independent approved delay events add a
+        // separate forecast extension, preventing double counting.
+        const approvedIndependentDelayDays = data.delayEvents
+          .filter((event: any) => event.contract_id === contract.id
+            && ['Approved', 'Closed'].includes(String(event.status))
+            && (!event.variation_id || !approvedVariationIds.has(event.variation_id)))
+          .reduce((sum: number, event: any) => sum + (Number(event.approved_extension_days) || 0), 0);
+        const totalApprovedTimeImpact = approvedTimeImpact + approvedIndependentDelayDays;
         return {
           ...contract,
           contract_role: contract.parent_main_contract_id ? 'Subcontract' : 'Main Contract',
           project_code: contract.project_code || data.projects.find((project: any) => project.id === contract.project_id)?.project_code || '',
           modified_contract_value: (Number(contract.contract_value) || 0) + approvedVariationValue,
-          revised_end_date: addCalendarDays(contract.end_date, approvedTimeImpact),
-          approved_time_impact_days: approvedTimeImpact,
+          revised_end_date: addCalendarDays(contract.end_date, totalApprovedTimeImpact),
+          approved_time_impact_days: totalApprovedTimeImpact,
+          approved_delay_event_days: approvedIndependentDelayDays,
         };
       });
     const contractById = new Map(contractsWithModifiedValue.map((contract: any) => [contract.id, contract]));
@@ -4318,7 +4332,10 @@ function AppWorkspace() {
         selectedContractId={null}
         projects={data.projects}
         contracts={data.contracts}
-        tasks={data.tasks}
+        schedules={data.schedules}
+        baselines={data.baselines as Record<string, any>[]}
+        scheduleVersions={data.scheduleVersions as Record<string, any>[]}
+        dataDate={unifiedDataDate}
         wbsNodes={data.wbsNodes as WBSNode[]}
         variations={data.variations}
         delayEvents={data.delayEvents || []}
