@@ -25,6 +25,15 @@
 5. الأرقام المالية والكميات والتقدم يجب أن تكون قابلة للتتبع إلى SQLite ومؤرخة.
 6. عند غياب مصدر كافٍ تعرض `Unavailable` ولا تنشئ fallback رقميًا.
 
+## حالة هذا الملف
+
+هذا أمر تاريخي خاص بـA2، وهي مغلقة. **ممنوع إعادة تنفيذ A2.** نقطة الاستلام الحالية
+ومواصفات التنفيذ المستمر موجودتان في:
+
+- `docs/agent-work-orders/CLOUD_PROGRESS_LEDGER.md`
+- `docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`
+- `docs/FEATURE_CATALOG_37_AND_CONTINUATION_AR.md`
+
 ## الميزة المطلوبة فقط
 
 **A2 — Unified Project Data Date**: إنشاء مصدر حالة واحد على مستوى التطبيق لتاريخ القياس المختار للمشروع، ثم تمريره إلى المستهلكين بدل استعمال `new Date()` أو state مستقل داخل كل شاشة.

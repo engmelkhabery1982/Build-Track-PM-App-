@@ -26,6 +26,12 @@
    حذف `package-lock.json` أو `src-tauri/Cargo.lock`، أو تعديل `.env.example` أو
    ملفات توليد/توثيق خارج الميزة، إلا إذا نص أمر الميزة عليها صراحة.
 
+قائمة الحذف لكل الميزات الحالية `DELETE_ALLOWLIST: []`. لذلك أي `D` أو `R` يظهر في
+`git diff --name-status START_HEAD..HEAD` خطأ يجب استرجاعه قبل commit. ممنوع حذف أو
+استبدال manifest/lockfile/migration قديمة/test قائم/Data Dictionary/Governance/أمر
+عمل، وممنوع `git reset --hard` و`git clean` وforce-push. عدّل hunks المطلوبة فقط،
+ولا تستبدل ملفًا كاملًا لتجاوز تعارض أو مشكلة ترميز.
+
 التزم بنموذج العقد الرئيسي/الباطن وBOQ/WIR وBaseline/Current/Forecast وProject Data
 Date وقواعد الإيراد/التكلفة المكتوبة في الأمر الموحد. ممنوع اختراع حقل أو رقم أو
 fallback. أي حقل جديد يحتاج Data Dictionary وSQLite migration وrepository mapping
@@ -45,9 +51,13 @@ DEFER/REMOVE-UNSAFE، احتفظ بالصحيح، أصلح المفيد، واع
 اختبارًا. حدّث `CLOUD_PROGRESS_LEDGER.md` وتقرير نتيجة الميزة. نفذ commit صغيرًا
 واضحًا ثم Push إلى Agent Cloud فقط. لا تدفع إلى المستودع الرسمي ولا تنشئ release.
 
-بعد وصول الميزة الواحدة إلى `READY FOR CODEX REVIEW`: حدّث التقرير والسجل، نفذ
-commit وPush، ثم **توقف إلزاميًا**. لا تبدأ الميزة التالية حتى يغيّر Codex حالة
-السجل إلى `READY — NOT STARTED`. الوكيل لا يمنح نفسه درجة 8/10 ولا يكتب `CLOSED`.
+بعد اكتمال كل ميزة: نفذ test/build/Cargo عند اللزوم وdiff check، حدّث تقريرها والسجل
+إلى `READY FOR CODEX REVIEW`، ثم commit وPush منفصلين. أعد regression من HEAD المدفوع؛
+إذا نجح، غيّر السجل في commit مستقل إلى الميزة التالية `IN PROGRESS` وواصل تلقائيًا
+دون انتظار المستخدم. لا تمنح نفسك `CLOSED 8/10`؛ الانتقال لا يعد اعتمادًا نهائيًا.
+لا تنتقل إذا بقيت فجوة حرجة من مواصفة الميزة، أو فشل اختبار، أو كانت الشاشة غير
+مربوطة بـSQLite. التوقف فقط عند blocker موثق أو قرب انتهاء الحد، وعندها WIP آمن +
+Push + `Exact next action` حتى يكمل الوكيل التالي من السطر نفسه.
 
 إذا اقترب حد الاستخدام قبل الاكتمال: توقف عن بدء أجزاء جديدة، احفظ الجزء المتماسك
 في commit `wip`، سجل الاختبارات والفجوات و`Exact next action` في سجل الاستمرار، ثم

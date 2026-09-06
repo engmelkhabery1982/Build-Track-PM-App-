@@ -71,7 +71,7 @@
 - العمل متسلسل على `BuildTrack-Agent-Cloud/main` لتوافق Google AI Studio GitHub Sync.
 - وكيل واحد يكتب في اللحظة نفسها. قبل كل جلسة: Pull. بعد كل وحدة: test ثم commit ثم Push.
 - لا تستخدم force-push ولا تعيد كتابة history.
-- ميزة واحدة في كل سلسلة commits؛ لا تجمع A3 وA4 أو غيرهما في commit واحد.
+- ميزة واحدة في كل commit/سلسلة commits مترابطة؛ لا تجمع ميزتين في commit واحد.
 - عناوين commits: `feat(a3): ...`، `test(a3): ...` أو `wip(a3): ...` عند انقطاع الحد.
 - حدث `CLOUD_PROGRESS_LEDGER.md` في آخر commit لكل جلسة.
 - Codex وحده ينقل المحتوى إلى المستودع الرسمي بعد المراجعة والإصلاح.
@@ -80,8 +80,10 @@
   لمعالجة قيود بيئة الوكيل. أي تغيير مساعد خارج النطاق يوضع في commit منفصل ويُؤجل.
 - حافظ على ترميز UTF-8 للوثائق العربية؛ ظهور نص مشوه أو تغيير ملف كامل بسبب
   الترميز/نهايات الأسطر فشل تسليم.
-- عند `READY FOR CODEX REVIEW` نفذ Push ثم توقف. لا تبدأ الميزة التالية قبل أن
-  يعتمد Codex الحالية ويعيد ضبط السجل. Codex وحده يعلن `CLOSED 8/10`.
+- عند `READY FOR CODEX REVIEW` نفذ Commit وPush، ثم شغّل اختبارات الأساس على HEAD
+  المدفوع. إذا نجحت ولم توجد فجوة حرجة، سجّل الميزة التالية `IN PROGRESS` في commit
+  مستقل وواصل دون انتظار المستخدم. انتقال الوكيل **مؤقت للتنفيذ المتتابع** ولا يعني
+  أن السابقة `CLOSED 8/10`؛ Codex وحده يمنح الإغلاق النهائي بعد المراجعة.
 - المكوّن الجديد غير المستورد والمُrender من مسار إنتاج فعلي يعتبر **Dead Code وفشلًا**؛
   يجب إثبات الوصول إليه باختبار تكامل. لا يكفي إنشاء ملف UI أو إضافته إلى TypeScript.
 - لا تضع metadata أو حالات أو snapshots حاكمة داخل `payload` فقط: أنشئ أعمدة SQLite
@@ -89,6 +91,18 @@
 - قارن دائمًا `git diff START_HEAD..HEAD`، لا آخر commit فقط؛ أي حذف lockfile أو تغيير
   موروث خارج الميزة يجب إصلاحه قبل التسليم. لا تعدّل سطر `Last accepted capability`
   ولا تعلن تقييمًا أو `CLOSED`؛ اكتب `READY FOR CODEX REVIEW` فقط.
+- **قائمة الحذف محظورة افتراضيًا:** لا تحذف أو تعيد تسمية أي ملف متتبع إلا إذا ورد
+  مساره حرفيًا تحت `DELETE_ALLOWLIST` في مواصفة الميزة؛ والقائمة الافتراضية فارغة.
+  قبل كل commit شغّل `git diff --name-status START_HEAD..HEAD`، وأي سطر `D` أو `R`
+  غير مصرح به يعاد فورًا من HEAD. يحظر خصوصًا حذف/استبدال: `package.json`،
+  `package-lock.json`، `Cargo.toml`، `Cargo.lock`، `AGENTS.md`، `.gitignore`، ملفات
+  migrations السابقة، أي test قائم، ملفات Data Dictionary/Governance، وأوامر العمل.
+- لا تستخدم `git reset --hard` أو `git clean` أو force-push أو حذفًا جماعيًا. لا تمس
+  `.git` أو قواعد `*.db` أو النسخ الاحتياطية أو بيانات المستخدم. عند تعارض ملف، أصلح
+  hunk المطلوب فقط؛ لا تستبدل الملف الكامل بنسخة مولدة أو مختصرة.
+- لا تعدّل migration مطبقة لتغيير معناها؛ أضف migration جديدة متسلسلة، واختبر قاعدة
+  جديدة وقاعدة مرت عليها النسخ السابقة. لا تغيّر dependency/lockfile إلا لضرورة
+  مثبتة في الميزة ومع اختبار build؛ قيود بيئة السحابة ليست سببًا للتغيير.
 
 ## 6. بوابة القبول المشتركة
 
@@ -170,10 +184,49 @@ Approved → Superseded مع منع تعديل/حذف المعتمد؛ اختي�
 
 **الهدف:** استيراد XER/Primavera تحديثًا محكومًا لا نسخ صفوف.
 
-**المطلوب:** اختيار المشروع والعقد؛ parse calendars/WBS/activities/relationships/
-resources/cost distributions؛ mapping preview؛ سياسة duplicate (update/skip/conflict)؛
-مطابقة activity code؛ مقارنة file/local؛ commit ذري + rollback + audit؛ الحفاظ على
-actuals المحلية إلا بسياسة صريحة؛ اختيار sheet عند Excel متعدد الشيتات.
+**الحالة عند HEAD المرجعي `9edb10c`:** الأساس مدمج: نطاق حقيقي، diff، سياسات
+duplicate، رفض الملف الفارغ، وحفظ schedule rows/updates عبر `commitGovernedImport`.
+لا تعِد كتابة هذه الأجزاء. ابدأ من الفجوات التالية فقط.
+
+**المطلوب التفصيلي للإغلاق:**
+
+1. استخرج من XER: PROJECT/PROJWBS/CALENDAR/TASK/TASKPRED/RSRC/TASKRSRC وبيانات
+   التوزيع المتاحة، مع تحويل duration/lag باستخدام hours-per-day للتقويم الصحيح،
+   والحفاظ على Source IDs منفصلة عن الأكواد المرئية المتكررة.
+2. اعرض Preview قبل الحفظ في أقسام Activities، Relationships، WBS، Calendars،
+   Resources/Assignments؛ وكل صف يحمل action صريحًا Insert/Refresh/Skip/Conflict
+   وسببًا. لا تعرض «نجاح» قبل عودة نتيجة المعاملة من SQLite.
+3. طابق WBS والتقويم والمورد بأكواد محكومة داخل المشروع/العقد؛ أنشئ فقط المفقود
+   كـ`auxiliaryRows` من الأنواع التي يدعمها backend. اربط schedule rows بـ`wbs_id`
+   و`calendar_id`، واربط assignments بـ`schedule_id/resource_id` داخل نفس batch.
+4. Refresh يسمح بتغيير planning fields المعتمدة فقط: plan dates/duration/logic/
+   constraints/calendar/WBS/resource plan. يمنع scope/code/BOQ quantity وactual dates/
+   progress/EV/AC/WIR من التعديل. اكتب اختبارًا يفشل لو حاول patch تغيير actual.
+5. العلاقات المتعددة FS/SS/FF/SF والـlag تحفظ كـIDs محلية قابلة لـCPM بعد حل الأكواد؛
+   predecessor مفقود أو cycle يظهر Conflict ولا يمر commit دون سياسة معالجة واضحة.
+6. الأنشطة بلا BOQ تعامل `is_non_boq_activity=true` ولا تختلق كمية أو وحدة أو تكلفة.
+   النشاط المرتبط بـBOQ يجب أن يمر حوكمة الكمية ولا يتجاوز المتبقي.
+7. Commit واحد ذري يشمل masters/activities/relationships/assignments/audit batch؛
+   أي خطأ متأخر يعيد كل الصفوف. وفر Reversal من batch audit يعيد inserts والتحديثات
+   والـauxiliary rows دون حذف actual history.
+8. Excel: استخدم قارئ XLSX الحقيقي، اعرض أسماء الشيتات عند التعدد، ثم mapping preview؛
+   ممنوع قراءة binary Excel بـ`FileReader.readAsText`. إذا لم ينفذ كاملًا لا تعرض
+   `.xlsx/.xls` في accept ولا تدّعمه في التقرير.
+9. Export Reviewed XER يجب أن يحافظ على IDs/relations/calendars واختبار parse→export→
+   parse يثبت counts والروابط والمدد والlags. لا تسمه P6 round-trip إن فقد masters.
+10. اختبارات القبول: XER واقعي فيه WBS متداخل وتقويم استثناءات وعلاقات متعددة وموارد
+    وكود نشاط مكرر؛ اختبار refresh يحافظ على actuals؛ duplicate بكل سياسة؛ missing
+    predecessor/cycle؛ cross-scope؛ late failure rollback؛ reversal؛ إعادة تحميل SQLite؛
+    وتكامل UI يثبت أن زر Commit يستدعي البوابة الذرية ثم reload.
+
+**مصادر الحقيقة/الملفات المتوقعة:** `src/data/primaveraImport.ts`،
+`src/utils/primaveraReconciliation.ts`، `src/components/XerReconciliationBoard.tsx`،
+`src/data/governedImport.ts`، `src-tauri/src/import_batch.rs`، اختبارات C4 ووثيقتها.
+تعديل غيرها يحتاج تبريرًا في التقرير. `DELETE_ALLOWLIST: []`.
+
+**قبول الوكيل قبل الانتقال:** كل النقاط أعلاه مطبقة أو يسجل Blocker خارجي مثبت؛
+`npm test` وbuild وCargo tests وdiff check ناجحة، وResult يطابق الواقع. لا يجوز تجاوز
+C4 إلى D1 إذا بقي commit زرًا شكليًا أو بقيت masters/assignments غير محفوظة.
 
 ### D1 — Time-phased Cost Plan by Control Account
 
@@ -231,19 +284,20 @@ Superseded؛ sign-off؛ قالب مرن وشعار/حقول/صفحات؛ PDF/Exc
 
 ### الحزمة اللاحقة بعد E3
 
-تنفذ بالترتيب نفسه وبميزة واحدة في كل مرة: Labor approval/posting، Equipment meter/
-fuel/approval/posting، Claims/PVO workflow، Client/Subcontract invoice reconciliation،
-Cash forecast assumptions/version، Health Score weights/version، Resource leveling
-decisions، Report Designer persistence، Append-only Audit Explorer، Hybrid sync، ثم
-Users/Roles/Portal/Web. الذكاء الصناعي يأتي بعد البيانات المحكومة، ويكون read-only
-مع ذكر مصدر كل رقم ولا يعتمد أو يعدل معاملة.
+تنفذ بالترتيب والمواصفات التفصيلية الموجودة في
+`docs/FEATURE_CATALOG_37_AND_CONTINUATION_AR.md` تحت «Backlog التنفيذي الدقيق».
+ميزة واحدة واختبار/commit/push مستقل لكل بوابة. الذكاء الصناعي يأتي بعد البيانات
+المحكومة، ويكون read-only مع ذكر مصدر كل رقم ولا يعتمد أو يعدل معاملة.
 
 ## 8. تحديث الانتقال بين الميزات
 
 بعد إنهاء الميزة الحالية:
 
 1. ضع نتيجتها في `docs/agent-results/`.
-2. غيّر سجل الاستمرار إلى `READY FOR CODEX REVIEW`.
-3. لا تبدأ التالية في الجلسة نفسها إلا إذا كانت الاختبارات والبناء ناجحة وكل تغييرات
-   الحالية committed/pushed، ثم غيّر السجل صراحة إلى الميزة التالية `IN PROGRESS`.
-4. عند دخول وكيل جديد، يكمل الحالة المسجلة ولا يعيد تفسير ترتيب الخطة.
+2. غيّر سجل الاستمرار إلى `READY FOR CODEX REVIEW`، ثم commit وPush للميزة منفردة.
+3. أعد تشغيل regression على HEAD المدفوع. عند النجاح غيّر السجل في commit مستقل إلى
+   الميزة التالية `IN PROGRESS` وواصل مباشرة دون انتظار رسالة جديدة.
+4. لا تتوقف اختياريًا بين الميزات. التوقف مسموح فقط عند: قرب انتهاء الحد، فشل متكرر
+   موثق، تعارض remote، سر/بيانات مستخدم، أو قرار معماري لا يمكن حسمه من المصادر.
+   عندها نفذ WIP commit آمن + Push + `Exact next action` قبل التوقف.
+5. عند دخول وكيل جديد، يكمل الحالة المسجلة ولا يعيد تفسير ترتيب الخطة.

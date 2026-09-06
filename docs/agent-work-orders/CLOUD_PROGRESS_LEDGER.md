@@ -42,5 +42,8 @@
   - Remaining: governed auxiliary masters/assignments, round-trip verification, and realistic desktop acceptance
 - Tests actually run and exact results: `node --test tests/*.test.mjs` (163/163 passed).
 - Build result: `npm run build` passed (`compile_applet` clean).
-- Exact next action: continue C4 auxiliary-master integration and realistic desktop acceptance; do not mark C4 complete before its 8/10 gate.
+- Reviewed implementation baseline before this work-order update: `9edb10c57cc416fd78d65d0afc01af453fe35461`
+- Exact next action: implement C4 auxiliary WBS/work-calendar/resource/resource-assignment rows in the same governed batch, resolve predecessor codes to persisted local IDs, add atomic failure/reversal/reload and XER round-trip tests, then run the complete gate. After commit/push, continue automatically to D1 only when every C4 critical acceptance item passes.
+- Continuous sequence after C4: `D1 → D2 → D3 → D4 → E1 → E2 → E3 → F1 → F2 → F3 → F4 → F5 → F6 → F7 → F8 → F9 → G1 → G2 → G3 → H1`.
+- For every feature: one isolated commit series, `DELETE_ALLOWLIST: []`, real SQLite/repository/UI integration, positive + negative + reconciliation + reopen tests, full test/build gate, truthful result, push, then advance without waiting.
 
