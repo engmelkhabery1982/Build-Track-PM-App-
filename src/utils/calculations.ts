@@ -388,7 +388,7 @@ export function calculateTimeImpactAnalysis(params: {
   delayEvent: DelayEvent;
   availableFloatDays?: number;
 }): TIACalculationResult {
-  const totalFragnetDelay = params.fragnet.reduce((sum, f) => sum + (f.duration_days || 0), 0) || params.delayEvent.delay_days || 0;
+  const totalFragnetDelay = params.fragnet.reduce((sum, f) => sum + (f.duration_days || 0), 0) || params.delayEvent.requested_extension_days || (params.delayEvent as any).delay_days || 0;
   const floatAvailable = params.availableFloatDays ?? 0;
   const isPredecessorOnCp = params.fragnet.some(f => params.criticalPathActivityIds.includes(f.predecessor_id)) || floatAvailable <= 0;
 
@@ -408,10 +408,20 @@ export function calculateTimeImpactAnalysis(params: {
     }
   }
 
-  const isExcusable = params.delayEvent.responsibility === 'OWNER' || params.delayEvent.responsibility === 'NEUTRAL' || params.delayEvent.event_type === 'FORCE_MAJEURE';
+  const isExcusable =
+    params.delayEvent.entitlement_type === 'Compensable & Excusable' ||
+    params.delayEvent.entitlement_type === 'Excusable Non-Compensable' ||
+    params.delayEvent.event_category === 'Employer Delay' ||
+    params.delayEvent.event_category === 'Force Majeure' ||
+    (params.delayEvent as any).responsibility === 'OWNER' ||
+    (params.delayEvent as any).responsibility === 'NEUTRAL' ||
+    (params.delayEvent as any).event_type === 'FORCE_MAJEURE';
+
   const excusableEotDays = isExcusable ? projectDelayDays : 0;
   const nonExcusableDays = isExcusable ? 0 : projectDelayDays;
-  const isCompensable = params.delayEvent.responsibility === 'OWNER';
+  const isCompensable =
+    params.delayEvent.entitlement_type === 'Compensable & Excusable' ||
+    (params.delayEvent as any).responsibility === 'OWNER';
 
   const baseDate = new Date(params.baseFinishDate);
   baseDate.setDate(baseDate.getDate() + projectDelayDays);
@@ -427,7 +437,11 @@ export function calculateTimeImpactAnalysis(params: {
     nonExcusableDays,
     isCompensable,
     impactedFinishDate,
-    requiresLiquidatedDamagesReview: nonExcusableDays > 0 && params.delayEvent.responsibility === 'CONTRACTOR'
+    requiresLiquidatedDamagesReview: nonExcusableDays > 0 && (
+      params.delayEvent.event_category === 'Contractor Delay' ||
+      params.delayEvent.entitlement_type === 'Non-Excusable' ||
+      (params.delayEvent as any).responsibility === 'CONTRACTOR'
+    )
   };
 }
 

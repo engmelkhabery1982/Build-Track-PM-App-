@@ -1268,6 +1268,7 @@ export type ViewKey =
   | 'progressCorrections'
   | 'schedule'
   | 'scheduleVersions'
+  | 'delayEvents'
   | 'workCalendars'
   | 'scheduleDistributions'
   | 'wir'
@@ -1314,20 +1315,6 @@ export type ViewKey =
   | 'safety'
   | 'documents'
   | 'tracking';
-
-export interface DelayEvent {
-  id: string;
-  project_id: string;
-  schedule_id?: string;
-  variation_id?: string;
-  title: string;
-  event_code: string;
-  event_type: 'EMPLOYER_DELAY' | 'CONTRACTOR_DELAY' | 'FORCE_MAJEURE' | 'VARIATION_ADDITION';
-  responsibility: 'OWNER' | 'CONTRACTOR' | 'SHARED' | 'NEUTRAL';
-  impact_date: string;
-  delay_days: number;
-  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
-}
 
 export interface FragnetActivity {
   id: string;
@@ -1461,6 +1448,65 @@ export interface EvmCalculationResult {
   ETC: number;
   VAC: number;
   TCPI: number;
+}
+
+export type DelayEventCategory =
+  | 'Employer Delay'
+  | 'Contractor Delay'
+  | 'Force Majeure'
+  | 'Subcontractor Delay'
+  | 'Third Party'
+  | 'Weather / Site Condition';
+
+export type DelayEntitlementType =
+  | 'Compensable & Excusable'
+  | 'Excusable Non-Compensable'
+  | 'Non-Excusable'
+  | 'Under Review';
+
+export type DelayEventStatus =
+  | 'Identified'
+  | 'Submitted'
+  | 'Approved'
+  | 'Rejected'
+  | 'Closed';
+
+export interface TimeImpactAnalysis {
+  preDelayFinishDate: string;
+  postDelayFinishDate: string;
+  netCpmImpactDays: number;
+  criticalPathAffected: boolean;
+  affectedActivityCode?: string;
+  affectedActivityName?: string;
+  baselineFinishDate?: string;
+  forecastRevisedFinishDate?: string;
+  analysisDate?: string;
+  notes?: string;
+}
+
+export interface DelayEvent {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  project_id: string;
+  contract_id: string | null;
+  wbs_id: string | null;
+  schedule_activity_id: string | null;
+  variation_id: string | null;
+  delay_code: string;
+  event_name: string;
+  event_category: DelayEventCategory;
+  discovery_date: string;
+  root_cause: string;
+  responsible_party: string;
+  entitlement_type: DelayEntitlementType;
+  requested_extension_days: number;
+  approved_extension_days: number;
+  mitigation_action: string;
+  status: DelayEventStatus;
+  cpm_impact_days: number;
+  time_impact_analysis: TimeImpactAnalysis;
+  notes: string;
 }
 
 

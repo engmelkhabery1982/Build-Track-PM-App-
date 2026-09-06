@@ -4,7 +4,7 @@ import type {
   Project, Task, Cost, CostEntry, Procurement, ProcurementReceipt, SupplierInvoice, SupplierInvoiceLine, SupplierInvoicePayment, Safety, ProgressEntry,
   Schedule, Contract, BOQHeader, BOQItem, CashFlowEntry, SubcontractorInvoice,
   ClientInvoice, PaymentCertificate, Variation, VariationLine, DocumentEntry, WIREntry, LaborDuty, Equipment, TrackingSheet, ResourceMaster,
-  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ScheduleVersion, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar, ProgressCorrection,
+  InvoiceTracking, ScheduleDistribution, ScheduleResourceAssignment, ScheduleVersion, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, ApprovalRequest, AuditLogEntry, RFIEntry, SubmittalEntry, QualityEntry, SiteDailyReport, PMOSnapshot, AppUser, Party, PartyContact, RateHistory, ReportTemplate, CostCode, WBSNode, ContractSOVLine, ControlAccount, CostChange, WorkCalendar, ProgressCorrection, DelayEvent,
 } from '@/types';
 import { syncWirApprovalProgress, evaluateBackToBackPaymentAuthorization } from '@/utils/commercialControl';
 
@@ -31,6 +31,7 @@ export function useData() {
   const [scheduleResourceAssignments, setScheduleResourceAssignments] = useState<ScheduleResourceAssignment[]>([]);
   const [workCalendars, setWorkCalendars] = useState<WorkCalendar[]>([]);
   const [scheduleVersions, setScheduleVersions] = useState<ScheduleVersion[]>([]);
+  const [delayEvents, setDelayEvents] = useState<DelayEvent[]>([]);
   const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
   const [reportingPeriods, setReportingPeriods] = useState<ReportingPeriod[]>([]);
   const [governanceRegister, setGovernanceRegister] = useState<GovernanceRegisterEntry[]>([]);
@@ -86,7 +87,7 @@ export function useData() {
 
     try {
       const [
-        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, sv, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, pcor, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, ca, cchg, pcert,
+        p, t, c, ce, pr, prec, supi, supil, supip, s, pg, sc, sd, sra, wc, sv, de, bl, rp, gr, ap, al, rf, su, qu, sdr, sn, us, ct, bh, bq, cf, si, ci, cit, sit, va, vl, dc, wr, pcor, ld, eq, rm, tr, pa, pc, rh, rt, cc, wn, sov, ca, cchg, pcert,
       ] = await Promise.all([
         dataRepository.list<Project>('projects'),
         dataRepository.list<Task>('tasks'),
@@ -104,6 +105,7 @@ export function useData() {
         listOptional<ScheduleResourceAssignment>('schedule_resource_assignments'),
         listOptional<WorkCalendar>('work_calendars'),
         listOptional<ScheduleVersion>('schedule_versions'),
+        listOptional<DelayEvent>('delay_events'),
         listOptional<ProjectBaseline>('project_baselines'),
         listOptional<ReportingPeriod>('reporting_periods'),
         listOptional<GovernanceRegisterEntry>('governance_register'),
@@ -151,6 +153,7 @@ export function useData() {
       setScheduleResourceAssignments(sra);
       setWorkCalendars(wc);
       setScheduleVersions(sv);
+      setDelayEvents(de);
       setBaselines(bl);
       setReportingPeriods(rp);
       setGovernanceRegister(gr);
@@ -304,6 +307,7 @@ export function useData() {
       case 'schedule_resource_assignments': apply(setScheduleResourceAssignments); break;
       case 'work_calendars': apply(setWorkCalendars); break;
       case 'schedule_versions': apply(setScheduleVersions); break;
+      case 'delay_events': apply(setDelayEvents); break;
       case 'project_baselines': apply(setBaselines); break;
       case 'reporting_periods': apply(setReportingPeriods); break;
       case 'governance_register': apply(setGovernanceRegister); break;
@@ -366,7 +370,7 @@ export function useData() {
   }, [listOptional]);
 
   return {
-    projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, scheduleResourceAssignments, workCalendars, scheduleVersions, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
+    projects, tasks, costs, costEntries, procurement, procurementReceipts, supplierInvoices, supplierInvoiceLines, supplierInvoicePayments, safety, progress, schedules, scheduleDistributions, scheduleResourceAssignments, workCalendars, scheduleVersions, delayEvents, baselines, reportingPeriods, governanceRegister, approvals, auditLog, rfis, submittals, quality, siteDailyReports, snapshots, users,
     contracts, boqHeaders, boqItems, cashFlow, subInvoices, clientInvoices,
     clientInvoiceTracking, subcontractorInvoiceTracking, variations, variationLines,
     documents, wirEntries, progressCorrections, laborDuty, equipment, resourceMasters, tracking, parties, partyContacts, rateHistory, reportTemplates, costCodes, wbsNodes, contractSovLines, controlAccounts, costChanges, paymentCertificates, loading,

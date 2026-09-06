@@ -2056,7 +2056,7 @@ pub fn run() {
         version_type TEXT NOT NULL CHECK (version_type IN ('Baseline', 'Current', 'Forecast', 'What-If')),
         status TEXT NOT NULL CHECK (status IN ('Draft', 'Approved', 'Superseded')),
         revision_number INTEGER NOT NULL CHECK (revision_number >= 1),
-        data_date TEXT NOT NULL CHECK (length(data_date) = 10 AND date(data_date) = data_date),
+        data_date TEXT NOT NULL CHECK (length(data_date) = 10 AND date(data_date, '+0 days') = data_date),
         owner TEXT NOT NULL,
         reason TEXT NOT NULL,
         activity_snapshot TEXT NOT NULL CHECK (json_valid(activity_snapshot) AND json_type(activity_snapshot) = 'array'),
@@ -2103,6 +2103,60 @@ pub fn run() {
       BEFORE DELETE ON schedule_versions
       WHEN OLD.status IN ('Approved', 'Superseded')
       BEGIN SELECT RAISE(ABORT, 'Approved or Superseded schedule versions cannot be deleted.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 51,
+            description: "delay_events_governed_time_impact_register",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS delay_events (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT NOT NULL,
+        contract_id TEXT,
+        boq_header_id TEXT,
+        boq_item_id TEXT,
+        parent_main_project_id TEXT,
+        parent_main_contract_id TEXT,
+        wbs_id TEXT,
+        schedule_activity_id TEXT,
+        variation_id TEXT,
+        delay_code TEXT NOT NULL,
+        event_name TEXT NOT NULL,
+        event_category TEXT NOT NULL CHECK (event_category IN ('Employer Delay', 'Contractor Delay', 'Force Majeure', 'Subcontractor Delay', 'Third Party', 'Weather / Site Condition')),
+        discovery_date TEXT NOT NULL CHECK (length(discovery_date) = 10 AND date(discovery_date, '+0 days') = discovery_date),
+        root_cause TEXT NOT NULL,
+        responsible_party TEXT NOT NULL,
+        entitlement_type TEXT NOT NULL CHECK (entitlement_type IN ('Compensable & Excusable', 'Excusable Non-Compensable', 'Non-Excusable', 'Under Review')),
+        requested_extension_days INTEGER NOT NULL CHECK (requested_extension_days >= 0),
+        approved_extension_days INTEGER NOT NULL CHECK (approved_extension_days >= 0),
+        mitigation_action TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('Identified', 'Submitted', 'Approved', 'Rejected', 'Closed')),
+        cpm_impact_days INTEGER NOT NULL DEFAULT 0,
+        time_impact_analysis TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(time_impact_analysis)),
+        notes TEXT NOT NULL DEFAULT '',
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_delay_events_project ON delay_events(project_id);
+      CREATE INDEX IF NOT EXISTS idx_delay_events_contract ON delay_events(contract_id);
+      CREATE INDEX IF NOT EXISTS idx_delay_events_scope_status ON delay_events(project_id, contract_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_delay_events_code_unique
+        ON delay_events(project_id, COALESCE(contract_id, ''), lower(delay_code));
+      CREATE TRIGGER IF NOT EXISTS delay_events_updated_at
+      AFTER UPDATE ON delay_events
+      FOR EACH ROW
+      WHEN OLD.status IS NEW.status
+      BEGIN
+        UPDATE delay_events SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS delay_events_immutable_delete_v1
+      BEFORE DELETE ON delay_events
+      WHEN OLD.status IN ('Approved', 'Closed')
+      BEGIN SELECT RAISE(ABORT, 'Approved or Closed delay events cannot be deleted.'); END;
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },

@@ -15,8 +15,9 @@ import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
 import { ScheduleVersionModal } from '@/components/ScheduleVersionModal';
+import { DelayRegisterModal } from '@/components/DelayRegisterModal';
 import { ProjectDataDateProvider, useProjectDataDate } from '@/context/ProjectDataDateContext';
-import type { ViewKey, Project, ScheduleVersion } from '@/types';
+import type { ViewKey, Project, ScheduleVersion, DelayEvent, WBSNode } from '@/types';
 import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, reconcileScheduleDistributions, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateEvmAtDataDate } from '@/utils/evm';
@@ -1048,6 +1049,7 @@ function AppWorkspace() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [scheduleVersionOpen, setScheduleVersionOpen] = useState(false);
+  const [delayRegisterOpen, setDelayRegisterOpen] = useState(false);
   const { dataDate: unifiedDataDate } = useProjectDataDate();
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
@@ -3824,6 +3826,11 @@ function AppWorkspace() {
           title: 'Capture governed schedule versions and compare scope, dates, logic, float, criticality and budget without changing the live schedule.',
           onClick: () => setScheduleVersionOpen(true),
         } : undefined}
+        tertiaryToolbarAction={tableName === 'schedule' || tableName === 'delay_events' ? {
+          label: 'Delay & Time-Impact Register',
+          title: 'Govern delay events, extension of time (EOT) claims, and CPM time impact.',
+          onClick: () => setDelayRegisterOpen(true),
+        } : undefined}
         rowAction={tableName === 'supplier_invoices' ? {
           label: 'Reverse Invoice',
           title: 'Create a governed reversal. Approved supplier invoices are never deleted or edited in place.',
@@ -4302,6 +4309,31 @@ function AppWorkspace() {
         onSupersedeVersion={async (version: ScheduleVersion) => {
           const updated = await dataRepository.update<ScheduleVersion>('schedule_versions', version.id, { status: 'Superseded' });
           data.applyLocalMutation('schedule_versions', { type: 'update', row: updated });
+        }}
+      />
+      <DelayRegisterModal
+        isOpen={(tableName === 'schedule' || tableName === 'delay_events') && delayRegisterOpen}
+        onClose={() => setDelayRegisterOpen(false)}
+        selectedProjectId={workspaceProjectId || null}
+        selectedContractId={null}
+        projects={data.projects}
+        contracts={data.contracts}
+        tasks={data.tasks}
+        wbsNodes={data.wbsNodes as WBSNode[]}
+        variations={data.variations}
+        delayEvents={data.delayEvents || []}
+        onSaveDelayEvent={async (event: Partial<DelayEvent>) => {
+          if (event.id && data.delayEvents.some((e) => e.id === event.id)) {
+            const updated = await dataRepository.update<DelayEvent>('delay_events', event.id, event);
+            data.applyLocalMutation('delay_events', { type: 'update', row: updated });
+          } else {
+            const inserted = await dataRepository.insert<DelayEvent>('delay_events', event as DelayEvent);
+            data.applyLocalMutation('delay_events', { type: 'insert', row: inserted });
+          }
+        }}
+        onDeleteDelayEvent={async (id: string) => {
+          await dataRepository.delete('delay_events', id);
+          data.applyLocalMutation('delay_events', { type: 'delete', id });
         }}
       />
       </>

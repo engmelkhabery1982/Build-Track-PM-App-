@@ -21,7 +21,7 @@ const TABLES = new Set([
   "report_templates",
   "cost_codes", "wbs_nodes", "contract_sov_lines", "control_accounts", "payment_certificates",
   "cost_changes", "procurement_receipts", "supplier_invoices", "supplier_invoice_lines", "supplier_invoice_payments",
-  "progress_corrections", "schedule_versions",
+  "progress_corrections", "schedule_versions", "delay_events",
 ]);
 
 const CONTROL_ACCOUNT_SOURCE_TABLES = new Set([
@@ -51,6 +51,21 @@ type StoredRow = {
   distribution_snapshot?: string;
   activity_count?: number;
   critical_activity_count?: number;
+  wbs_id?: string | null;
+  schedule_activity_id?: string | null;
+  variation_id?: string | null;
+  delay_code?: string;
+  event_name?: string;
+  event_category?: string;
+  discovery_date?: string;
+  root_cause?: string;
+  responsible_party?: string;
+  entitlement_type?: string;
+  requested_extension_days?: number;
+  approved_extension_days?: number;
+  mitigation_action?: string;
+  cpm_impact_days?: number;
+  time_impact_analysis?: string;
   notes?: string;
   updated_at?: string;
   payload: string;
@@ -107,6 +122,29 @@ export class SqliteRepository implements DataRepository {
         distribution_snapshot: JSON.parse(stored.distribution_snapshot || '[]'),
         activity_count: stored.activity_count,
         critical_activity_count: stored.critical_activity_count,
+        notes: stored.notes || '',
+        updated_at: stored.updated_at,
+      });
+    } else if (tableName === 'delay_events') {
+      Object.assign(payload, {
+        project_id: stored.project_id,
+        contract_id: stored.contract_id,
+        wbs_id: stored.wbs_id,
+        schedule_activity_id: stored.schedule_activity_id,
+        variation_id: stored.variation_id,
+        delay_code: stored.delay_code,
+        event_name: stored.event_name,
+        event_category: stored.event_category,
+        discovery_date: stored.discovery_date,
+        root_cause: stored.root_cause,
+        responsible_party: stored.responsible_party,
+        entitlement_type: stored.entitlement_type,
+        requested_extension_days: stored.requested_extension_days,
+        approved_extension_days: stored.approved_extension_days,
+        mitigation_action: stored.mitigation_action || '',
+        status: stored.status,
+        cpm_impact_days: stored.cpm_impact_days || 0,
+        time_impact_analysis: JSON.parse(stored.time_impact_analysis || '{}'),
         notes: stored.notes || '',
         updated_at: stored.updated_at,
       });
@@ -253,6 +291,24 @@ export class SqliteRepository implements DataRepository {
           Number(record.critical_activity_count) || 0, record.notes || '', JSON.stringify(record),
         ],
       );
+    } else if (tableName === "delay_events") {
+      await database.execute(
+        `INSERT INTO delay_events (
+          id, created_at, updated_at, project_id, contract_id, wbs_id, schedule_activity_id, variation_id,
+          delay_code, event_name, event_category, discovery_date, root_cause, responsible_party,
+          entitlement_type, requested_extension_days, approved_extension_days, mitigation_action,
+          status, cpm_impact_days, time_impact_analysis, notes, payload
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+        [
+          record.id, record.created_at, record.updated_at || now, nullableId(record.project_id), nullableId(record.contract_id),
+          nullableId(record.wbs_id), nullableId(record.schedule_activity_id), nullableId(record.variation_id),
+          record.delay_code, record.event_name, record.event_category, record.discovery_date, record.root_cause,
+          record.responsible_party, record.entitlement_type, Number(record.requested_extension_days) || 0,
+          Number(record.approved_extension_days) || 0, record.mitigation_action || '', record.status,
+          Number(record.cpm_impact_days) || 0, JSON.stringify(record.time_impact_analysis || {}),
+          record.notes || '', JSON.stringify(record),
+        ],
+      );
     } else if (tableName === "progress_corrections") {
       await database.execute(
         `INSERT INTO progress_corrections (id, created_at, project_id, contract_id, boq_header_id, boq_item_id, original_wir_id, payload)
@@ -373,6 +429,26 @@ export class SqliteRepository implements DataRepository {
           record.reason, JSON.stringify(record.activity_snapshot || []), JSON.stringify(record.distribution_snapshot || []),
           Number(record.activity_count) || 0, Number(record.critical_activity_count) || 0, record.notes || '',
           record.updated_at, JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "delay_events") {
+      record.updated_at = new Date().toISOString();
+      await database.execute(
+        `UPDATE delay_events SET
+          project_id = $1, contract_id = $2, wbs_id = $3, schedule_activity_id = $4, variation_id = $5,
+          delay_code = $6, event_name = $7, event_category = $8, discovery_date = $9, root_cause = $10,
+          responsible_party = $11, entitlement_type = $12, requested_extension_days = $13,
+          approved_extension_days = $14, mitigation_action = $15, status = $16, cpm_impact_days = $17,
+          time_impact_analysis = $18, notes = $19, updated_at = $20, payload = $21
+         WHERE id = $22`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.wbs_id),
+          nullableId(record.schedule_activity_id), nullableId(record.variation_id), record.delay_code,
+          record.event_name, record.event_category, record.discovery_date, record.root_cause,
+          record.responsible_party, record.entitlement_type, Number(record.requested_extension_days) || 0,
+          Number(record.approved_extension_days) || 0, record.mitigation_action || '', record.status,
+          Number(record.cpm_impact_days) || 0, JSON.stringify(record.time_impact_analysis || {}),
+          record.notes || '', record.updated_at, JSON.stringify(record), id,
         ],
       );
     } else if (tableName === "progress_corrections") {
