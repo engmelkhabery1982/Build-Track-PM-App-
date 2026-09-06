@@ -21,7 +21,7 @@ const TABLES = new Set([
   "report_templates",
   "cost_codes", "wbs_nodes", "contract_sov_lines", "control_accounts", "payment_certificates",
   "cost_changes", "procurement_receipts", "supplier_invoices", "supplier_invoice_lines", "supplier_invoice_payments",
-  "progress_corrections",
+  "progress_corrections", "schedule_versions",
 ]);
 
 const CONTROL_ACCOUNT_SOURCE_TABLES = new Set([

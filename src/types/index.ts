@@ -436,6 +436,27 @@ export interface ScheduleDistribution {
   created_at: string;
 }
 
+export interface ScheduleVersion {
+  id: string;
+  project_id: string;
+  contract_id?: string | null;
+  version_code: string;
+  version_name: string;
+  version_type: 'Baseline' | 'Current' | 'Forecast' | 'What-If';
+  status: 'Draft' | 'Approved' | 'Superseded';
+  revision_number: number;
+  data_date: string;
+  owner: string;
+  reason: string;
+  activity_snapshot: any[];
+  distribution_snapshot?: any[];
+  activity_count: number;
+  critical_activity_count: number;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface Contract {
   id: string;
   project_id: string;
@@ -1246,6 +1267,7 @@ export type ViewKey =
   | 'quantityLedger'
   | 'progressCorrections'
   | 'schedule'
+  | 'scheduleVersions'
   | 'workCalendars'
   | 'scheduleDistributions'
   | 'wir'

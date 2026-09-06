@@ -2037,6 +2037,44 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 50,
+            description: "add_schedule_versions_scenarios_and_immutability",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS schedule_versions (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT NOT NULL,
+        contract_id TEXT,
+        boq_header_id TEXT,
+        boq_item_id TEXT,
+        parent_main_project_id TEXT,
+        parent_main_contract_id TEXT,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_schedule_versions_project ON schedule_versions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_schedule_versions_contract ON schedule_versions(contract_id);
+      CREATE TRIGGER IF NOT EXISTS schedule_versions_updated_at
+      AFTER UPDATE ON schedule_versions
+      FOR EACH ROW
+      WHEN json_extract(OLD.payload, '$.status') NOT IN ('Approved', 'Superseded') AND json_extract(NEW.payload, '$.status') NOT IN ('Approved', 'Superseded')
+      BEGIN
+        UPDATE schedule_versions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS schedule_version_immutable_update_v1
+      BEFORE UPDATE ON schedule_versions
+      WHEN json_extract(OLD.payload, '$.status') IN ('Approved', 'Superseded')
+      BEGIN SELECT RAISE(ABORT, 'Approved or Superseded schedule versions are immutable control points.'); END;
+      CREATE TRIGGER IF NOT EXISTS schedule_version_immutable_delete_v1
+      BEFORE DELETE ON schedule_versions
+      WHEN json_extract(OLD.payload, '$.status') IN ('Approved', 'Superseded')
+      BEGIN SELECT RAISE(ABORT, 'Approved or Superseded schedule versions cannot be deleted.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
