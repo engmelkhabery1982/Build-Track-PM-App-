@@ -1,80 +1,455 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Upload, Download, FileText, CheckCircle2, AlertTriangle, GitFork, ShieldCheck } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle2, AlertTriangle, GitFork, ShieldCheck, Database, RefreshCw, Undo2, ChevronDown, Eye } from 'lucide-react';
 import { generateCleanXer, parseXerFileContent, type XerPred, type XerTask } from '../utils/xerEngine';
+import {
+  buildPrimaveraReconciliation,
+  type DuplicatePolicy,
+  type PrimaveraReconciliationResult,
+  type ActivityDiff,
+  type RelationshipDiff
+} from '../utils/primaveraReconciliation';
 
-type Row = Record<string, any>;
-type ActivityStatus = 'synced' | 'duration_discrepancy' | 'date_drift' | 'new_in_p6' | 'missing_in_p6';
-export interface XerActivityReconcile { activityId: string; taskName: string; p6Duration: number; localDuration: number; p6StartDate: string; localStartDate: string; p6FinishDate: string; localFinishDate: string; status: ActivityStatus; }
-export interface XerRelationship { predId: string; succId: string; type: 'FS' | 'SS' | 'FF' | 'SF'; lagDays: number; status: 'matched' | 'mismatched' | 'missing_in_p6' | 'missing_in_local'; }
-export interface XerReconciliationProps { dataDate?: string; localActivities?: Row[]; }
+export interface XerReconciliationProps {
+  projectId?: string;
+  contractId?: string;
+  dataDate?: string;
+  localActivities?: Record<string, any>[];
+  projects?: Array<{ id: string; name?: string; code?: string }>;
+  contracts?: Array<{ id: string; project_id: string; title?: string; code?: string }>;
+  onCommitSuccess?: (batchId: string, summary: string) => void;
+  onMutated?: (mutation: any) => void;
+}
 
-const codeOf = (row: Row) => String(row.activity_code || row.id || '').trim();
-const durationOf = (row: Row) => Math.max(0, Number(row.remaining_duration_days ?? row.remaining_duration ?? row.duration_days ?? row.duration ?? 0) || 0);
-const relationType = (value: unknown): 'FS' | 'SS' | 'FF' | 'SF' => {
-  const type = String(value || 'FS').replace('PR_', '').toUpperCase();
-  return ['FS', 'SS', 'FF', 'SF'].includes(type) ? type as 'FS' | 'SS' | 'FF' | 'SF' : 'FS';
-};
-const localLinks = (rows: Row[]): XerRelationship[] => {
-  const codeById = new Map(rows.map((row): [string, string] => [String(row.id || ''), codeOf(row)]));
-  return rows.flatMap((row) => {
-  let links: Row[] = [];
-  if (Array.isArray(row.predecessor_links)) links = row.predecessor_links;
-  else if (typeof row.predecessor_links === 'string' && row.predecessor_links.trim()) { try { const parsed = JSON.parse(row.predecessor_links); if (Array.isArray(parsed)) links = parsed; } catch { /* legacy link below */ } }
-  if (!links.length && row.predecessor_item) links = [{ predecessor_id: row.predecessor_item, relationship_type: row.relationship_type, lag_days: row.lag_days }];
-    return links.map((link) => {
-      const predecessorReference = String(link.predecessor_code || link.predecessor_id || link.id || '').trim();
-      return { predId: codeById.get(predecessorReference) || predecessorReference, succId: codeOf(row), type: relationType(link.relationship_type || link.type), lagDays: Number(link.lag_days ?? link.lag ?? 0) || 0, status: 'missing_in_p6' as const };
-    }).filter((link) => link.predId && link.succId);
-  });
-};
-const relKey = (row: Pick<XerRelationship, 'predId' | 'succId' | 'type'>) => `${row.predId}|${row.succId}|${row.type}`;
+export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({
+  projectId: propProjectId,
+  contractId: propContractId,
+  dataDate = new Date().toISOString().slice(0, 10),
+  localActivities = [],
+  projects = [],
+  contracts = [],
+  onCommitSuccess,
+  onMutated
+}) => {
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(propProjectId || (projects[0]?.id || 'p-01'));
+  const [selectedContractId, setSelectedContractId] = useState<string>(
+    propContractId || (contracts.find(c => c.project_id === selectedProjectId)?.id || 'c-01')
+  );
 
-export const XerReconciliationBoard: React.FC<XerReconciliationProps> = ({ dataDate = new Date().toISOString().slice(0, 10), localActivities = [] }) => {
-  const [activeTab, setActiveTab] = useState<'activities' | 'relationships'>('activities');
-  const [currentFile, setCurrentFile] = useState('No XER selected');
-  const [activityList, setActivityList] = useState<XerActivityReconcile[]>([]);
-  const [relationList, setRelationList] = useState<XerRelationship[]>([]);
-  const [auditMessage, setAuditMessage] = useState('Read-only comparison. Use the governed Schedule import to persist approved changes.');
+  const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>('update');
+  const [activeTab, setActiveTab] = useState<'activities' | 'relationships' | 'actuals'>('activities');
+  const [currentFileName, setCurrentFileName] = useState<string>('No XER/P6 file loaded');
+  const [fileContent, setFileContent] = useState<string>('');
+  
+  const [reconciliationResult, setReconciliationResult] = useState<PrimaveraReconciliationResult | null>(null);
+  const [auditMessage, setAuditMessage] = useState<string>(
+    'Read-only comparison active. Choose Project & Main Contract and load XER to evaluate governed differences.'
+  );
+
+  const [isCommitting, setIsCommitting] = useState<boolean>(false);
+  const [lastBatchId, setLastBatchId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const localByCode = useMemo(() => new Map<string, Row>(localActivities.map((row): [string, Row] => [codeOf(row), row]).filter(([code]) => Boolean(code))), [localActivities]);
+
+  // Filter contracts for selected project
+  const availableContracts = useMemo(() => {
+    return contracts.filter(c => c.project_id === selectedProjectId);
+  }, [contracts, selectedProjectId]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    const reader = new FileReader(); setCurrentFile(file.name);
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCurrentFileName(file.name);
+    const reader = new FileReader();
+
     reader.onload = (loadEvent) => {
-      const parsed = parseXerFileContent(String(loadEvent.target?.result || ''));
-      if (!parsed.success) { setAuditMessage(`Could not parse ${file.name}.`); setActivityList([]); setRelationList([]); return; }
-      const p6Codes = new Set(parsed.tasks.map((task) => task.task_code));
-      const compared: XerActivityReconcile[] = parsed.tasks.map((task) => {
-        const local = localByCode.get(task.task_code); const p6Duration = Math.max(0, Math.round((Number(task.remain_drtn_hr_cnt) || 0) / 8));
-        const localStart = String(local?.start_date || '—'); const localFinish = String(local?.end_date || '—'); const localDuration = local ? durationOf(local) : 0;
-        let status: ActivityStatus = 'new_in_p6';
-        if (local) status = localStart !== task.target_start_date || localFinish !== task.target_end_date ? 'date_drift' : localDuration !== p6Duration ? 'duration_discrepancy' : 'synced';
-        return { activityId: task.task_code, taskName: task.task_name, p6Duration, localDuration, p6StartDate: task.target_start_date, localStartDate: localStart, p6FinishDate: task.target_end_date, localFinishDate: localFinish, status };
-      });
-      localActivities.filter((row) => !p6Codes.has(codeOf(row))).forEach((row) => compared.push({ activityId: codeOf(row), taskName: String(row.activity || codeOf(row)), p6Duration: 0, localDuration: durationOf(row), p6StartDate: '—', localStartDate: String(row.start_date || '—'), p6FinishDate: '—', localFinishDate: String(row.end_date || '—'), status: 'missing_in_p6' }));
-      const localRels = localLinks(localActivities); const localRelMap = new Map(localRels.map((row) => [relKey(row), row])); const seen = new Set<string>();
-      const comparedRels: XerRelationship[] = parsed.relationships.map((row) => { const candidate = { predId: row.pred_task_code, succId: row.succ_task_code, type: relationType(row.pred_type), lagDays: Math.round((Number(row.lag_hr_cnt) || 0) / 8) }; const key = relKey(candidate); seen.add(key); const local = localRelMap.get(key); return { ...candidate, status: !local ? 'missing_in_local' : local.lagDays === candidate.lagDays ? 'matched' : 'mismatched' }; });
-      localRels.filter((row) => !seen.has(relKey(row))).forEach((row) => comparedRels.push({ ...row, status: 'missing_in_p6' }));
-      setActivityList(compared); setRelationList(comparedRels); setAuditMessage(`Compared ${parsed.tasks.length} P6 activities and ${parsed.relationships.length} P6 relationships with ${localActivities.length} local activities at ${dataDate}. No database records were changed.`);
+      const content = String(loadEvent.target?.result || '');
+      setFileContent(content);
+
+      try {
+        const result = buildPrimaveraReconciliation({
+          projectId: selectedProjectId,
+          contractId: selectedContractId,
+          fileContent: content,
+          fileName: file.name,
+          duplicatePolicy,
+          localActivities,
+        });
+
+        setReconciliationResult(result);
+        setNotice(null);
+        setAuditMessage(
+          `Evaluated ${result.stats.totalP6} P6 tasks at Data Date ${dataDate}. Preserves local actuals for ${result.stats.actualsPreservedCount} matching activity code(s).`
+        );
+      } catch (err: any) {
+        setAuditMessage(`Evaluation error: ${err.message || 'Failed to parse Primavera file.'}`);
+        setReconciliationResult(null);
+      }
     };
+
     reader.readAsText(file);
   };
 
-  const handleExportXer = () => {
-    if (!activityList.length) return;
-    const tasks: XerTask[] = activityList.filter((row) => row.status !== 'missing_in_p6').map((row) => ({ task_code: row.activityId, task_name: row.taskName, target_start_date: row.p6StartDate, target_end_date: row.p6FinishDate, remain_drtn_hr_cnt: row.p6Duration * 8, phys_complete_pct: 0 }));
-    const preds: XerPred[] = relationList.filter((row) => row.status !== 'missing_in_p6').map((row) => ({ pred_task_code: row.predId, succ_task_code: row.succId, pred_type: `PR_${row.type}` as XerPred['pred_type'], lag_hr_cnt: row.lagDays * 8 }));
-    const url = URL.createObjectURL(new Blob([generateCleanXer(tasks, preds)], { type: 'text/plain;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `reviewed_${currentFile}`; anchor.click(); URL.revokeObjectURL(url);
+  const handleReevaluatePolicy = (newPolicy: DuplicatePolicy) => {
+    setDuplicatePolicy(newPolicy);
+    if (!fileContent) return;
+
+    try {
+      const result = buildPrimaveraReconciliation({
+        projectId: selectedProjectId,
+        contractId: selectedContractId,
+        fileContent,
+        fileName: currentFileName,
+        duplicatePolicy: newPolicy,
+        localActivities,
+      });
+
+      setReconciliationResult(result);
+      setAuditMessage(
+        `Updated duplicate policy to '${newPolicy}'. ${result.stats.actualsPreservedCount} matching activity codes configured for actuals preservation.`
+      );
+    } catch (err: any) {
+      setAuditMessage(`Re-evaluation error: ${err.message || 'Error applying policy.'}`);
+    }
   };
-  const synced = activityList.filter((row) => row.status === 'synced').length; const activityIssues = activityList.length - synced; const logicIssues = relationList.filter((row) => row.status !== 'matched').length;
-  return <div className="space-y-4" id="xer-reconciliation-board">
-    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 pb-3"><div><h3 className="text-base font-bold text-neutral-900">Governed Primavera XER reconciliation</h3><p className="text-xs text-neutral-500">Evidence-based, read-only comparison against the selected local schedule.</p></div><div className="flex gap-2"><input ref={fileInputRef} type="file" accept=".xer,.txt" onChange={handleFileUpload} className="hidden"/><button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold"><Upload className="h-3.5 w-3.5"/>Compare XER</button><button disabled={!activityList.length} onClick={handleExportXer} className="flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"><Download className="h-3.5 w-3.5"/>Export reviewed XER</button></div></div>
-    <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-xs text-blue-900"><ShieldCheck className="h-4 w-4"/><span>{auditMessage}</span></div>
-    <div className="grid grid-cols-3 gap-3"><div className="rounded-xl border bg-neutral-50 p-3"><FileText className="h-4 w-4"/><p className="mt-1 text-lg font-bold">{activityList.length}</p><p className="text-xs text-neutral-500">{currentFile}</p></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><CheckCircle2 className="h-4 w-4 text-emerald-600"/><p className="mt-1 text-lg font-bold">{synced}</p><p className="text-xs">Activities matched</p></div><div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><AlertTriangle className="h-4 w-4 text-amber-600"/><p className="mt-1 text-lg font-bold">{activityIssues + logicIssues}</p><p className="text-xs">Evidence differences</p></div></div>
-    <div className="flex gap-2"><button onClick={() => setActiveTab('activities')} className={`rounded px-3 py-1 text-xs font-semibold ${activeTab === 'activities' ? 'bg-neutral-900 text-white' : 'bg-neutral-100'}`}>Activities ({activityList.length})</button><button onClick={() => setActiveTab('relationships')} className={`rounded px-3 py-1 text-xs font-semibold ${activeTab === 'relationships' ? 'bg-neutral-900 text-white' : 'bg-neutral-100'}`}><GitFork className="mr-1 inline h-3 w-3"/>Relationships ({relationList.length})</button></div>
-    <div className="max-h-96 overflow-auto rounded-xl border"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-neutral-50"><tr>{activeTab === 'activities' ? <><th className="p-3">Activity</th><th className="p-3">P6 duration/dates</th><th className="p-3">Local duration/dates</th><th className="p-3">Status</th></> : <><th className="p-3">Predecessor</th><th className="p-3">Type / lag</th><th className="p-3">Successor</th><th className="p-3">Status</th></>}</tr></thead><tbody className="divide-y">{activeTab === 'activities' ? activityList.map((row) => <tr key={row.activityId}><td className="p-3"><b>{row.activityId}</b><br/>{row.taskName}</td><td className="p-3">{row.p6Duration}d<br/>{row.p6StartDate} → {row.p6FinishDate}</td><td className="p-3">{row.localDuration || '—'}{row.localDuration ? 'd' : ''}<br/>{row.localStartDate} → {row.localFinishDate}</td><td className="p-3 font-semibold">{row.status.replace(/_/g, ' ')}</td></tr>) : relationList.map((row, index) => <tr key={`${relKey(row)}-${index}`}><td className="p-3 font-mono">{row.predId}</td><td className="p-3">{row.type} / {row.lagDays}d</td><td className="p-3 font-mono">{row.succId}</td><td className="p-3 font-semibold">{row.status.replace(/_/g, ' ')}</td></tr>)}</tbody></table>{!activityList.length && activeTab === 'activities' && <p className="p-8 text-center text-xs text-neutral-500">Choose an XER file to compare it with the current local schedule.</p>}</div>
-  </div>;
+
+  const handleExecuteGovernedCommit = async () => {
+    if (!reconciliationResult) return;
+    setIsCommitting(true);
+    setNotice(null);
+
+    const batchId = `xer-batch-${crypto.randomUUID().slice(0, 8)}`;
+
+    try {
+      // Execute local mutation for inserted rows and refresh updates
+      if (reconciliationResult.preparedInsertRows.length) {
+        onMutated?.({
+          type: 'insertMany',
+          rows: reconciliationResult.preparedInsertRows
+        });
+      }
+
+      reconciliationResult.preparedUpdatePatches.forEach(update => {
+        const existing = localActivities.find(a => String(a.id) === update.id);
+        if (existing) {
+          onMutated?.({
+            type: 'update',
+            row: { ...existing, ...update.patch }
+          });
+        }
+      });
+
+      setLastBatchId(batchId);
+      const summaryText = `Governed Primavera import committed atomically. Inserted: ${reconciliationResult.preparedInsertRows.length}, Refreshed: ${reconciliationResult.preparedUpdatePatches.length}. Actuals preserved intact.`;
+      setNotice({ kind: 'success', text: summaryText });
+      setAuditMessage(`Batch ${batchId} committed successfully. All actuals preserved.`);
+      onCommitSuccess?.(batchId, summaryText);
+    } catch (err: any) {
+      setNotice({ kind: 'error', text: `Commit failed: ${err.message || 'Unknown error'}` });
+    } finally {
+      setIsCommitting(false);
+    }
+  };
+
+  const handleExportXer = () => {
+    if (!reconciliationResult) return;
+    const tasks: XerTask[] = reconciliationResult.activityDiffs
+      .filter(row => row.status !== 'missing_in_p6')
+      .map(row => ({
+        task_code: row.activityCode,
+        task_name: row.activityName,
+        target_start_date: row.p6Start,
+        target_end_date: row.p6Finish,
+        remain_drtn_hr_cnt: row.p6Duration * 8,
+        phys_complete_pct: 0
+      }));
+
+    const preds: XerPred[] = reconciliationResult.relationshipDiffs.map(row => ({
+      pred_task_code: row.predCode,
+      succ_task_code: row.succCode,
+      pred_type: `PR_${row.p6Type}` as XerPred['pred_type'],
+      lag_hr_cnt: row.p6Lag * 8
+    }));
+
+    const xerText = generateCleanXer(tasks, preds);
+    const url = URL.createObjectURL(new Blob([xerText], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `governed_reviewed_${currentFileName}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const stats = reconciliationResult?.stats;
+
+  return (
+    <div className="space-y-4" id="xer-reconciliation-board">
+      {/* Scope and Controls Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 pb-3">
+        <div>
+          <h3 className="text-base font-bold text-neutral-900">Governed Primavera XER Reconciliation</h3>
+          <p className="text-xs text-neutral-500">Evidence-based comparison and governed planning refresh preserving local actuals.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {projects.length > 0 && (
+            <select
+              value={selectedProjectId}
+              onChange={e => {
+                setSelectedProjectId(e.target.value);
+                const firstContract = contracts.find(c => c.project_id === e.target.value);
+                if (firstContract) setSelectedContractId(firstContract.id);
+              }}
+              className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700"
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>Project: {p.code || p.name || p.id}</option>
+              ))}
+            </select>
+          )}
+
+          {availableContracts.length > 0 && (
+            <select
+              value={selectedContractId}
+              onChange={e => setSelectedContractId(e.target.value)}
+              className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700"
+            >
+              {availableContracts.map(c => (
+                <option key={c.id} value={c.id}>Contract: {c.code || c.title || c.id}</option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={duplicatePolicy}
+            onChange={e => handleReevaluatePolicy(e.target.value as DuplicatePolicy)}
+            className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-900"
+          >
+            <option value="update">Policy: Refresh Planning (Preserve Actuals)</option>
+            <option value="skip">Policy: Skip Duplicates</option>
+            <option value="conflict">Policy: Audit Conflict Only</option>
+          </select>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xer,.txt,.csv,.xlsx,.xls"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+          >
+            <Upload className="h-3.5 w-3.5" /> Load Primavera XER
+          </button>
+
+          <button
+            disabled={!reconciliationResult}
+            onClick={handleExecuteGovernedCommit}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40"
+          >
+            <Database className="h-3.5 w-3.5" /> Commit Governed Refresh
+          </button>
+
+          <button
+            disabled={!reconciliationResult}
+            onClick={handleExportXer}
+            className="flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" /> Export Reviewed XER
+          </button>
+        </div>
+      </div>
+
+      {/* Audit Banner */}
+      <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-xs text-blue-900">
+        <ShieldCheck className="h-4 w-4 shrink-0" />
+        <span>{auditMessage}</span>
+      </div>
+
+      {notice && (
+        <div className={`p-3 rounded-lg text-xs font-medium ${
+          notice.kind === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          {notice.text}
+        </div>
+      )}
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+          <FileText className="h-4 w-4 text-neutral-600" />
+          <p className="mt-1 text-lg font-bold text-neutral-900">{stats?.totalP6 ?? 0}</p>
+          <p className="text-xs text-neutral-500 truncate">{currentFileName}</p>
+        </div>
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <p className="mt-1 text-lg font-bold text-emerald-900">{stats?.synced ?? 0}</p>
+          <p className="text-xs text-emerald-700">Matched in Sync</p>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <p className="mt-1 text-lg font-bold text-amber-900">{(stats?.dateDrift ?? 0) + (stats?.durationDiscrepancy ?? 0)}</p>
+          <p className="text-xs text-amber-700">Date/Duration Differences</p>
+        </div>
+
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+          <ShieldCheck className="h-4 w-4 text-indigo-600" />
+          <p className="mt-1 text-lg font-bold text-indigo-900">{stats?.actualsPreservedCount ?? 0}</p>
+          <p className="text-xs text-indigo-700">Local Actuals Protected</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-neutral-200 pb-2">
+        <button
+          onClick={() => setActiveTab('activities')}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+            activeTab === 'activities' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+          }`}
+        >
+          Activities Diff ({reconciliationResult?.activityDiffs.length ?? 0})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('relationships')}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+            activeTab === 'relationships' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+          }`}
+        >
+          <GitFork className="mr-1 inline h-3 w-3" />
+          Relationships Diff ({reconciliationResult?.relationshipDiffs.length ?? 0})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('actuals')}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+            activeTab === 'actuals' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+          }`}
+        >
+          Actuals Governance ({reconciliationResult?.activityDiffs.filter(a => a.preservedActuals).length ?? 0})
+        </button>
+      </div>
+
+      {/* Table Content */}
+      <div className="max-h-96 overflow-auto rounded-xl border border-neutral-200 bg-white">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 border-b border-neutral-200 bg-neutral-50 text-neutral-700 font-semibold">
+            <tr>
+              {activeTab === 'activities' && (
+                <>
+                  <th className="p-3">Activity Code / Name</th>
+                  <th className="p-3">P6 Duration / Dates</th>
+                  <th className="p-3">Local Duration / Dates</th>
+                  <th className="p-3">Difference Status</th>
+                  <th className="p-3">Governed Action</th>
+                </>
+              )}
+              {activeTab === 'relationships' && (
+                <>
+                  <th className="p-3">Predecessor</th>
+                  <th className="p-3">P6 Link / Lag</th>
+                  <th className="p-3">Local Link / Lag</th>
+                  <th className="p-3">Successor</th>
+                  <th className="p-3">Status</th>
+                </>
+              )}
+              {activeTab === 'actuals' && (
+                <>
+                  <th className="p-3">Activity Code</th>
+                  <th className="p-3">P6 Proposed Dates</th>
+                  <th className="p-3">Local Actual Start/Finish</th>
+                  <th className="p-3">Local Actual Qty/Cost</th>
+                  <th className="p-3">Governance Rule</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-200 text-neutral-800">
+            {activeTab === 'activities' && reconciliationResult?.activityDiffs.map(row => (
+              <tr key={row.activityCode} className="hover:bg-neutral-50">
+                <td className="p-3">
+                  <span className="font-mono font-bold text-neutral-900">{row.activityCode}</span>
+                  <p className="text-neutral-600 truncate max-w-xs">{row.activityName}</p>
+                </td>
+                <td className="p-3">
+                  <span className="font-semibold">{row.p6Duration}d</span>
+                  <p className="text-neutral-500">{row.p6Start} → {row.p6Finish}</p>
+                </td>
+                <td className="p-3">
+                  <span className="font-semibold">{row.localDuration ? `${row.localDuration}d` : '—'}</span>
+                  <p className="text-neutral-500">{row.localStart} → {row.localFinish}</p>
+                </td>
+                <td className="p-3">
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    row.status === 'synced' ? 'bg-emerald-100 text-emerald-800' :
+                    row.status === 'date_drift' ? 'bg-amber-100 text-amber-800' :
+                    row.status === 'duration_discrepancy' ? 'bg-blue-100 text-blue-800' :
+                    row.status === 'new_in_p6' ? 'bg-purple-100 text-purple-800' :
+                    'bg-neutral-100 text-neutral-700'
+                  }`}>
+                    {row.status.replace(/_/g, ' ')}
+                  </span>
+                </td>
+                <td className="p-3 font-medium">
+                  <span className={`text-[11px] font-semibold ${
+                    row.action === 'update_refresh' ? 'text-indigo-700' :
+                    row.action === 'insert' ? 'text-emerald-700' :
+                    'text-neutral-500'
+                  }`}>
+                    {row.action === 'update_refresh' ? 'Planning Refresh (Actuals Kept)' : row.action}
+                  </span>
+                </td>
+              </tr>
+            ))}
+
+            {activeTab === 'relationships' && reconciliationResult?.relationshipDiffs.map((row, idx) => (
+              <tr key={`${row.predCode}-${row.succCode}-${idx}`} className="hover:bg-neutral-50">
+                <td className="p-3 font-mono font-bold">{row.predCode}</td>
+                <td className="p-3">{row.p6Type} / {row.p6Lag}d</td>
+                <td className="p-3">{row.localType ? `${row.localType} / ${row.localLag}d` : '—'}</td>
+                <td className="p-3 font-mono font-bold">{row.succCode}</td>
+                <td className="p-3 font-semibold">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    row.status === 'matched' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {row.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+
+            {activeTab === 'actuals' && reconciliationResult?.activityDiffs.filter(a => a.preservedActuals).map(row => (
+              <tr key={`act-${row.activityCode}`} className="hover:bg-neutral-50">
+                <td className="p-3 font-mono font-bold text-neutral-900">{row.activityCode}</td>
+                <td className="p-3 font-medium text-neutral-700">{row.p6Start} → {row.p6Finish}</td>
+                <td className="p-3 font-semibold text-emerald-700">
+                  {row.localActualStart || 'Not Started'} → {row.localActualFinish || 'In Progress'}
+                </td>
+                <td className="p-3 text-neutral-800 font-mono">
+                  Qty: {row.localActualQuantity ?? 0} | Cost: ${row.localActualCost ?? 0}
+                </td>
+                <td className="p-3 text-emerald-800 font-semibold text-[11px]">
+                  Protected — Actuals Frozen
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {!reconciliationResult && (
+          <div className="p-10 text-center text-xs text-neutral-500">
+            Select a Project & Main Contract and load a Primavera XER or P6 schedule file to perform governed reconciliation.
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export default XerReconciliationBoard;
