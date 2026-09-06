@@ -39,6 +39,20 @@ type StoredRow = {
   boq_item_id: string | null;
   contract_sov_line_id?: string | null;
   control_account_id?: string | null;
+  version_code?: string;
+  version_name?: string;
+  version_type?: string;
+  status?: string;
+  revision_number?: number;
+  data_date?: string;
+  owner?: string;
+  reason?: string;
+  activity_snapshot?: string;
+  distribution_snapshot?: string;
+  activity_count?: number;
+  critical_activity_count?: number;
+  notes?: string;
+  updated_at?: string;
   payload: string;
 };
 
@@ -71,12 +85,33 @@ export class SqliteRepository implements DataRepository {
     return this.databasePromise;
   }
 
-  private unpack<T extends DataRow>(stored: StoredRow): T {
-    return {
+  private unpack<T extends DataRow>(stored: StoredRow, tableName?: string): T {
+    const payload = {
       ...JSON.parse(stored.payload),
       id: stored.id,
       created_at: stored.created_at,
-    } as T;
+    } as Record<string, any>;
+    if (tableName === 'schedule_versions') {
+      Object.assign(payload, {
+        project_id: stored.project_id,
+        contract_id: stored.contract_id,
+        version_code: stored.version_code,
+        version_name: stored.version_name,
+        version_type: stored.version_type,
+        status: stored.status,
+        revision_number: stored.revision_number,
+        data_date: stored.data_date,
+        owner: stored.owner,
+        reason: stored.reason,
+        activity_snapshot: JSON.parse(stored.activity_snapshot || '[]'),
+        distribution_snapshot: JSON.parse(stored.distribution_snapshot || '[]'),
+        activity_count: stored.activity_count,
+        critical_activity_count: stored.critical_activity_count,
+        notes: stored.notes || '',
+        updated_at: stored.updated_at,
+      });
+    }
+    return payload as T;
   }
 
   private async findStored(id: string, tableName: string): Promise<StoredRow> {
@@ -139,7 +174,7 @@ export class SqliteRepository implements DataRepository {
     const rows = await database.select<StoredRow[]>(
       `SELECT * FROM ${tableName} ORDER BY created_at ${ascending ? "ASC" : "DESC"}`,
     );
-    return rows.map((row) => this.unpack<T>(row));
+    return rows.map((row) => this.unpack<T>(row, tableName));
   }
 
   async insert<T extends DataRow>(tableName: string, row: T): Promise<T> {
@@ -203,6 +238,21 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.contract_sov_line_id), JSON.stringify(record),
         ],
       );
+    } else if (tableName === "schedule_versions") {
+      await database.execute(
+        `INSERT INTO schedule_versions (
+          id, created_at, updated_at, project_id, contract_id, version_code, version_name, version_type,
+          status, revision_number, data_date, owner, reason, activity_snapshot, distribution_snapshot,
+          activity_count, critical_activity_count, notes, payload
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+        [
+          record.id, record.created_at, record.updated_at || now, nullableId(record.project_id), nullableId(record.contract_id),
+          record.version_code, record.version_name, record.version_type, record.status, Number(record.revision_number) || 1,
+          record.data_date, record.owner, record.reason, JSON.stringify(record.activity_snapshot || []),
+          JSON.stringify(record.distribution_snapshot || []), Number(record.activity_count) || 0,
+          Number(record.critical_activity_count) || 0, record.notes || '', JSON.stringify(record),
+        ],
+      );
     } else if (tableName === "progress_corrections") {
       await database.execute(
         `INSERT INTO progress_corrections (id, created_at, project_id, contract_id, boq_header_id, boq_item_id, original_wir_id, payload)
@@ -245,7 +295,7 @@ export class SqliteRepository implements DataRepository {
 
   async update<T extends DataRow>(tableName: string, id: string, patch: Partial<T>): Promise<T> {
     assertKnownTable(tableName);
-    const existing = this.unpack<T>(await this.findStored(id, tableName));
+    const existing = this.unpack<T>(await this.findStored(id, tableName), tableName);
     const record = { ...existing, ...patch, id } as Record<string, any>;
     const database = await this.database();
     await this.assertReportingPeriodMutationAllowed(database, 'update', tableName, record, existing as Record<string, any>);
@@ -308,6 +358,23 @@ export class SqliteRepository implements DataRepository {
           JSON.stringify(record), id,
         ],
       );
+    } else if (tableName === "schedule_versions") {
+      record.updated_at = new Date().toISOString();
+      await database.execute(
+        `UPDATE schedule_versions SET
+          project_id = $1, contract_id = $2, version_code = $3, version_name = $4, version_type = $5,
+          status = $6, revision_number = $7, data_date = $8, owner = $9, reason = $10,
+          activity_snapshot = $11, distribution_snapshot = $12, activity_count = $13,
+          critical_activity_count = $14, notes = $15, updated_at = $16, payload = $17
+         WHERE id = $18`,
+        [
+          nullableId(record.project_id), nullableId(record.contract_id), record.version_code, record.version_name,
+          record.version_type, record.status, Number(record.revision_number) || 1, record.data_date, record.owner,
+          record.reason, JSON.stringify(record.activity_snapshot || []), JSON.stringify(record.distribution_snapshot || []),
+          Number(record.activity_count) || 0, Number(record.critical_activity_count) || 0, record.notes || '',
+          record.updated_at, JSON.stringify(record), id,
+        ],
+      );
     } else if (tableName === "progress_corrections") {
       await database.execute(
         `UPDATE progress_corrections
@@ -349,7 +416,7 @@ export class SqliteRepository implements DataRepository {
 
   async delete(tableName: string, id: string): Promise<void> {
     assertKnownTable(tableName);
-    const existing = this.unpack<Record<string, any>>(await this.findStored(id, tableName));
+    const existing = this.unpack<Record<string, any>>(await this.findStored(id, tableName), tableName);
     const database = await this.database();
     await this.assertReportingPeriodMutationAllowed(database, 'delete', tableName, undefined, existing);
     await database.execute(`DELETE FROM ${tableName} WHERE id = $1`, [id]);

@@ -7,24 +7,22 @@
 
 - Official reviewed commit: `36838edd4ebeac560a2b33279cd229f80c2f2869`
 - Agent-cloud synchronized commit: `6f5b598`
-- Current capability: `C2 — Schedule Versions, Scenarios & Comparison`
-- Status: `READY FOR CODEX REVIEW — CLOSED 9/10`
-- Last accepted capability: `C2 — Schedule Versions, Scenarios & Comparison`
+- Current capability: `C3 — Delay & Time-Impact Register`
+- Status: `READY TO START — DO NOT START ANOTHER CAPABILITY`
+- Last accepted capability: `C2 — Schedule Versions, Scenarios & Comparison (Codex-reviewed 8/10)`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
 
 ## آخر نتيجة مثبتة
 
-- `npm test`: 152/152 passed.
+- `npm test`: 154/154 passed.
 - `npm run build`: passed.
 - `cargo test --manifest-path src-tauri/Cargo.toml`: 21/21 passed.
 - `git diff --check`: passed.
-- Feature C2 (Schedule Versions, Scenarios & Comparison) implemented and fully verified:
-  - SQLite Migration 50 added `schedule_versions` table and immutability triggers for Approved and Superseded schedule versions.
-  - Registered `schedule_versions` in `sqliteRepository.ts` and `src/types/index.ts`.
-  - Added `src/utils/scheduleVersioning.ts` for capturing, validating, and comparing schedule snapshots and what-if scenarios without mutating live executable schedule dates.
-  - Added `src/components/ScheduleVersionModal.tsx` for visual version registration, scenario creation, and side-by-side delta comparison with activity-level drill-down.
-  - Added `tests/schedule-versioning.test.mjs` with 100% passing tests for capture, validation, comparison, and SQLite immutability trigger enforcement.
+- C2 تم إصلاحه واعتماده بواسطة Codex: أعمدة SQL حقيقية وربط Repository/State/UI،
+  اختيار نطاق المشروع والعقد، حفظ وإعادة فتح، snapshots للأنشطة والتوزيعات، مقارنة
+  التواريخ/المدة/المنطق/total & free float/المسار الحرج، ودورة Draft → Approved →
+  Superseded مع منع العبث والحذف. البناء ناجح وRust 21/21.
 
 ## تحديث التسليم — C2
 
@@ -55,7 +53,7 @@
 1. Pull آخر `main` من `BuildTrack-Agent-Cloud` قبل القراءة أو التعديل.
 2. تحقق أن working tree نظيفة وسجل HEAD في تقرير البداية.
 3. اقرأ الأمر الموحد المحدث؛ خصوصًا حظر حذف lockfiles وتغيير الترميز وبدء ميزتين.
-4. نفذ **C2 فقط** كما هو محدد في `MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`.
+4. نفذ **C3 فقط** كما هو محدد تفصيليًا في `MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`.
 5. بعد `READY FOR CODEX REVIEW` نفذ commit وPush ثم توقف؛ لا تبدأ C3.
 
 ## قالب تحديث التسليم

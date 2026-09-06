@@ -11,6 +11,8 @@ export type BaselineActivitySnapshot = {
   budget: number;
   calendar_name: string;
   critical_path: boolean;
+  total_float_days: number;
+  free_float_days: number;
   predecessor_links: unknown;
 };
 
@@ -72,6 +74,12 @@ export interface BaselineActivityVariance {
   currentCalendar: string | null;
   baselineCritical: boolean | null;
   currentCritical: boolean | null;
+  baselineTotalFloatDays: number | null;
+  currentTotalFloatDays: number | null;
+  totalFloatVarianceDays: number | null;
+  baselineFreeFloatDays: number | null;
+  currentFreeFloatDays: number | null;
+  freeFloatVarianceDays: number | null;
 }
 
 export type ForecastAvailability = 'Available' | 'Unavailable';
@@ -143,6 +151,10 @@ export function compareBaselineActivityDetails(
     const currentCalendar = current ? String(current.calendar_name || 'Calendar Days') : null;
     const baselineCritical = baseline ? Boolean(baseline.critical_path) : null;
     const currentCritical = current ? Boolean(current.critical_path) : null;
+    const baselineTotalFloatDays = baseline ? numeric(baseline.total_float_days) : null;
+    const currentTotalFloatDays = current ? numeric(current.total_float_days) : null;
+    const baselineFreeFloatDays = baseline ? numeric(baseline.free_float_days) : null;
+    const currentFreeFloatDays = current ? numeric(current.free_float_days) : null;
     const changedFields: string[] = [];
     if (baseline && current) {
       if (String(baseline.activity || '') !== String(current.activity || '')) changedFields.push('Activity name');
@@ -153,6 +165,8 @@ export function compareBaselineActivityDetails(
       if (baselineBudget !== currentBudget) changedFields.push('Planned budget');
       if (baselineCalendar !== currentCalendar) changedFields.push('Calendar');
       if (baselineCritical !== currentCritical) changedFields.push('Critical path');
+      if (baselineTotalFloatDays !== currentTotalFloatDays) changedFields.push('Total float');
+      if (baselineFreeFloatDays !== currentFreeFloatDays) changedFields.push('Free float');
       if (stableJson(baseline.predecessor_links) !== stableJson(current.predecessor_links)) changedFields.push('Predecessor logic');
     }
     const status: BaselineVarianceStatus = !baseline ? 'Added' : !current ? 'Removed' : changedFields.length ? 'Changed' : 'Unchanged';
@@ -168,6 +182,10 @@ export function compareBaselineActivityDetails(
       baselineQuantity, currentQuantity, quantityVariance: baselineQuantity === null || currentQuantity === null ? null : currentQuantity - baselineQuantity,
       baselineBudget, currentBudget, budgetVariance: baselineBudget === null || currentBudget === null ? null : currentBudget - baselineBudget,
       baselineCalendar, currentCalendar, baselineCritical, currentCritical,
+      baselineTotalFloatDays, currentTotalFloatDays,
+      totalFloatVarianceDays: baselineTotalFloatDays === null || currentTotalFloatDays === null ? null : currentTotalFloatDays - baselineTotalFloatDays,
+      baselineFreeFloatDays, currentFreeFloatDays,
+      freeFloatVarianceDays: baselineFreeFloatDays === null || currentFreeFloatDays === null ? null : currentFreeFloatDays - baselineFreeFloatDays,
     };
   });
 }
@@ -262,7 +280,9 @@ export function createBaselineActivitySnapshot(activities: Record<string, any>[]
       budget: Number(activity.budget) || Number(activity.planned_value) || 0,
       calendar_name: String(activity.calendar_name || 'Calendar Days'),
       critical_path: Boolean(activity.critical_path),
-      predecessor_links: activity.predecessor_links || null,
+      total_float_days: Number(activity.total_float_days) || 0,
+      free_float_days: Number(activity.free_float_days) || 0,
+      predecessor_links: activity.predecessor_links == null ? null : JSON.parse(JSON.stringify(activity.predecessor_links)),
     }))
     .sort((left, right) => `${left.activity_code}:${left.schedule_id}`.localeCompare(`${right.activity_code}:${right.schedule_id}`));
 }

@@ -66,11 +66,30 @@ export function validateScheduleVersionInput(input: ScheduleVersionCaptureInput)
   if (!input.dataDate || !input.dataDate.trim()) {
     throw new Error('Data date (status date) is required for schedule versioning.');
   }
+  const parsedDataDate = new Date(`${input.dataDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dataDate) || Number.isNaN(parsedDataDate.getTime()) || parsedDataDate.toISOString().slice(0, 10) !== input.dataDate) {
+    throw new Error('Data date must be a valid calendar date in YYYY-MM-DD format.');
+  }
+  if (input.revisionNumber != null && (!Number.isInteger(input.revisionNumber) || input.revisionNumber < 1)) {
+    throw new Error('Revision number must be a positive whole number.');
+  }
+  const crossScope = (input.activities || []).find((activity: any) =>
+    (activity.project_id && activity.project_id !== input.projectId)
+    || (input.contractId && activity.contract_id && activity.contract_id !== input.contractId));
+  if (crossScope) throw new Error('Every captured activity must belong to the selected project and contract scope.');
   const validActivities = (input.activities || []).filter(
     (a) => String(a.activity || a.boq_item_name || '').trim() !== ''
   );
   if (validActivities.length === 0) {
     throw new Error('A schedule version requires at least one active schedule activity snapshot.');
+  }
+  const identities = validActivities.map((activity: any) => String(activity.activity_code || activity.id || '').trim());
+  if (identities.some((identity) => !identity) || new Set(identities).size !== identities.length) {
+    throw new Error('Every captured activity requires a unique activity code or stable ID.');
+  }
+  const scopedActivityIds = new Set(validActivities.map((activity: any) => String(activity.id || '')));
+  if ((input.distributions || []).some((row: any) => !scopedActivityIds.has(String(row.schedule_id || row.activity_id || '')))) {
+    throw new Error('Every captured distribution must belong to an activity in the selected schedule scope.');
   }
   if ((input.status === 'Approved' || (input.revisionNumber && input.revisionNumber > 1)) && (!input.reason || !input.reason.trim())) {
     throw new Error('A reason is required when approving a schedule version or creating a revision.');
@@ -113,7 +132,7 @@ export function captureScheduleVersion(input: ScheduleVersionCaptureInput): Sche
 
 export function compareScheduleVersions(
   v1: ScheduleVersion,
-  v2: ScheduleVersion | { versionCode?: string; versionName?: string; activities: Record<string, any>[] }
+  v2: ScheduleVersion | { versionCode?: string; versionName?: string; dataDate?: string; activities: Record<string, any>[] }
 ): ScheduleVersionComparisonSummary {
   const v1Snapshot = Array.isArray(v1.activity_snapshot) ? (v1.activity_snapshot as BaselineActivitySnapshot[]) : [];
 
@@ -133,6 +152,7 @@ export function compareScheduleVersions(
     v2Snapshot = createBaselineActivitySnapshot(v2.activities || []);
     v2Code = v2.versionCode || 'LIVE';
     v2Name = v2.versionName || 'Live Executable Schedule';
+    v2DataDate = v2.dataDate || v2DataDate;
   }
 
   const activityVariances = compareBaselineActivityDetails(v1Snapshot, v2Snapshot as unknown as Record<string, any>[]);

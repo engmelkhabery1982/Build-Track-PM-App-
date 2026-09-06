@@ -121,6 +121,26 @@ test('Schedule Versioning - validateScheduleVersionInput enforces governance con
       }),
     /requires at least one active schedule activity/
   );
+
+  assert.throws(() => validateScheduleVersionInput({
+    projectId: 'p1', contractId: 'c1', versionCode: 'CUR-01', versionName: 'Current', versionType: 'Current', status: 'Draft',
+    dataDate: '2026-02-30', owner: 'Planner', reason: 'Review', activities: [{ id: 'a1', project_id: 'p1', contract_id: 'c1', activity: 'Task' }],
+  }), /valid calendar date/);
+  assert.throws(() => validateScheduleVersionInput({
+    projectId: 'p1', contractId: 'c1', versionCode: 'CUR-01', versionName: 'Current', versionType: 'Current', status: 'Draft',
+    dataDate: '2026-05-01', owner: 'Planner', reason: 'Review', activities: [{ id: 'a1', project_id: 'p2', contract_id: 'c1', activity: 'Task' }],
+  }), /selected project and contract scope/);
+});
+
+test('Schedule Versioning - captured arrays are independent and live comparison uses governed Data Date', () => {
+  const source = [{ id: 'a1', project_id: 'p1', activity_code: 'A1', activity: 'Task', predecessor_links: [{ predecessor_id: 'A0' }] }];
+  const version = captureScheduleVersion({ projectId: 'p1', versionCode: 'CUR-01', versionName: 'Current', versionType: 'Current', status: 'Draft', dataDate: '2026-05-01', owner: 'Planner', reason: 'Review', activities: source });
+  source[0].activity = 'Changed later';
+  source[0].predecessor_links[0].predecessor_id = 'MUTATED';
+  assert.equal(version.activity_snapshot[0].activity, 'Task');
+  assert.equal(version.activity_snapshot[0].predecessor_links[0].predecessor_id, 'A0');
+  const comparison = compareScheduleVersions(version, { activities: source, dataDate: '2026-05-20' });
+  assert.equal(comparison.v2DataDate, '2026-05-20');
 });
 
 test('Schedule Versioning - compareScheduleVersions accurately computes activity and metric deltas', () => {
@@ -205,15 +225,16 @@ test('Schedule Versioning - compareScheduleVersions accurately computes activity
   assert.equal(comparison.budgetVariance, 12000); // 30,000 + 12,000 - 30,000 = 12,000
 });
 
-test('SQLite Migration 50 - schedule_versions table and immutability triggers', () => {
+test('SQLite Migration 50 - schedule versions persist governed SQL fields and lifecycle', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
   const match = rust.match(/version:\s*50,[\s\S]*?sql:\s*r#"([\s\S]*?)"#,\s*kind:/);
   assert.ok(match, 'Migration 50 must exist in src-tauri/src/lib.rs');
 
   const pythonScript = String.raw`
-import json, sqlite3, sys
+import json, os, sqlite3, sys, tempfile
 
-db = sqlite3.connect(':memory:')
+path = tempfile.mktemp(suffix='.db')
+db = sqlite3.connect(path)
 db.execute('PRAGMA foreign_keys = ON')
 db.execute('CREATE TABLE projects (id TEXT PRIMARY KEY)')
 db.execute('CREATE TABLE contracts (id TEXT PRIMARY KEY, project_id TEXT)')
@@ -221,55 +242,51 @@ db.execute("INSERT INTO projects VALUES ('p1')")
 
 db.executescript(sys.stdin.read())
 
-# 1. Insert Draft Schedule Version
-payload_draft = json.dumps({
-    'version_code': 'BL-01',
-    'version_name': 'Draft Baseline',
-    'version_type': 'Baseline',
-    'status': 'Draft',
-    'owner': 'John Doe',
-    'reason': 'Initial Draft'
-})
-db.execute(
-    "INSERT INTO schedule_versions (id, created_at, updated_at, project_id, contract_id, payload) VALUES (?,?,?,?,?,?)",
-    ('v1', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'p1', None, payload_draft)
-)
+required = {'version_code','version_name','version_type','status','revision_number','data_date','owner','reason','activity_snapshot','distribution_snapshot','activity_count','critical_activity_count','notes'}
+assert required.issubset({row[1] for row in db.execute('PRAGMA table_info(schedule_versions)')})
+
+def values(record_id='v1', code='BL-01', status='Draft', date='2026-05-01'):
+    activity = [{'schedule_id':'a1','activity_code':'A1000','activity':'Excavation'}]
+    payload = {'id':record_id,'project_id':'p1','contract_id':None,'version_code':code,'version_name':'Contract Baseline','version_type':'Baseline','status':status,'revision_number':1,'data_date':date,'owner':'Planner','reason':'Controlled review','activity_snapshot':activity,'distribution_snapshot':[],'activity_count':1,'critical_activity_count':0,'notes':''}
+    return (record_id,'2026-05-01T00:00:00Z','2026-05-01T00:00:00Z','p1',None,code,'Contract Baseline','Baseline',status,1,date,'Planner','Controlled review',json.dumps(activity),'[]',1,0,'',json.dumps(payload))
+
+sql = '''INSERT INTO schedule_versions (id,created_at,updated_at,project_id,contract_id,version_code,version_name,version_type,status,revision_number,data_date,owner,reason,activity_snapshot,distribution_snapshot,activity_count,critical_activity_count,notes,payload) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'''
+db.execute(sql, values())
+db.commit()
+db.close()
+db = sqlite3.connect(path)
+db.execute('PRAGMA foreign_keys = ON')
 
 assert db.execute("SELECT count(*) FROM schedule_versions").fetchone()[0] == 1
+row = db.execute('SELECT version_code,status,data_date,activity_snapshot FROM schedule_versions WHERE id=?', ('v1',)).fetchone()
+assert row[:3] == ('BL-01','Draft','2026-05-01') and json.loads(row[3])[0]['activity_code'] == 'A1000'
 
-# 2. Update Draft Version to Approved
-payload_approved = json.dumps({
-    'version_code': 'BL-01',
-    'version_name': 'Approved Contract Baseline',
-    'version_type': 'Baseline',
-    'status': 'Approved',
-    'owner': 'John Doe',
-    'reason': 'Approved by Client'
-})
-db.execute("UPDATE schedule_versions SET payload=? WHERE id=?", (payload_approved, 'v1'))
+for bad in [values('bad-date','BAD-DATE','Draft','2026-02-30')]:
+    try: db.execute(sql, bad); raise AssertionError('invalid date accepted')
+    except sqlite3.IntegrityError: pass
+try: db.execute(sql, values('duplicate')); raise AssertionError('duplicate revision accepted')
+except sqlite3.IntegrityError: pass
 
-# 3. Attempt to update Approved Version (MUST FAIL via trigger)
+payload = json.loads(db.execute('SELECT payload FROM schedule_versions WHERE id=?',('v1',)).fetchone()[0])
+payload['status'] = 'Approved'
+db.execute("UPDATE schedule_versions SET status='Approved', payload=? WHERE id=?", (json.dumps(payload), 'v1'))
+
 try:
-    payload_modified = json.dumps({
-        'version_code': 'BL-01',
-        'version_name': 'Tampered Approved Baseline',
-        'version_type': 'Baseline',
-        'status': 'Approved',
-        'owner': 'Hacker',
-        'reason': 'Unauthorized Edit'
-    })
-    db.execute("UPDATE schedule_versions SET payload=? WHERE id=?", (payload_modified, 'v1'))
-    raise AssertionError("Approved schedule version update MUST be rejected by immutability trigger")
+    db.execute("UPDATE schedule_versions SET owner='Tampered' WHERE id='v1'")
+    raise AssertionError('approved content update accepted')
 except (sqlite3.IntegrityError, sqlite3.OperationalError) as e:
     assert "Approved or Superseded schedule versions are immutable control points" in str(e)
 
-# 4. Attempt to delete Approved Version (MUST FAIL via trigger)
+payload['status'] = 'Superseded'
+db.execute("UPDATE schedule_versions SET status='Superseded', payload=? WHERE id=?", (json.dumps(payload), 'v1'))
+assert db.execute("SELECT status FROM schedule_versions WHERE id='v1'").fetchone()[0] == 'Superseded'
 try:
-    db.execute("DELETE FROM schedule_versions WHERE id=?", ('v1',))
-    raise AssertionError("Approved schedule version deletion MUST be rejected by immutability trigger")
+    db.execute("DELETE FROM schedule_versions WHERE id='v1'")
+    raise AssertionError('superseded version deletion accepted')
 except (sqlite3.IntegrityError, sqlite3.OperationalError) as e:
     assert "Approved or Superseded schedule versions cannot be deleted" in str(e)
 
+db.close(); os.remove(path)
 print('ok')
 `;
 
@@ -280,4 +297,18 @@ print('ok')
   }).trim();
 
   assert.equal(result, 'ok');
+});
+
+test('Schedule versions are connected to production UI, state and explicit SQLite mapping', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const hook = readFileSync(new URL('../src/hooks/useData.ts', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../src/data/sqliteRepository.ts', import.meta.url), 'utf8');
+  assert.match(app, /<ScheduleVersionModal/);
+  assert.match(app, /dataRepository\.insert<ScheduleVersion>\('schedule_versions'/);
+  assert.match(app, /dataRepository\.update<ScheduleVersion>\('schedule_versions'.*status: 'Superseded'/s);
+  assert.match(hook, /listOptional<ScheduleVersion>\('schedule_versions'\)/);
+  assert.match(hook, /case 'schedule_versions': apply\(setScheduleVersions\)/);
+  assert.match(repository, /tableName === "schedule_versions"/);
+  assert.match(repository, /INSERT INTO schedule_versions \(/);
+  assert.match(repository, /activity_snapshot = \$11/);
 });

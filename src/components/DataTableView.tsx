@@ -1,5 +1,5 @@
 import { Fragment, useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark, Undo2 } from 'lucide-react';
+import { Plus, Search, Download, Loader as Loader2, X, ChevronDown, ChevronRight, Calendar, Upload, Printer, FileText, CircleAlert, CircleCheck, CircleMinus, BadgeDollarSign, SlidersHorizontal, Copy, ClipboardPaste, ArrowDownToLine, Bookmark, Undo2, GitCompare } from 'lucide-react';
 import type * as XLSX from 'xlsx';
 import {
   assertCodeCanBeLocked,
@@ -108,6 +108,7 @@ interface DataTableViewProps {
   addButtonLabel?: string;
   submitLabel?: string;
   toolbarAction?: { label: string; title?: string; onClick: () => void | Promise<void> };
+  secondaryToolbarAction?: { label: string; title?: string; onClick: () => void | Promise<void> };
   rowAction?: { label: string; title?: string; onClick: (row: Record<string, any>) => void | Promise<void> };
   progressWirs?: Record<string, any>[];
   scheduleResourceAssignments?: Record<string, any>[];
@@ -359,7 +360,7 @@ function InlineCellEditor({
 }
 
 export function DataTableView({
-  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, onRelatedMutation, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, rowAction, progressWirs = [], scheduleResourceAssignments = [],
+  tableName, title, icon: Icon, data, columns, filters, projects, showProjectFilter, initialProjectId, showProjectColumn = showProjectFilter, projectPickerInForm, dateRangeColumn, boqItems, contracts, baselines = [], onMutated, onRelatedMutation, autoFillOptions, relationshipOptions, relationshipAutoFillFields, onInsert, onUpdate, dateWarning, validateRecord, onDeleteGroup, deleteGroupKey, canAdd = true, readOnly = false, createDraft, formColumns, editFormColumns, addButtonLabel = 'Add New', submitLabel = 'Add Record', toolbarAction, secondaryToolbarAction, rowAction, progressWirs = [], scheduleResourceAssignments = [],
 }: DataTableViewProps) {
   const [search, setSearch] = useState('');
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -3392,6 +3393,9 @@ export function DataTableView({
             </button>
             {toolbarAction && <button onClick={() => void toolbarAction.onClick()} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print" title={toolbarAction.title || toolbarAction.label}>
               <Download size={15} /> {toolbarAction.label}
+            </button>}
+            {secondaryToolbarAction && <button onClick={() => void secondaryToolbarAction.onClick()} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors no-print" title={secondaryToolbarAction.title || secondaryToolbarAction.label}>
+              <GitCompare size={15} /> {secondaryToolbarAction.label}
             </button>}
             <button onClick={() => void exportExcel()} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors no-print" title="Export the current filtered rows to Excel">
               <Download size={15} /> Export

@@ -2051,26 +2051,57 @@ pub fn run() {
         boq_item_id TEXT,
         parent_main_project_id TEXT,
         parent_main_contract_id TEXT,
+        version_code TEXT NOT NULL,
+        version_name TEXT NOT NULL,
+        version_type TEXT NOT NULL CHECK (version_type IN ('Baseline', 'Current', 'Forecast', 'What-If')),
+        status TEXT NOT NULL CHECK (status IN ('Draft', 'Approved', 'Superseded')),
+        revision_number INTEGER NOT NULL CHECK (revision_number >= 1),
+        data_date TEXT NOT NULL CHECK (length(data_date) = 10 AND date(data_date) = data_date),
+        owner TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        activity_snapshot TEXT NOT NULL CHECK (json_valid(activity_snapshot) AND json_type(activity_snapshot) = 'array'),
+        distribution_snapshot TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(distribution_snapshot) AND json_type(distribution_snapshot) = 'array'),
+        activity_count INTEGER NOT NULL CHECK (activity_count >= 0),
+        critical_activity_count INTEGER NOT NULL CHECK (critical_activity_count >= 0 AND critical_activity_count <= activity_count),
+        notes TEXT NOT NULL DEFAULT '',
         payload TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
         FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
       );
       CREATE INDEX IF NOT EXISTS idx_schedule_versions_project ON schedule_versions(project_id);
       CREATE INDEX IF NOT EXISTS idx_schedule_versions_contract ON schedule_versions(contract_id);
+      CREATE INDEX IF NOT EXISTS idx_schedule_versions_scope_status_date ON schedule_versions(project_id, contract_id, status, data_date);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_versions_revision_unique
+        ON schedule_versions(project_id, COALESCE(contract_id, ''), lower(version_code), revision_number);
+      CREATE TRIGGER IF NOT EXISTS schedule_version_no_direct_superseded_v1
+      BEFORE INSERT ON schedule_versions WHEN NEW.status = 'Superseded'
+      BEGIN SELECT RAISE(ABORT, 'A schedule version must be approved before it can be superseded.'); END;
       CREATE TRIGGER IF NOT EXISTS schedule_versions_updated_at
       AFTER UPDATE ON schedule_versions
       FOR EACH ROW
-      WHEN json_extract(OLD.payload, '$.status') NOT IN ('Approved', 'Superseded') AND json_extract(NEW.payload, '$.status') NOT IN ('Approved', 'Superseded')
+      WHEN OLD.status = 'Draft' AND NEW.status = 'Draft'
       BEGIN
         UPDATE schedule_versions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
       END;
       CREATE TRIGGER IF NOT EXISTS schedule_version_immutable_update_v1
       BEFORE UPDATE ON schedule_versions
-      WHEN json_extract(OLD.payload, '$.status') IN ('Approved', 'Superseded')
+      WHEN OLD.status = 'Superseded'
+        OR (OLD.status = 'Approved' AND NOT (
+          NEW.status = 'Superseded'
+          AND NEW.project_id IS OLD.project_id AND NEW.contract_id IS OLD.contract_id
+          AND NEW.version_code IS OLD.version_code AND NEW.version_name IS OLD.version_name
+          AND NEW.version_type IS OLD.version_type AND NEW.revision_number IS OLD.revision_number
+          AND NEW.data_date IS OLD.data_date AND NEW.owner IS OLD.owner AND NEW.reason IS OLD.reason
+          AND NEW.activity_snapshot IS OLD.activity_snapshot AND NEW.distribution_snapshot IS OLD.distribution_snapshot
+          AND NEW.activity_count IS OLD.activity_count AND NEW.critical_activity_count IS OLD.critical_activity_count
+          AND NEW.notes IS OLD.notes
+          AND json_remove(NEW.payload, '$.status', '$.updated_at') = json_remove(OLD.payload, '$.status', '$.updated_at')
+        ))
+        OR (OLD.status = 'Draft' AND NEW.status = 'Superseded')
       BEGIN SELECT RAISE(ABORT, 'Approved or Superseded schedule versions are immutable control points.'); END;
       CREATE TRIGGER IF NOT EXISTS schedule_version_immutable_delete_v1
       BEFORE DELETE ON schedule_versions
-      WHEN json_extract(OLD.payload, '$.status') IN ('Approved', 'Superseded')
+      WHEN OLD.status IN ('Approved', 'Superseded')
       BEGIN SELECT RAISE(ABORT, 'Approved or Superseded schedule versions cannot be deleted.'); END;
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,

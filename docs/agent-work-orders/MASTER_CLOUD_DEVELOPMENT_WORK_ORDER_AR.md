@@ -82,6 +82,13 @@
   الترميز/نهايات الأسطر فشل تسليم.
 - عند `READY FOR CODEX REVIEW` نفذ Push ثم توقف. لا تبدأ الميزة التالية قبل أن
   يعتمد Codex الحالية ويعيد ضبط السجل. Codex وحده يعلن `CLOSED 8/10`.
+- المكوّن الجديد غير المستورد والمُrender من مسار إنتاج فعلي يعتبر **Dead Code وفشلًا**؛
+  يجب إثبات الوصول إليه باختبار تكامل. لا يكفي إنشاء ملف UI أو إضافته إلى TypeScript.
+- لا تضع metadata أو حالات أو snapshots حاكمة داخل `payload` فقط: أنشئ أعمدة SQLite
+  صريحة وrepository mapping للقراءة والكتابة واختبر الإغلاق وإعادة الفتح.
+- قارن دائمًا `git diff START_HEAD..HEAD`، لا آخر commit فقط؛ أي حذف lockfile أو تغيير
+  موروث خارج الميزة يجب إصلاحه قبل التسليم. لا تعدّل سطر `Last accepted capability`
+  ولا تعلن تقييمًا أو `CLOSED`؛ اكتب `READY FOR CODEX REVIEW` فقط.
 
 ## 6. بوابة القبول المشتركة
 
@@ -142,6 +149,14 @@ removed, changed dates/duration/logic/float/critical path؛ منع تعديل ap
 
 **قبول 8/10:** حفظ نسختين وإعادة فتحهما، مقارنة دقيقة، baseline immutable، ولا تؤثر
 المقارنة على current schedule.
+
+**تفصيل إلزامي يمنع التنفيذ الناقص:** أعمدة SQL فعلية للكود/النوع/الحالة/revision/
+data date/owner/reason والـsnapshots؛ uniqueness داخل المشروع والعقد؛ دورة Draft →
+Approved → Superseded مع منع تعديل/حذف المعتمد؛ اختيار project/main contract صريح؛
+التقاط activities وtime-phased distributions داخل النطاق فقط؛ مقارنة added/removed،
+البداية والنهاية والمدة والميزانية والمنطق وtotal/free float والمسار الحرج؛ زر قابل
+للوصول من Schedule؛ حفظ عبر repository ثم إعادة التحميل؛ واختبارات سلبية للنطاق
+والتاريخ والتكرار والعبث وعدم تغيير Current.
 
 ### C3 — Delay & Time-Impact Register
 

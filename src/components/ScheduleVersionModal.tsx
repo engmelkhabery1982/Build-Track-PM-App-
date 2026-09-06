@@ -29,12 +29,17 @@ import {
 interface ScheduleVersionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  projectId: string;
+  projectId?: string;
   contractId?: string | null;
+  projects?: Array<{ id: string; project_code?: string; name?: string }>;
+  contracts?: Array<{ id: string; project_id: string; contract_number?: string; title?: string; parent_main_contract_id?: string | null }>;
   currentActivities: Schedule[];
+  currentDistributions?: Record<string, any>[];
   existingVersions: ScheduleVersion[];
   onSaveVersion: (version: ScheduleVersion) => Promise<void>;
+  onSupersedeVersion?: (version: ScheduleVersion) => Promise<void>;
   currencySymbol?: string;
+  dataDate?: string;
 }
 
 export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
@@ -42,10 +47,15 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
   onClose,
   projectId,
   contractId,
+  projects = [],
+  contracts = [],
   currentActivities,
+  currentDistributions = [],
   existingVersions,
   onSaveVersion,
+  onSupersedeVersion,
   currencySymbol = '$',
+  dataDate: governedDataDate,
 }) => {
   const [activeTab, setActiveTab] = useState<'register' | 'capture' | 'compare'>('register');
 
@@ -53,8 +63,11 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
   const [versionCode, setVersionCode] = useState(`VER-${new Date().toISOString().slice(0, 10)}`);
   const [versionName, setVersionName] = useState('Current Schedule Snapshot');
   const [versionType, setVersionType] = useState<'Baseline' | 'Current' | 'Forecast' | 'What-If'>('Current');
+  const [revisionNumber, setRevisionNumber] = useState(1);
   const [status, setStatus] = useState<'Draft' | 'Approved' | 'Superseded'>('Draft');
-  const [dataDate, setDataDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dataDate, setDataDate] = useState(governedDataDate || new Date().toISOString().slice(0, 10));
+  const [selectedProjectId, setSelectedProjectId] = useState(projectId || '');
+  const [selectedContractId, setSelectedContractId] = useState(contractId || '');
   const [owner, setOwner] = useState('Planning Lead');
   const [reason, setReason] = useState('Periodic schedule review and baseline tracking');
   const [notes, setNotes] = useState('');
@@ -69,6 +82,14 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
 
   // Set default comparison versions when modal opens or versions change
   React.useEffect(() => {
+    if (!isOpen) return;
+    const nextProjectId = projectId || selectedProjectId || projects[0]?.id || currentActivities[0]?.project_id || '';
+    setSelectedProjectId(nextProjectId);
+    if (contractId) setSelectedContractId(contractId);
+    if (governedDataDate) setDataDate(governedDataDate);
+  }, [isOpen, projectId, contractId, projects, currentActivities, governedDataDate, selectedProjectId]);
+
+  React.useEffect(() => {
     if (existingVersions.length > 0) {
       if (!selectedV1Id) {
         const approvedBaseline = existingVersions.find((v) => v.status === 'Approved' && v.version_type === 'Baseline');
@@ -77,9 +98,14 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
     }
   }, [existingVersions, selectedV1Id]);
 
-  if (!isOpen) return null;
-
-  const projectVersions = existingVersions.filter((v) => v.project_id === projectId);
+  const scopedContracts = contracts.filter((contract) => contract.project_id === selectedProjectId && !contract.parent_main_contract_id);
+  const scopedActivities = currentActivities.filter((activity) =>
+    activity.project_id === selectedProjectId && (!selectedContractId || activity.contract_id === selectedContractId)
+    && String(activity.activity || '').trim(),
+  );
+  const scopedActivityIds = new Set(scopedActivities.map((activity) => activity.id));
+  const scopedDistributions = currentDistributions.filter((row) => scopedActivityIds.has(String(row.schedule_id || row.activity_id || '')));
+  const projectVersions = existingVersions.filter((v) => v.project_id === selectedProjectId && (!selectedContractId || v.contract_id === selectedContractId));
 
   const handleCaptureSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,16 +113,18 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
     setIsSubmitting(true);
     try {
       const newVersion = captureScheduleVersion({
-        projectId,
-        contractId,
+        projectId: selectedProjectId,
+        contractId: selectedContractId || null,
         versionCode,
         versionName,
         versionType,
         status,
+        revisionNumber,
         dataDate,
         owner,
         reason,
-        activities: currentActivities,
+        activities: scopedActivities,
+        distributions: scopedDistributions,
         notes,
       });
 
@@ -118,7 +146,8 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
       return compareScheduleVersions(version1, {
         versionCode: 'LIVE',
         versionName: 'Live Executable Schedule',
-        activities: currentActivities,
+        activities: scopedActivities,
+        dataDate,
       });
     }
 
@@ -126,7 +155,7 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
     if (!version2) return null;
 
     return compareScheduleVersions(version1, version2);
-  }, [version1, selectedV2Id, projectVersions, currentActivities]);
+  }, [version1, selectedV2Id, projectVersions, scopedActivities, dataDate]);
 
   const filteredVariances = useMemo(() => {
     if (!comparisonSummary) return [];
@@ -148,6 +177,8 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
       return true;
     });
   }, [comparisonSummary, filterStatus, searchQuery]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -209,6 +240,21 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
             <GitCompare className="w-4 h-4" />
             <span>Compare Versions</span>
           </button>
+        </div>
+
+        <div className="grid gap-3 border-b border-slate-200 bg-white px-6 py-3 md:grid-cols-2">
+          <label className="text-xs font-semibold text-slate-600">Project
+            <select value={selectedProjectId} onChange={(event) => { setSelectedProjectId(event.target.value); setSelectedContractId(''); setSelectedV1Id(''); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
+              <option value="">Select project</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{[project.project_code, project.name].filter(Boolean).join(' — ') || project.id}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-slate-600">Main contract
+            <select value={selectedContractId} onChange={(event) => { setSelectedContractId(event.target.value); setSelectedV1Id(''); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" disabled={!selectedProjectId}>
+              <option value="">All main contracts in project</option>
+              {scopedContracts.map((contract) => <option key={contract.id} value={contract.id}>{[contract.contract_number, contract.title].filter(Boolean).join(' — ') || contract.id}</option>)}
+            </select>
+          </label>
         </div>
 
         {/* Modal Content */}
@@ -305,16 +351,19 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
                           <User className="w-3 h-3" />
                           {v.owner}
                         </span>
-                        <button
-                          onClick={() => {
-                            setSelectedV1Id(v.id);
-                            setActiveTab('compare');
-                          }}
-                          className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
-                        >
-                          <GitCompare className="w-3.5 h-3.5" />
-                          <span>Compare</span>
-                        </button>
+                        <div className="flex items-center gap-3">
+                          {v.status === 'Approved' && onSupersedeVersion && <button type="button" onClick={() => void onSupersedeVersion(v).catch((error) => window.alert(error?.message || 'Could not supersede the approved version.'))} className="text-xs font-semibold text-amber-700 hover:text-amber-900">Supersede</button>}
+                          <button
+                            onClick={() => {
+                              setSelectedV1Id(v.id);
+                              setActiveTab('compare');
+                            }}
+                            className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                          >
+                            <GitCompare className="w-3.5 h-3.5" />
+                            <span>Compare</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -329,7 +378,7 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="text-base font-bold text-slate-900">Capture Schedule Version / Scenario</h3>
                 <p className="text-xs text-slate-500">
-                  Captures the current {currentActivities.length} activities as an immutable snapshot or draft scenario.
+                  Captures the {scopedActivities.length} executable activities in the selected scope as a frozen snapshot or draft scenario.
                 </p>
               </div>
 
@@ -351,6 +400,11 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
                     placeholder="e.g. BL-01, FCST-MAY26"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Revision Number *</label>
+                  <input type="number" required min={1} step={1} value={revisionNumber} onChange={(event) => setRevisionNumber(Number(event.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
 
                 <div>
@@ -388,7 +442,6 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
                   >
                     <option value="Draft">Draft (Editable / Temporary)</option>
                     <option value="Approved">Approved (Immutable Control Point)</option>
-                    <option value="Superseded">Superseded (Historical / Historical Baseline)</option>
                   </select>
                 </div>
 
@@ -647,6 +700,7 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
                             <th className="py-2.5 px-3">Finish (A → B)</th>
                             <th className="py-2.5 px-3 text-center">Finish Δ</th>
                             <th className="py-2.5 px-3 text-center">Duration (A → B)</th>
+                            <th className="py-2.5 px-3 text-center">Total Float (A → B)</th>
                             <th className="py-2.5 px-3 text-center">Critical</th>
                             <th className="py-2.5 px-3">Changed Attributes</th>
                           </tr>
@@ -654,7 +708,7 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
                         <tbody className="divide-y divide-slate-100">
                           {filteredVariances.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                              <td colSpan={9} className="py-8 text-center text-slate-400">
                                 No activity variances found matching current filters.
                               </td>
                             </tr>
@@ -704,6 +758,10 @@ export const ScheduleVersionModal: React.FC<ScheduleVersionModalProps> = ({
 
                                 <td className="py-2.5 px-3 text-center font-mono">
                                   {row.baselineDurationDays ?? '-'} → {row.currentDurationDays ?? '-'}
+                                </td>
+
+                                <td className="py-2.5 px-3 text-center font-mono">
+                                  {row.baselineTotalFloatDays ?? '-'} → {row.currentTotalFloatDays ?? '-'}
                                 </td>
 
                                 <td className="py-2.5 px-3 text-center font-semibold">

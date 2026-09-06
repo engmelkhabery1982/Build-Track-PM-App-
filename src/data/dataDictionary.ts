@@ -9,6 +9,7 @@ export const STATUS_SETS = {
   wir: ['Pending', 'Approved', 'Rejected'],
   reportingPeriod: ['Open', 'Locked', 'Closed'],
   baseline: ['Draft', 'Approved', 'Superseded'],
+  scheduleVersion: ['Draft', 'Approved', 'Superseded'],
   document: ['Draft', 'Under Review', 'Approved', 'Current', 'Superseded'],
 } as const;
 
@@ -17,6 +18,7 @@ export const CANONICAL_FIELDS = {
   contract: ['contract_id', 'contract_number', 'parent_main_contract_id', 'contract_value'],
   boq: ['boq_header_id', 'boq_code', 'boq_item_id', 'item_code', 'quantity', 'unit_rate', 'amount'],
   schedule: ['activity_code', 'boq_item_id', 'start_date', 'end_date', 'duration_days', 'planned_quantity', 'planned_value'],
+  scheduleVersion: ['version_code', 'version_name', 'version_type', 'status', 'revision_number', 'data_date', 'owner', 'reason', 'activity_snapshot', 'distribution_snapshot'],
   progress: ['wir_number', 'inspection_date', 'boq_item_id', 'quantity', 'unit_price', 'item_amount'],
   commercial: ['variation_number', 'variation_id', 'invoice_number', 'approved_date', 'effective_date'],
   financial: ['budget', 'planned_value', 'earned_work_value', 'actual_cost', 'inflow', 'outflow', 'net'],

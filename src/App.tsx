@@ -14,8 +14,9 @@ import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
+import { ScheduleVersionModal } from '@/components/ScheduleVersionModal';
 import { ProjectDataDateProvider, useProjectDataDate } from '@/context/ProjectDataDateContext';
-import type { ViewKey, Project } from '@/types';
+import type { ViewKey, Project, ScheduleVersion } from '@/types';
 import { addCalendarDays, addWorkingDays, calendarShiftHours, distributedPlannedValueToDate, reconcileScheduleDistributions, scheduleBudget, schedulePlannedValueToDate, WORK_CALENDARS, workingDaysBetween } from '@/utils/schedulePlanning';
 import { calculatePmoSnapshot } from '@/utils/pmoSnapshot';
 import { calculateEvmAtDataDate } from '@/utils/evm';
@@ -1046,6 +1047,7 @@ function AppWorkspace() {
   const [loginName, setLoginName] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [scheduleVersionOpen, setScheduleVersionOpen] = useState(false);
   const { dataDate: unifiedDataDate } = useProjectDataDate();
   const data = useData();
   const synchronizingLiveSubcontractCosts = useRef(false);
@@ -3528,6 +3530,7 @@ function AppWorkspace() {
     };
 
     return (
+      <>
       <DataTableView
         tableName={tableName}
         title={title}
@@ -3815,6 +3818,11 @@ function AppWorkspace() {
           label: 'Migrate Existing Parties',
           title: 'Create master records and link existing contracts and procurement without deleting legacy names.',
           onClick: migrateLegacyParties,
+        } : undefined}
+        secondaryToolbarAction={tableName === 'schedule' ? {
+          label: 'Versions & Comparison',
+          title: 'Capture governed schedule versions and compare scope, dates, logic, float, criticality and budget without changing the live schedule.',
+          onClick: () => setScheduleVersionOpen(true),
         } : undefined}
         rowAction={tableName === 'supplier_invoices' ? {
           label: 'Reverse Invoice',
@@ -4277,6 +4285,26 @@ function AppWorkspace() {
           ...createCodeDraft('projects', data.projects as Record<string, any>[]),
         }) : tableName === 'procurement' || tableName === 'procurement_receipts' ? () => ({ status: 'Draft' }) : undefined}
       />
+      <ScheduleVersionModal
+        isOpen={tableName === 'schedule' && scheduleVersionOpen}
+        onClose={() => setScheduleVersionOpen(false)}
+        projectId={workspaceProjectId || undefined}
+        projects={data.projects}
+        contracts={data.contracts}
+        currentActivities={data.schedules}
+        currentDistributions={data.scheduleDistributions as Record<string, any>[]}
+        existingVersions={data.scheduleVersions}
+        dataDate={unifiedDataDate}
+        onSaveVersion={async (version: ScheduleVersion) => {
+          const saved = await dataRepository.insert<ScheduleVersion>('schedule_versions', version);
+          data.applyLocalMutation('schedule_versions', { type: 'insert', row: saved });
+        }}
+        onSupersedeVersion={async (version: ScheduleVersion) => {
+          const updated = await dataRepository.update<ScheduleVersion>('schedule_versions', version.id, { status: 'Superseded' });
+          data.applyLocalMutation('schedule_versions', { type: 'update', row: updated });
+        }}
+      />
+      </>
     );
   }
 
