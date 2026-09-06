@@ -5,8 +5,8 @@
 
 ## الحالة الحالية
 
-- Official reviewed commit: `يحدّث بعد commit المزامنة النهائي`
-- Agent-cloud synchronized commit: `يحدّث بعد push المزامنة النهائي`
+- Official reviewed commit: `36838edd4ebeac560a2b33279cd229f80c2f2869`
+- Agent-cloud synchronized commit: `6f5b598`
 - Current capability: `C2 — Schedule Versions, Scenarios & Comparison`
 - Status: `READY — NOT STARTED`
 - Last accepted capability: `A4 — KPI Source Drill-down & Reconciliation — CLOSED 8/10`
