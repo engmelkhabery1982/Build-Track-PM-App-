@@ -2846,6 +2846,88 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 64,
+            description: "add_versioned_cash_forecast_tables",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS cash_forecast_versions (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT NOT NULL,
+        contract_id TEXT,
+        version_code TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        client_payment_lag_days INTEGER NOT NULL DEFAULT 60,
+        subcontractor_payment_lag_days INTEGER NOT NULL DEFAULT 30,
+        retention_release_toc_percent REAL NOT NULL DEFAULT 50,
+        retention_release_dlc_percent REAL NOT NULL DEFAULT 50,
+        advance_recovery_rate_percent REAL NOT NULL DEFAULT 10,
+        vat_payout_lag_months INTEGER NOT NULL DEFAULT 1,
+        contingency_drawdown_percent REAL NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_by TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_cash_versions_scope ON cash_forecast_versions(project_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_versions_code ON cash_forecast_versions(project_id, lower(version_code));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 65,
+            description: "add_health_score_versions_table",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS health_score_versions (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT NOT NULL,
+        version_code TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        owner TEXT NOT NULL,
+        reason TEXT,
+        payload TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_health_versions_scope ON health_score_versions(project_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_health_versions_code ON health_score_versions(project_id, lower(version_code));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 66,
+            description: "add_resource_leveling_proposals_table",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS resource_leveling_proposals (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT,
+        applied_at TEXT,
+        reversed_at TEXT,
+        project_id TEXT NOT NULL,
+        source_schedule_version_id TEXT,
+        applied_schedule_version_id TEXT,
+        data_date TEXT NOT NULL,
+        proposal_code TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        algorithm TEXT NOT NULL DEFAULT 'CPM_FLOAT_FIRST',
+        owner TEXT NOT NULL,
+        reason TEXT,
+        rejection_reason TEXT,
+        overloaded_resources TEXT NOT NULL DEFAULT '[]',
+        affected_activities TEXT NOT NULL DEFAULT '[]',
+        changes TEXT NOT NULL DEFAULT '[]',
+        impact_summary TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_leveling_proposals_scope ON resource_leveling_proposals(project_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_leveling_proposals_code ON resource_leveling_proposals(project_id, lower(proposal_code));
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

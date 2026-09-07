@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users, Gauge } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users, Gauge, Sliders } from 'lucide-react';
 import { useData } from '@/hooks/useData';
 import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approveCostPlanVersion, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, compareBaselineRevisions, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, issueReportVersion, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule, submitLaborTimesheet, approveLaborTimesheet, postLaborTimesheet, reverseLaborTimesheet, approveEquipmentLog, postEquipmentLog, reverseEquipmentLog } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
@@ -14,6 +14,7 @@ import { ReportPack } from '@/components/ReportPack';
 import { HelpCenter } from '@/components/HelpCenter';
 import { PreferencesPanel, type WorkspaceMode } from '@/components/PreferencesPanel';
 import { ResourceCapacityBoard } from '@/components/ResourceCapacityBoard';
+import { ResourceLevelingRegister } from '@/components/ResourceLevelingRegister';
 import { ScheduleVersionModal } from '@/components/ScheduleVersionModal';
 import { DelayRegisterModal } from '@/components/DelayRegisterModal';
 import { CostPlanModal } from '@/components/CostPlanModal';
@@ -97,6 +98,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'procurementReceipts', label: 'Goods Receipts', icon: ClipboardCheck, group: 'Cost & Resources' },
   { key: 'resourceMaster', label: 'Resource Master', icon: Users, group: 'Cost & Resources' },
   { key: 'resourceCapacity', label: 'Resource Capacity Board', icon: Users, group: 'Planning & Controls' },
+  { key: 'resourceLeveling', label: 'Resource Leveling Register', icon: Sliders, group: 'Planning & Controls' },
   { key: 'resourceAssignments', label: 'Planned Resource Assignments', icon: Users, group: 'Planning & Controls' },
   { key: 'laborDuty', label: 'Labor Duty', icon: HardHat, group: 'Cost & Resources' },
   { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'Cost & Resources' },
@@ -2456,6 +2458,20 @@ function AppWorkspace() {
         laborDuty={data.laborDuty as Record<string, any>[]}
         equipment={data.equipment as Record<string, any>[]}
         onNavigate={setActiveView}
+      />;
+    }
+
+    if (activeView === 'resourceLeveling') {
+      return <ResourceLevelingRegister
+        projectId={workspaceProjectId}
+        dataDate={unifiedDataDate}
+        schedules={data.schedules as Record<string, any>[]}
+        resources={data.resourceMasters as Record<string, any>[]}
+        assignments={data.scheduleResourceAssignments as Record<string, any>[]}
+        workCalendars={data.workCalendars as Record<string, any>[]}
+        onApplyProposalToForecast={(forecastInput) => {
+          data.reload();
+        }}
       />;
     }
 

@@ -13,6 +13,8 @@ import type {
 import type { Warning } from '@/utils/varianceActionRegister';
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
+import { GovernedHealthScoreCard } from './GovernedHealthScoreCard';
+import type { RawHealthInputs } from '@/utils/governedHealthScore';
 
 interface IntegratedProjectControlsCockpitProps {
   projects: Project[];
@@ -380,6 +382,20 @@ export function IntegratedProjectControlsCockpit({
     return list.sort((a, b) => b.materialityValue - a.materialityValue);
   }, [projectCosts, projectVariations, projectSchedules, projectQuality]);
 
+  const healthInputs: RawHealthInputs = useMemo(() => {
+    return {
+      spi: evm.revenueSPI || evm.costSPI || null,
+      cpi: evm.costCPI ?? null,
+      netCashBalance: cockpitMetrics.cash.cashVariance,
+      unapprovedVariationRatio: (cockpitMetrics.change.pendingVariationsValue > 0 && cockpitMetrics.scope.totalScopeValue > 0)
+        ? (cockpitMetrics.change.pendingVariationsValue / cockpitMetrics.scope.totalScopeValue) : 0,
+      wirFailureRate: (cockpitMetrics.quality.totalNCRs > 0)
+        ? (cockpitMetrics.quality.openNCRs / cockpitMetrics.quality.totalNCRs) : 0,
+      missingDataRatio: 0,
+      dataDate: dataDate || undefined,
+      versionCode: 'V-HEALTH-GOVERNED',
+    };
+  }, [evm, cockpitMetrics, dataDate]);
 
   // Tooltip controller
   const showTooltip = (e: React.MouseEvent, dimensionKey: string) => {
@@ -486,6 +502,9 @@ export function IntegratedProjectControlsCockpit({
           </div>
         </div>
       </div>
+
+      {/* Governed Project Health Score Card */}
+      <GovernedHealthScoreCard inputs={healthInputs} dataDate={dataDate || undefined} />
 
       {/* Grid of 8 Unified Dimensions of Control */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -462,6 +462,67 @@ export interface ScheduleVersion {
   updated_at?: string;
 }
 
+export type LevelingAlgorithm = 'CPM_FLOAT_FIRST' | 'PRIORITY_BASED' | 'RESOURCE_SMOOTHING';
+export type LevelingProposalStatus = 'Draft' | 'Reviewed' | 'Approved' | 'Rejected' | 'Applied' | 'Reversed';
+
+export interface LevelingActivityChange {
+  scheduleId: string;
+  activityCode: string;
+  activityName: string;
+  resourceIds: string[];
+  originalStart: string;
+  originalFinish: string;
+  proposedStart: string;
+  proposedFinish: string;
+  originalTotalFloat: number;
+  proposedTotalFloat: number;
+  isCriticalBefore: boolean;
+  isCriticalAfter: boolean;
+  delayDays: number;
+  reason: string;
+}
+
+export interface LevelingOverloadedResourceSummary {
+  resourceId: string;
+  resourceCode: string;
+  resourceName: string;
+  maxOverloadHours: number;
+  totalOverloadDays: number;
+}
+
+export interface LevelingImpactSummary {
+  totalActivitiesShifted: number;
+  maxScheduleSlippageDays: number;
+  criticalPathShifted: boolean;
+  remainingOverloadsCount: number;
+  clearedOverloadsCount: number;
+  beforeOverloadedDays: number;
+  afterOverloadedDays: number;
+}
+
+export interface ResourceLevelingProposal {
+  id: string;
+  project_id: string;
+  source_schedule_version_id?: string | null;
+  applied_schedule_version_id?: string | null;
+  data_date: string;
+  proposal_code: string;
+  title: string;
+  status: LevelingProposalStatus;
+  algorithm: LevelingAlgorithm;
+  owner: string;
+  reason?: string | null;
+  rejection_reason?: string | null;
+  overloaded_resources: LevelingOverloadedResourceSummary[];
+  affected_activities: string[];
+  changes: LevelingActivityChange[];
+  impact_summary: LevelingImpactSummary;
+  created_at: string;
+  updated_at?: string | null;
+  applied_at?: string | null;
+  reversed_at?: string | null;
+}
+
 export interface Contract {
   id: string;
   project_id: string;
@@ -1420,6 +1481,7 @@ export type ViewKey =
   | 'resourceMaster'
   | 'resourceCapacity'
   | 'resourceAssignments'
+  | 'resourceLeveling'
   | 'laborDuty'
   | 'laborTimesheets'
   | 'equipment'
@@ -1853,5 +1915,70 @@ export interface ClaimLine {
   boq_item_id?: string | null;
   value_impact?: number;
 }
+
+export interface CashForecastVersion {
+  id: string;
+  created_at: string;
+  project_id: string;
+  contract_id?: string | null;
+  version_code: string;
+  title: string;
+  status: 'Draft' | 'Approved' | 'Archived';
+  client_payment_lag_days: number;
+  subcontractor_payment_lag_days: number;
+  retention_release_toc_percent: number;
+  retention_release_dlc_percent: number;
+  advance_recovery_rate_percent: number;
+  vat_payout_lag_months: number;
+  contingency_drawdown_percent: number;
+  notes?: string | null;
+  created_by: string;
+}
+
+export type HealthDimensionKey = 'Schedule' | 'Cost' | 'Cash' | 'Scope' | 'Quality' | 'Data Quality';
+
+export interface HealthDimensionThreshold {
+  dimension: HealthDimensionKey;
+  weight: number; // e.g. 20 (percent, total must be 100)
+  warningThreshold: number;
+  criticalThreshold: number;
+  direction: 'higher_is_better' | 'lower_is_better';
+}
+
+export interface HealthScoreVersion {
+  id: string;
+  created_at: string;
+  project_id: string;
+  version_code: string;
+  title: string;
+  status: 'Draft' | 'Approved' | 'Archived';
+  owner: string;
+  reason?: string | null;
+  payload?: string | null;
+}
+
+export interface HealthDimensionContribution {
+  dimension: HealthDimensionKey;
+  weight: number;
+  rawMetricValue: number | null;
+  metricName: string;
+  score: number;
+  weightedScore: number;
+  status: 'Green' | 'Amber' | 'Red' | 'Unavailable';
+  confidence: number;
+  source: string;
+  exclusions?: string[];
+}
+
+export interface HealthScoreResult {
+  overallScore: number;
+  status: 'Green' | 'Amber' | 'Red' | 'Unavailable';
+  overallConfidence: number;
+  versionCode: string;
+  dataDate?: string;
+  dimensions: HealthDimensionContribution[];
+  hasMissingCriticalInputs: boolean;
+}
+
 
 

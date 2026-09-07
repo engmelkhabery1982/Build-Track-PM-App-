@@ -7,8 +7,8 @@
 
 - Official reviewed C2 feature commit: `4d04d8de92e8bfaf7ca845c81b0108b54284781e`
 - Agent-cloud C2 synchronization commit: `8d22f5295bb491ec5c31e70d8db2940ad4ae0090`
-- Current capability: `F5 — Versioned Cash Forecast Assumptions`
-- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4 await Codex acceptance`
+- Current capability: `F8 — Delay Event Analysis Engine (EOT & Quantum)`
+- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4/F5/F6/F7 await Codex acceptance`
 - Last accepted capability: `E3 — Controlled Reproducible Report Pack (Codex-repaired, reviewed and gate-tested)`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
@@ -70,6 +70,51 @@
   - Validation engine enforcing locked reporting periods, work calendar non-working day overrides, duplicate worker shifts, active worker status, and scope matching.
   - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed, 205/205 tests passed.
 - Exact next action: Codex review gate for F1, then proceed with F2 (Equipment Meter, Hours & Fuel Posting).
+
+## تحديث التسليم — F7 (Resource Leveling Decision Register)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `F7 — Resource Leveling Decision Register`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - Added leveling interfaces (`ResourceLevelingProposal`, `LevelingAlgorithm`, `LevelingProposalStatus`, `LevelingActivityChange`, `LevelingOverloadedResourceSummary`, `LevelingImpactSummary`) and `'resourceLeveling'` view key in `src/types/index.ts`.
+  - Added SQLite Migration 66 to `src-tauri/src/lib.rs` for `resource_leveling_proposals` table with indexes.
+  - Registered `resource_leveling_proposals` in `KNOWN_TABLES` in `src/data/sqliteRepository.ts`.
+  - Implemented leveling calculation and simulation engine in `src/utils/resourceLevelingEngine.ts`.
+  - Implemented `ResourceLevelingRegister.tsx` UI with status lifecycle, simulation modal, impact metrics, and proposal rejection/application/reversal handlers.
+  - Integrated `ResourceLevelingRegister` in `src/App.tsx` and added navigation entry in `ResourceCapacityBoard.tsx`.
+  - Created automated test suite `tests/resource-leveling.test.mjs` verifying CPM float prioritization, proposal creation without modifying source schedules, and forecast version creation upon applying.
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
+- Exact next action: Proceed to F8 (Delay Event Analysis Engine - EOT & Quantum).
+
+## تحديث التسليم — F6 (Governed Project Health Score)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `F6 — Governed Project Health Score`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - Added `HealthScoreVersion` & `HealthDimensionThreshold` interfaces in `src/types/index.ts`.
+  - Added SQLite Migration 65 in `src-tauri/src/lib.rs` for `health_score_versions` table and registered in `KNOWN_TABLES` (`src/data/sqliteRepository.ts`).
+  - Implemented central engine `calculateGovernedHealthScore` in `src/utils/governedHealthScore.ts` supporting 6 dimensions (Schedule, Cost, Cash, Scope, Quality, Data Quality).
+  - Enforced missing critical input rule (missing metric reduces confidence and caps status below Green).
+  - Created `GovernedHealthScoreCard.tsx` and integrated into `IntegratedProjectControlsCockpit.tsx`.
+  - Created automated test suite `tests/governed-health-score.test.mjs`.
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed, 213/213 tests passed.
+- Exact next action: Proceed to F7 (Resource Leveling Decision Register).
+
+## تحديث التسليم — F5 (Versioned Cash Forecast Assumptions)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `F5 — Versioned Cash Forecast Assumptions`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - Added `CashForecastVersion` interface in `src/types/index.ts`.
+  - Added SQLite Migration 64 in `src-tauri/src/lib.rs` for `cash_forecast_versions` table and registered in `KNOWN_TABLES` (`src/data/sqliteRepository.ts`).
+  - Implemented versioned assumption engine in `src/utils/cashFlowForecast.ts` with client/subcontractor payment lags, advance recovery, retention release, and peak working capital deficit calculation.
+  - Enhanced `CashFlowForecastBoard.tsx` with parameter sliders, liquidity status banners, and scenario comparison view.
+  - Created automated test suite `tests/cash-forecast-assumptions-engine.test.mjs`.
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
+- Exact next action: Proceed to F6 (Milestone Ladders & Physical Payment Triggers).
 
 ## تحديث التسليم — F4 (Client/Subcontract Invoice & Certificate Reconciliation)
 
