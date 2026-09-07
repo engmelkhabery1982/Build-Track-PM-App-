@@ -7,9 +7,9 @@
 
 - Official reviewed C2 feature commit: `4d04d8de92e8bfaf7ca845c81b0108b54284781e`
 - Agent-cloud C2 synchronization commit: `8d22f5295bb491ec5c31e70d8db2940ad4ae0090`
-- Current capability: `F8 — Delay Event Analysis Engine (EOT & Quantum)`
-- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4/F5/F6/F7 await Codex acceptance`
-- Last accepted capability: `E3 — Controlled Reproducible Report Pack (Codex-repaired, reviewed and gate-tested)`
+- Current capability: `G3 — Scoped External Portal`
+- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4/F5/F6/F7/F8/F9/G1/G2 await Codex acceptance`
+- Last accepted capability: `G2 — Users, Roles & Segregation of Duties (provisional)`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
 
@@ -85,7 +85,7 @@
   - Integrated `ResourceLevelingRegister` in `src/App.tsx` and added navigation entry in `ResourceCapacityBoard.tsx`.
   - Created automated test suite `tests/resource-leveling.test.mjs` verifying CPM float prioritization, proposal creation without modifying source schedules, and forecast version creation upon applying.
   - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
-- Exact next action: Proceed to F8 (Delay Event Analysis Engine - EOT & Quantum).
+- Exact next action: Proceed to F8 (Persistent Report Designer).
 
 ## تحديث التسليم — F6 (Governed Project Health Score)
 

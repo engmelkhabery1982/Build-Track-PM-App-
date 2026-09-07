@@ -1221,7 +1221,7 @@ export interface AppUser {
   username: string;
   display_name: string;
   role: 'PMO Admin' | 'Project Manager' | 'Commercial Manager' | 'Site Engineer' | 'Executive Viewer' | string;
-  status: 'Active' | 'Disabled' | string;
+  status: string | string;
   password_hash?: string;
   password_salt?: string;
   last_login_at?: string | null;
@@ -1274,21 +1274,62 @@ export interface RateHistory {
   created_at: string;
 }
 
+export interface Attachment {
+  id: string;
+  project_id?: string | null;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  storage_path: string;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface ReportFieldConfig {
+  field_id: string;
+  label: string;
+  width?: string;
+  alignment?: 'left' | 'center' | 'right';
+  format?: string;
+  is_totaled?: boolean;
+}
+
+export interface ReportSectionConfig {
+  id: string;
+  title: string;
+  type: 'Header' | 'Table' | 'Summary' | 'Signatures' | 'Footer';
+  fields: ReportFieldConfig[];
+  grouping?: string[];
+  filters?: Record<string, string>;
+}
+
 export interface ReportTemplate {
   id: string;
+  project_id?: string | null;
+  template_code: string;
   template_name: string;
-  report_type: 'Client Invoice' | 'Subcontractor Invoice' | 'WIR' | 'Variation Order' | 'Cost Report' | 'Cash Forecast' | string;
+  report_type: 'Client Invoice' | 'Subcontractor Invoice' | 'WIR' | 'Variation Order' | 'Cost Report' | 'Cash Forecast' | 'Report Pack' | string;
+  scope: 'Portfolio' | 'Project' | 'Contract';
+  revision_number: number;
+  status: 'Draft' | 'Approved' | 'Superseded';
   title: string;
   subtitle: string;
-  logo_data_url: string;
-  selected_fields: string[];
+  logo_attachment_id: string | null;
+  sections: ReportSectionConfig[];
+  selected_fields?: string[]; // Legacy fallback
   footer_text: string;
   accent_color: string;
-  page_size?: 'A4' | 'Letter';
-  orientation?: 'portrait' | 'landscape';
-  show_generated_at?: boolean;
-  show_signatures?: boolean;
+  page_size: 'A4' | 'Letter';
+  orientation: 'portrait' | 'landscape';
+  show_generated_at: boolean;
+  show_signatures: boolean;
+  locale: string;
+  currency: string;
+  date_format: string;
+  owner: string;
+  superseded_by?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ReportVersion {
@@ -1498,7 +1539,7 @@ export type ViewKey =
   | 'documents'
   | 'tracking'
   | 'controlsCockpit'
-  | 'varianceActions';
+  | 'varianceActions' | 'dataQuality';
 
 export interface FragnetActivity {
   id: string;
@@ -1982,3 +2023,80 @@ export interface HealthScoreResult {
 
 
 
+
+export interface DqRule {
+  id: string;
+  project_id?: string | null;
+  rule_code: string;
+  name: string;
+  description: string;
+  target_entity: string;
+  rule_type: 'Completeness' | 'Accuracy' | 'Consistency' | 'Timeliness' | 'Uniqueness';
+  severity: 'Critical' | 'Warning' | 'Info';
+  status: 'Active' | 'Inactive';
+  // Rule definitions, typically a JSON structure evaluating conditions
+  conditions: any; 
+}
+
+export interface DqExecutionLog {
+  id: string;
+  project_id?: string | null;
+  rule_id: string;
+  execution_date: string;
+  status: 'Passed' | 'Failed' | 'Error';
+  failed_records_count: number;
+  total_records_scanned: number;
+  error_message?: string;
+  // Array of record IDs that failed
+  failed_record_ids?: string[];
+}
+
+export type SyncStatus = 'Pending' | 'Failed' | 'Synced' | 'Conflict';
+export interface SyncOutboxEntry {
+  id: string;
+  operation_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: 'Insert' | 'Update' | 'Delete';
+  payload_json: string;
+  status: SyncStatus;
+  retry_count: number;
+  last_error?: string | null;
+  created_at: string;
+  synced_at?: string | null;
+}
+export interface SyncInboxEntry {
+  id: string;
+  operation_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: 'Insert' | 'Update' | 'Delete';
+  payload_json: string;
+  status: 'Pending' | 'Applied' | 'Failed';
+  created_at: string;
+  applied_at?: string | null;
+}
+export interface SyncMetadata {
+  id: string;
+  last_synced_at?: string | null;
+  status?: string | null;
+  last_error?: string | null;
+}
+
+export type AppRole = 'PMO Admin' | 'Planner' | 'Commercial' | 'Cost' | 'Field' | 'Viewer';
+
+export interface AppUser {
+  id: string;
+  username: string;
+  display_name: string;
+  email?: string;
+  role: string;
+  status: string;
+  approval_limit?: number;
+  created_at: string;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AppUser;
+}

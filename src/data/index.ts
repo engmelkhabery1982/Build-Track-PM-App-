@@ -18,7 +18,7 @@ export {
   isProtectedReportingPeriod,
   lockedPeriodForRecord,
 } from "./reportingPeriodGovernance";
-export { runDataQualityChecks } from "./dataQuality";
+export * from './dataQuality';
 export { approveSupplierInvoice, settleSupplierInvoicePayment, approvePurchaseOrder, acceptProcurementReceipt, cancelPurchaseOrder, amendPurchaseOrder, reverseSupplierApPosting } from "./supplierAp";
 export { approveCostChange, approveVariation, approvePaymentCertificate, settlePaymentCertificate, reverseCommercialPosting, reverseVariation } from "./commercialWorkflow";
 export { issueReportVersion } from "./reportVersioning";

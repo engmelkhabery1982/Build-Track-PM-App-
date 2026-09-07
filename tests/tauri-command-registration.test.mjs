@@ -31,6 +31,8 @@ test('desktop commands used by the application are registered with Tauri', async
     'approve_labor_timesheet',
     'post_labor_timesheet',
     'reverse_labor_timesheet',
+    'issue_report_version',
+    'approve_report_template',
     'save_excel_download',
     'save_document_attachment',
     'backup_local_database',

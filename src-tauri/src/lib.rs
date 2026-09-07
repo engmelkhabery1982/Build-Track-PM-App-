@@ -506,6 +506,29 @@ pub fn run() {
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
         tauri_plugin_sql::Migration {
+            version: 68,
+            description: "add_data_quality_tables",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS dq_rules (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      
+      CREATE TABLE IF NOT EXISTS dq_execution_logs (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+
+        tauri_plugin_sql::Migration {
             version: 2,
             description: "sync_local_invoice_tracking",
             sql: r#"
@@ -2928,6 +2951,129 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 67,
+            description: "add_attachments_and_report_template_indexes",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        mime_type TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+      
+      ALTER TABLE report_templates ADD COLUMN template_code_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.template_code')) VIRTUAL;
+      ALTER TABLE report_templates ADD COLUMN scope_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.scope')) VIRTUAL;
+      ALTER TABLE report_templates ADD COLUMN status_sql TEXT GENERATED ALWAYS AS (json_extract(payload, '$.status')) VIRTUAL;
+      
+      CREATE INDEX IF NOT EXISTS idx_report_templates_code ON report_templates(project_id, template_code_sql);
+      CREATE INDEX IF NOT EXISTS idx_report_templates_status ON report_templates(project_id, scope_sql, status_sql);
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+
+        tauri_plugin_sql::Migration {
+            version: 68,
+            description: "add_audit_log_append_only_triggers",
+            sql: "
+            CREATE TRIGGER IF NOT EXISTS audit_log_prevent_update
+            BEFORE UPDATE ON audit_log
+            BEGIN
+                SELECT RAISE(ABORT, 'Audit log is append-only and cannot be updated.');
+            END;
+            CREATE TRIGGER IF NOT EXISTS audit_log_prevent_delete
+            BEFORE DELETE ON audit_log
+            BEGIN
+                SELECT RAISE(ABORT, 'Audit log is append-only and cannot be deleted.');
+            END;
+            ",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+
+        tauri_plugin_sql::Migration {
+            version: 69,
+            description: "add_sync_protocol_tables",
+            sql: "
+            CREATE TABLE IF NOT EXISTS sync_outbox (
+                id TEXT PRIMARY KEY,
+                operation_id TEXT UNIQUE,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                synced_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status);
+
+            CREATE TABLE IF NOT EXISTS sync_inbox (
+                id TEXT PRIMARY KEY,
+                operation_id TEXT UNIQUE,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending',
+                created_at TEXT NOT NULL,
+                applied_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_metadata (
+                id TEXT PRIMARY KEY,
+                last_synced_at TEXT,
+                status TEXT,
+                last_error TEXT
+            );
+            ",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+
+        tauri_plugin_sql::Migration {
+            version: 70,
+            description: "add_g2_auth_tables",
+            sql: "
+            CREATE TABLE IF NOT EXISTS app_users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                display_name TEXT,
+                email TEXT,
+                role TEXT NOT NULL DEFAULT 'Viewer',
+                status TEXT NOT NULL DEFAULT 'Active',
+                approval_limit REAL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_auth (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_id TEXT,
+                action TEXT NOT NULL,
+                details TEXT,
+                ip_address TEXT
+            );
+
+            INSERT OR IGNORE INTO app_users (id, username, password_hash, display_name, role, status, created_at)
+            VALUES ('admin-1', 'admin', 'admin', 'PMO Admin', 'PMO Admin', 'Active', datetime('now'));
+            ",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -2958,7 +3104,7 @@ pub fn run() {
             settle_payment_certificate,
             reverse_commercial_posting,
             reverse_variation,
-            issue_report_version,
+            issue_report_version, approve_report_template,
             approve_cost_plan_version,
             approve_estimate_version,
             submit_labor_timesheet,
@@ -2978,3 +3124,12 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+
+#[tauri::command]
+async fn approve_report_template(
+    app: tauri::AppHandle,
+    request: report_versioning::ApproveReportTemplateRequest,
+) -> Result<report_versioning::ApproveReportTemplateResult, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    report_versioning::approve_report_template(&path, request).await
+}

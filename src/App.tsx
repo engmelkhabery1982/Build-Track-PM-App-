@@ -1,12 +1,15 @@
+import { AppUser, AuthSession } from '@/types';
+import { SyncCenter } from './components/SyncCenter';
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users, Gauge, Sliders } from 'lucide-react';
+import { LayoutDashboard, Database, FolderKanban, SquareCheck as CheckSquare, DollarSign, Package, ShieldAlert, TrendingUp, CalendarClock, Signature as FileSignature, ClipboardList, Banknote, Receipt, FileText, GitBranch, FolderOpen, FileCheck as FileCheck2, Building2, Menu, ListOrdered, HardHat, Wrench, ClipboardCheck, Layers, Download, Bell, CircleAlert, BrainCircuit, Maximize2, Minimize2, ArrowLeft, ArrowRight, Users, Gauge, Sliders } from 'lucide-react';
 import { useData } from '@/hooks/useData';
-import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approveCostPlanVersion, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, compareBaselineRevisions, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, issueReportVersion, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, runDataQualityChecks, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule, submitLaborTimesheet, approveLaborTimesheet, postLaborTimesheet, reverseLaborTimesheet, approveEquipmentLog, postEquipmentLog, reverseEquipmentLog } from '@/data';
+import { acceptProcurementReceipt, amendPurchaseOrder, approveCostChange, approveCostPlanVersion, approvePaymentCertificate, approvePurchaseOrder, approveSupplierInvoice, approveVariation, assertBaselineApproval, assertRecordPeriodIsOpen, assertReportingPeriodDefinition, cancelPurchaseOrder, compareBaselineActivities, compareBaselineActivityDetails, compareBaselineRevisions, createBaselineActivitySnapshot, createBaselineDistributionSnapshot, createCodeDraft, dataRepository, issueReportVersion, prepareCodeControlledInsert, reverseCommercialPosting, reverseSupplierApPosting, reverseVariation, settlePaymentCertificate, settleSupplierInvoicePayment, STATUS_SETS, summarizeBaselineSchedule, submitLaborTimesheet, approveLaborTimesheet, postLaborTimesheet, reverseLaborTimesheet, approveEquipmentLog, postEquipmentLog, reverseEquipmentLog } from '@/data';
 import { Dashboard } from '@/components/Dashboard';
 import { DataTableView, type ColumnDef, type FilterDef, type SelectOption } from '@/components/DataTableView';
 import { ReportTemplateDesigner } from '@/components/ReportTemplateDesigner';
 import { PmoInsights } from '@/components/PmoInsights';
 import { DataEntryWorkspace } from '@/components/DataEntryWorkspace';
+import { DataQualityChecks } from '@/components/DataQualityChecks';
 import { CommandPalette } from '@/components/CommandPalette';
 import { WorkQueue } from '@/components/WorkQueue';
 import { AuditTrailExplorer } from '@/components/AuditTrailExplorer';
@@ -1106,7 +1109,7 @@ function UnifiedDataDateSelector() {
   );
 }
 
-function AppWorkspace() {
+function AppWorkspace({ session, setSession }: { session: AuthSession, setSession: (s: AuthSession | null) => void }) {
   const [activeView, setActiveView] = useState<ViewKey>(() => (localStorage.getItem('buildtrack:default-view') as ViewKey) || 'dashboard');
   const [navigationHistory, setNavigationHistory] = useState<ViewKey[]>(() => [(localStorage.getItem('buildtrack:default-view') as ViewKey) || 'dashboard']);
   const navigationIndex = useRef(0);
@@ -2348,6 +2351,9 @@ function AppWorkspace() {
     if (activeView === 'reportTemplates') {
       return <ReportTemplateDesigner templates={data.reportTemplates} onMutated={(mutation) => data.applyLocalMutation('report_templates', mutation)} />;
     }
+    if (activeView === 'dataQuality') {
+      return <DataQualityChecks rules={data.dqRules || []} logs={data.dqExecutionLogs || []} globalData={data} onMutated={data.applyLocalMutation} />;
+    }
     if (activeView === 'dataEntry') {
       return <DataEntryWorkspace projects={data.projects as Record<string, any>[]} contracts={data.contracts as Record<string, any>[]} boqHeaders={data.boqHeaders as Record<string, any>[]} boqItems={data.boqItems as Record<string, any>[]} schedules={data.schedules as Record<string, any>[]} wirs={data.wirEntries as Record<string, any>[]} costEntries={data.costEntries as Record<string, any>[]} onOpen={setActiveView} />;
     }
@@ -2504,14 +2510,7 @@ function AppWorkspace() {
       return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><Bell size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">PMO Alerts</h2><p className="mt-1 text-sm text-neutral-500">Live exceptions generated from schedule, cost, commercial and field-control records.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{alerts.length} open</span></div></div><div className="space-y-3">{alerts.length ? alerts.map((alert, index) => <button key={`${alert.title}-${index}`} onClick={() => setActiveView(alert.view)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[alert.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{alert.title}</p><p className="mt-1 text-sm opacity-90">{alert.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>) : <div className="rounded-xl border border-success-200 bg-success-50 p-8 text-center text-success-700"><FileCheck2 className="mx-auto mb-2" size={26} /><p className="font-semibold">No active PMO alerts</p><p className="mt-1 text-sm">All monitored records are currently within their control state.</p></div>}</div></div></div>;
     }
 
-    if (activeView === 'dataQuality') {
-      const checks = runDataQualityChecks({
-        projects: data.projects as Record<string, any>[], contracts: data.contracts as Record<string, any>[], boqHeaders: data.boqHeaders as Record<string, any>[], boqItems: data.boqItems as Record<string, any>[],
-        schedules: data.schedules as Record<string, any>[], scheduleDistributions: data.scheduleDistributions as Record<string, any>[], scheduleResourceAssignments: data.scheduleResourceAssignments as Record<string, any>[], workCalendars: data.workCalendars as Record<string, any>[], resourceMasters: data.resourceMasters as Record<string, any>[], wbsNodes: data.wbsNodes as Record<string, any>[], controlAccounts: data.controlAccounts as Record<string, any>[], wirEntries: data.wirEntries as Record<string, any>[], progressCorrections: data.progressCorrections as Record<string, any>[], costEntries: data.costEntries as Record<string, any>[], laborDuty: data.laborDuty as Record<string, any>[], equipment: data.equipment as Record<string, any>[], cashFlow: data.cashFlow as Record<string, any>[], reportingPeriods: data.reportingPeriods as Record<string, any>[], baselines: data.baselines as Record<string, any>[], contractSovLines: data.contractSovLines as Record<string, any>[], costChanges: data.costChanges as Record<string, any>[], paymentCertificates: data.paymentCertificates as Record<string, any>[], variations: data.variations as Record<string, any>[], variationLines: data.variationLines as Record<string, any>[], procurement: data.procurement as Record<string, any>[], procurementReceipts: data.procurementReceipts as Record<string, any>[], supplierInvoices: data.supplierInvoices as Record<string, any>[], supplierInvoiceLines: data.supplierInvoiceLines as Record<string, any>[], supplierInvoicePayments: data.supplierInvoicePayments as Record<string, any>[], documents: data.documents as Record<string, any>[], rfis: data.rfis as Record<string, any>[], submittals: data.submittals as Record<string, any>[], quality: data.quality as Record<string, any>[], dailyReports: data.siteDailyReports as Record<string, any>[],
-      });
-      const styles = { Error: 'border-error-200 bg-error-50 text-error-700', Warning: 'border-warning-200 bg-warning-50 text-warning-700', Pass: 'border-success-200 bg-success-50 text-success-700' };
-      return <div className="h-full overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl space-y-5"><div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-primary-50 p-3 text-primary-600"><CircleAlert size={22} /></div><div><h2 className="text-2xl font-bold text-neutral-900">Data Quality & Relationship Checks</h2><p className="mt-1 text-sm text-neutral-500">Read-only acceptance controls for local PMO relationships, quantities, periods and baselines. No records are changed.</p></div><span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700">{checks.filter((check) => check.severity !== 'Pass').length} finding(s)</span></div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-error-200 bg-error-50 p-4"><p className="text-xs font-semibold text-error-700">ERRORS</p><p className="mt-1 text-2xl font-bold text-error-800">{checks.filter((check) => check.severity === 'Error').length}</p></div><div className="rounded-xl border border-warning-200 bg-warning-50 p-4"><p className="text-xs font-semibold text-warning-700">WARNINGS</p><p className="mt-1 text-2xl font-bold text-warning-800">{checks.filter((check) => check.severity === 'Warning').length}</p></div><div className="rounded-xl border border-success-200 bg-success-50 p-4"><p className="text-xs font-semibold text-success-700">CONTROL STATUS</p><p className="mt-1 text-lg font-bold text-success-800">{checks.some((check) => check.severity === 'Error') ? 'Action required' : 'Ready for review'}</p></div></div><div className="space-y-3">{checks.map((check, index) => <button key={`${check.title}-${index}`} onClick={() => setActiveView(check.view as ViewKey)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${styles[check.severity]}`}><CircleAlert size={22} className="shrink-0" /><div className="min-w-0 flex-1"><p className="font-semibold">{check.title}</p><p className="mt-1 text-sm opacity-90">{check.detail}</p></div><span className="text-xs font-semibold">Open →</span></button>)}</div></div></div>;
-    }
+    
 
     if (activeView === 'controlsCockpit') {
       return (
@@ -4910,10 +4909,70 @@ function AppWorkspace() {
   );
 }
 
+export default 
+function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const users = await dataRepository.list<AppUser>('app_users');
+      const user = users.find(u => u.username === username);
+      if (!user) throw new Error('Invalid credentials');
+      
+      // In a real app this would hash and verify
+      // For this phase, we mock verification against the test setup
+      if (username === 'admin' && password === 'admin') {
+         onLogin({ token: crypto.randomUUID(), user });
+         return;
+      }
+      throw new Error('Invalid credentials');
+    } catch(err: any) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-md border border-gray-100">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">BuildTrack Sign In</h2>
+          <p className="mt-2 text-center text-sm text-gray-600">Local Auth (G2)</p>
+        </div>
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          {error && <div className="text-red-600 text-sm bg-red-50 p-3 rounded">{error}</div>}
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <input name="username" type="text" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Username (admin)" value={username} onChange={e => setUsername(e.target.value)} />
+            </div>
+            <div>
+              <input name="password" type="password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Password (admin)" value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <button type="submit" className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+              Sign in
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+
+
 export default function App() {
+  const [session, setSession] = useState<AuthSession | null>(null);
+
+  if (!session) return <LoginScreen onLogin={setSession} />;
+
   return (
     <ProjectDataDateProvider>
-      <AppWorkspace />
+      <AppWorkspace session={session} setSession={setSession} />
     </ProjectDataDateProvider>
   );
 }

@@ -193,3 +193,76 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveReportTemplateRequest {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub approver: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveReportTemplateResult {
+    pub id: String,
+    pub status: String,
+}
+
+pub async fn approve_report_template(path: &Path, request: ApproveReportTemplateRequest) -> Result<ApproveReportTemplateResult, String> {
+    required(&request.id, "Template ID")?;
+    required(&request.approver, "Approver")?;
+
+    let pool = database(path).await?;
+    let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
+
+    let outcome: Result<(), String> = async {
+        let current_payload: Option<String> = sqlx::query_scalar("SELECT payload FROM report_templates WHERE id = ?")
+            .bind(&request.id).fetch_optional(&mut *tx).await.map_err(|error| error.to_string())?;
+
+        if let Some(payload) = current_payload {
+            let mut v: Value = serde_json::from_str(&payload).map_err(|_| "Invalid JSON")?;
+            let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("Draft");
+            if status != "Draft" {
+                return Err("Only Draft templates can be approved.".into());
+            }
+
+            v["status"] = json!("Approved");
+            v["approved_by"] = json!(request.approver);
+            v["approved_at"] = json!(chrono::Utc::now().to_rfc3339());
+
+            let new_payload = serde_json::to_string(&v).map_err(|_| "JSON serialization error")?;
+
+            sqlx::query("UPDATE report_templates SET payload = ? WHERE id = ?")
+                .bind(new_payload).bind(&request.id)
+                .execute(&mut *tx).await.map_err(|error| error.to_string())?;
+
+            let audit_id = uuid::Uuid::new_v4().to_string();
+            let audit_payload = json!({
+                "action": "APPROVE_REPORT_TEMPLATE",
+                "template_id": request.id,
+                "approver": request.approver,
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }).to_string();
+
+            sqlx::query("INSERT INTO audit_log (id, created_at, project_id, payload) VALUES (?, datetime('now'), ?, ?)")
+                .bind(audit_id).bind(request.project_id.as_deref()).bind(audit_payload)
+                .execute(&mut *tx).await.map_err(|error| error.to_string())?;
+
+            Ok(())
+        } else {
+            Err("Template not found.".into())
+        }
+    }.await;
+
+    match outcome {
+        Ok(_) => {
+            tx.commit().await.map_err(|error| error.to_string())?;
+            Ok(ApproveReportTemplateResult { id: request.id, status: "Approved".into() })
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}

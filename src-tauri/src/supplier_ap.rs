@@ -47,7 +47,20 @@ async fn put_invoice(tx:&mut Transaction<'_,Sqlite>,id:&str,v:&Value)->Result<()
 async fn put_payment(tx:&mut Transaction<'_,Sqlite>,id:&str,v:&Value)->Result<(),String>{let guard=format!("internal-payment:{id}");sqlx::query("INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)").bind(&guard).bind(stamp()).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("UPDATE supplier_invoice_payments SET payload=? WHERE id=?").bind(v.to_string()).bind(id).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?").bind(&guard).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
 async fn guard_on(tx:&mut Transaction<'_,Sqlite>,operation_id:&str)->Result<(),String>{sqlx::query("INSERT INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)").bind(operation_id).bind(stamp()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
 async fn guard_off(tx:&mut Transaction<'_,Sqlite>,operation_id:&str)->Result<(),String>{sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?").bind(operation_id).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
-async fn posting(tx:&mut Transaction<'_,Sqlite>,id:&str,table:&str,source:&str,kind:&str,actor:&str,effective:&str,reason:&str,snapshot:&Value)->Result<(),String>{sqlx::query("INSERT INTO supplier_ap_postings (id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(effective).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
+async fn posting(tx:&mut Transaction<'_,Sqlite>,id:&str,table:&str,source:&str,kind:&str,actor:&str,effective:&str,reason:&str,snapshot:&Value)->Result<(),String>{
+  sqlx::query("INSERT INTO supplier_ap_postings (id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(effective).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+  
+  let audit_id = format!("audit:{}:{}", table, id);
+  let audit = serde_json::json!({"id":audit_id,"timestamp":effective,"action":kind,"table_name":table,"record_id":source,"actor":actor,"details":reason,"before":null,"after":snapshot});
+  let project_id = snapshot.get("project_id").and_then(|v| v.as_str());
+  let contract_id = snapshot.get("contract_id").and_then(|v| v.as_str());
+  
+  sqlx::query("INSERT INTO audit_log (id, created_at, project_id, contract_id, payload) VALUES (?, ?, ?, ?, ?)")
+   .bind(audit_id).bind(stamp()).bind(project_id).bind(contract_id).bind(audit.to_string())
+   .execute(&mut **tx).await.map_err(|e|e.to_string())?;
+   
+  Ok(())
+}
 async fn cash(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,kind:&str,source:&str,day:&str,description:String,category:&str,movement:&str,status:&str,inflow:f64,outflow:f64)->Result<(),String>{
  sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')=? AND json_extract(payload,'$.source_id')=?").bind(kind).bind(source).execute(&mut **tx).await.map_err(|e|e.to_string())?;
  if inflow.abs()<0.000001 && outflow.abs()<0.000001{return Ok(())};let id=format!("{}:{}",kind,source);let payload=json!({"id":id,"date":day,"description":description,"category":category,"inflow":m(inflow),"outflow":m(outflow),"net":m(inflow-outflow),"cumulative_balance":0,"movement_type":movement,"status":status,"source_type":kind,"source_id":source});

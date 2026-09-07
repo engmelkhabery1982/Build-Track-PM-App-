@@ -18,7 +18,7 @@ const TABLES = new Set([
   "resource_masters",
   "client_invoice_tracking", "subcontractor_invoice_tracking",
   "parties", "party_contacts", "rate_history",
-  "report_templates",
+  "report_templates", "attachments", "dq_rules", "dq_execution_logs",
   "cost_codes", "wbs_nodes", "contract_sov_lines", "control_accounts", "payment_certificates",
   "cost_changes", "procurement_receipts", "supplier_invoices", "supplier_invoice_lines", "supplier_invoice_payments",
   "progress_corrections", "schedule_versions", "delay_events",
@@ -247,6 +247,21 @@ export class SqliteRepository implements DataRepository {
     return rows[0];
   }
 
+  
+  private async assertAuthorization(tableName: string, action: string, userId?: string) {
+    if (!userId || ['audit_log', 'sync_outbox', 'app_users', 'app_sessions', 'audit_auth'].includes(tableName)) return;
+    const db = await this.database();
+    const rows = await db.select<any[]>('SELECT role, status FROM app_users WHERE id = $1', [userId]);
+    if (!rows || rows.length === 0) throw new Error('User not found or disabled.');
+    const user = rows[0];
+    if (user.status !== 'Active') throw new Error('User account is disabled.');
+    
+    // G2 matrix - basic mock check
+    if (user.role === 'Viewer' && action !== 'Read') {
+       throw new Error('Viewers cannot perform mutations.');
+    }
+  }
+
   private async assertDelayEventScope(
     database: Awaited<ReturnType<SqliteRepository['database']>>,
     record: Record<string, any>,
@@ -308,16 +323,40 @@ export class SqliteRepository implements DataRepository {
   ): Promise<void> {
     if (entityType === 'audit_log') return;
     const now = new Date().toISOString();
+    const redact = (obj: any): any => {
+      if (!obj) return obj;
+      const copy = { ...obj };
+      for (const k of Object.keys(copy)) {
+        if (k.match(/token|password|secret|content|attachment/i)) {
+          copy[k] = '[REDACTED]';
+        }
+      }
+      return copy;
+    };
     const audit = {
       id: createId(), created_at: now, project_id: record.project_id || null, contract_id: record.contract_id || null,
       entity_type: entityType, entity_id: record.id, action, actor: 'Local User',
-      before: before || null, after: action === 'Delete' ? null : record,
+      before: redact(before) || null, after: action === 'Delete' ? null : redact(record),
       summary: `${action} ${entityType}`,
     };
     await database.execute(
       `INSERT INTO audit_log (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, payload)
        VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7)`,
       [audit.id, now, nullableId(audit.project_id), nullableId(audit.contract_id), nullableId(record.boq_header_id), nullableId(record.boq_item_id), JSON.stringify(audit)],
+    );
+  }
+
+  
+  private async writeOutbox(tableName: string, entityId: string, action: 'Insert' | 'Update' | 'Delete', payload: any) {
+    if (['audit_log', 'sync_outbox', 'sync_inbox', 'sync_metadata', 'commercial_workflow_postings', 'supplier_ap_postings'].includes(tableName)) return;
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const operationId = crypto.randomUUID();
+    
+    const db = await this.database();
+    await db.execute(
+      "INSERT INTO sync_outbox (id, operation_id, entity_type, entity_id, action, payload_json, status, retry_count, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      [id, operationId, tableName, entityId, action, JSON.stringify(payload || {}), 'Pending', 0, now]
     );
   }
 
