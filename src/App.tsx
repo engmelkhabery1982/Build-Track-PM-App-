@@ -960,6 +960,7 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'role_or_type', label: 'Role / Equipment Type', type: 'text', editable: true },
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
+  { key: 'overtime_rate', label: 'Overtime Rate', type: 'money', editable: true },
   { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
   { key: 'calendar_id', label: 'Resource Calendar', type: 'select', editable: true },
   { key: 'availability_start_date', label: 'Available From', type: 'date', editable: true },
@@ -4702,16 +4703,25 @@ function AppWorkspace() {
         dataDate={unifiedDataDate}
         currentUser={sessionUser?.username || 'Site Engineer'}
         onSaveDraft={async (ts, lines) => {
+          if (!ts.id || !ts.project_id || !ts.contract_id) {
+            throw new Error('Labor timesheet draft requires an ID, project, and main contract.');
+          }
           if (ts.id && (data.laborTimesheets || []).some((t: any) => t.id === ts.id)) {
             await dataRepository.update<Record<string, any>>('labor_timesheets', ts.id, ts);
           } else {
             await dataRepository.insert<Record<string, any>>('labor_timesheets', ts as any);
           }
           for (const line of lines) {
+            const governedLine = {
+              ...line,
+              timesheet_id: ts.id,
+              project_id: ts.project_id,
+              contract_id: ts.contract_id,
+            };
             if (line.id && (data.laborTimesheetLines || []).some((l: any) => l.id === line.id)) {
-              await dataRepository.update<Record<string, any>>('labor_timesheet_lines', line.id, line);
+              await dataRepository.update<Record<string, any>>('labor_timesheet_lines', line.id, governedLine);
             } else {
-              await dataRepository.insert<Record<string, any>>('labor_timesheet_lines', line as any);
+              await dataRepository.insert<Record<string, any>>('labor_timesheet_lines', governedLine as any);
             }
           }
           await data.reload();

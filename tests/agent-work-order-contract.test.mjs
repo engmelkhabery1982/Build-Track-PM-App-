@@ -46,8 +46,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /## W01 \/ D1-01 — /);
+  assert.match(active, /## W02 \/ D1-02 — /);
   assert.match(active, /IN PROGRESS — Codex acceptance and hardening/);
+  assert.match(active, /W01: `CLOSED — 8\/10 — CODEX ACCEPTED`/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
   assert.match(master, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
   assert.match(master, /NEXT_FEATURES_DETAILED_EXECUTION_AR\.md/);

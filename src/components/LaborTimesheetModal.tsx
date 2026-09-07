@@ -159,7 +159,7 @@ export const LaborTimesheetModal: React.FC<LaborTimesheetModalProps> = ({
 
   // Filtered scopes
   const filteredContracts = useMemo(
-    () => contracts.filter((c) => !projectId || c.project_id === projectId),
+    () => contracts.filter((c) => (!projectId || c.project_id === projectId) && !c.parent_main_contract_id),
     [contracts, projectId]
   );
 
@@ -229,8 +229,13 @@ export const LaborTimesheetModal: React.FC<LaborTimesheetModalProps> = ({
   // Handle line additions
   const handleAddLine = () => {
     const firstWorker = laborResources[0];
-    const defaultActivity = filteredActivities[0];
-    const defaultCa = filteredControlAccounts[0];
+    const defaultActivity = filteredActivities.find((activity) =>
+      activity.control_account_id
+      && filteredControlAccounts.some((account) => account.id === activity.control_account_id)
+    ) || filteredActivities[0];
+    const defaultCa = filteredControlAccounts.find((account) => account.id === defaultActivity?.control_account_id)
+      || filteredControlAccounts[0];
+    const governedRate = Number(firstWorker?.standard_rate || 0);
 
     const newLine: LaborTimesheetLine = {
       id: crypto.randomUUID(),
@@ -244,10 +249,10 @@ export const LaborTimesheetModal: React.FC<LaborTimesheetModalProps> = ({
       cost_code_id: defaultCa?.cost_code_id || '',
       regular_hours: 8,
       overtime_hours: 0,
-      regular_rate: (firstWorker as any)?.unit_cost || (firstWorker as any)?.standard_rate || 50,
-      overtime_rate: ((firstWorker as any)?.unit_cost || (firstWorker as any)?.standard_rate || 50) * 1.5,
+      regular_rate: governedRate,
+      overtime_rate: Number(firstWorker?.overtime_rate || 0),
       total_hours: 8,
-      calculated_amount: ((firstWorker as any)?.unit_cost || (firstWorker as any)?.standard_rate || 50) * 8,
+      calculated_amount: governedRate * 8,
       currency: 'USD',
       non_working_override_reason: '',
       notes: '',
@@ -265,9 +270,9 @@ export const LaborTimesheetModal: React.FC<LaborTimesheetModalProps> = ({
       if (patch.resource_id && patch.resource_id !== updated[index].resource_id) {
         const res = laborResources.find((r) => r.id === patch.resource_id);
         if (res) {
-          const baseRate = (res as any).unit_cost || (res as any).standard_rate || 50;
+          const baseRate = Number(res.standard_rate || 0);
           current.regular_rate = baseRate;
-          current.overtime_rate = baseRate * 1.5;
+          current.overtime_rate = Number(res.overtime_rate || 0);
         }
       }
 
@@ -347,14 +352,15 @@ export const LaborTimesheetModal: React.FC<LaborTimesheetModalProps> = ({
       };
       await onSaveDraft(headerData, lines);
 
-      if ("__TAURI_INTERNALS__" in window) {
-        await submitLaborTimesheet({
-          operationId: crypto.randomUUID(),
-          timesheetId: tsId,
-          actor: currentUser,
-          submittedAt: new Date().toISOString().slice(0, 10),
-        });
+      if (!("__TAURI_INTERNALS__" in window)) {
+        throw new Error('Timesheet submission requires the governed desktop environment.');
       }
+      await submitLaborTimesheet({
+        operationId: crypto.randomUUID(),
+        timesheetId: tsId,
+        actor: currentUser,
+        submittedAt: new Date().toISOString().slice(0, 10),
+      });
       setSuccessMessage('Timesheet submitted for approval.');
       await onRefresh();
       onClose();

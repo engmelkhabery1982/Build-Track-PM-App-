@@ -838,6 +838,7 @@ export interface ResourceMaster {
   role_or_type: string;
   unit: string;
   standard_rate: number;
+  overtime_rate?: number | null;
   daily_capacity_hours: number;
   availability_start_date?: string | null;
   availability_end_date?: string | null;

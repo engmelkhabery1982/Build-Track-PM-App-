@@ -60,7 +60,13 @@ pub struct LaborTimesheetOperationResult {
 
 fn stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    format!("{}Z", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis())
+    format!(
+        "{}Z",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    )
 }
 
 fn m(v: f64) -> f64 {
@@ -68,7 +74,10 @@ fn m(v: f64) -> f64 {
 }
 
 fn s(v: &Value, k: &str) -> String {
-    v.get(k).and_then(Value::as_str).unwrap_or_default().to_string()
+    v.get(k)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn parse_ymd(date_str: &str) -> Option<(i32, i32, i32)> {
@@ -89,7 +98,7 @@ fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
     if month < 3 {
         y -= 1;
     }
-    ((y + y / 4 - y / 100 + y / 400 + t[(month - 1) as usize] + day) % 7)
+    (y + y / 4 - y / 100 + y / 400 + t[(month - 1) as usize] + day) % 7
 }
 
 async fn db(path: &Path) -> Result<SqlitePool, String> {
@@ -104,7 +113,7 @@ async fn db(path: &Path) -> Result<SqlitePool, String> {
 }
 
 async fn guard_on(tx: &mut Transaction<'_, Sqlite>, operation_id: &str) -> Result<(), String> {
-    sqlx::query("INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id, created_at) VALUES (?, ?)")
+    sqlx::query("INSERT OR IGNORE INTO labor_timesheet_mutation_guard (operation_id, created_at) VALUES (?, ?)")
         .bind(operation_id)
         .bind(stamp())
         .execute(&mut **tx)
@@ -114,7 +123,7 @@ async fn guard_on(tx: &mut Transaction<'_, Sqlite>, operation_id: &str) -> Resul
 }
 
 async fn guard_off(tx: &mut Transaction<'_, Sqlite>, operation_id: &str) -> Result<(), String> {
-    sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id = ?")
+    sqlx::query("DELETE FROM labor_timesheet_mutation_guard WHERE operation_id = ?")
         .bind(operation_id)
         .execute(&mut **tx)
         .await
@@ -129,7 +138,12 @@ async fn write_audit_log(
     actor: &str,
     details: &str,
 ) -> Result<(), String> {
-    let audit_id = format!("audit:labor-timesheet:{}:{}:{}", action.to_lowercase(), header.id, stamp());
+    let audit_id = format!(
+        "audit:labor-timesheet:{}:{}:{}",
+        action.to_lowercase(),
+        header.id,
+        stamp()
+    );
     let audit_payload = json!({
         "id": audit_id,
         "created_at": stamp(),
@@ -166,6 +180,8 @@ struct TimesheetHeader {
     timesheet_number: String,
     work_date: String,
     shift: String,
+    submitter: String,
+    approved_by: Option<String>,
     status: String,
     payload: Value,
 }
@@ -175,18 +191,20 @@ struct TimesheetLine {
     resource_id: String,
     schedule_activity_id: String,
     control_account_id: String,
+    boq_item_id: String,
     cost_code_id: Option<String>,
     regular_hours: f64,
     overtime_hours: f64,
     regular_rate: f64,
     overtime_rate: f64,
-    calculated_amount: f64,
     non_working_override_reason: Option<String>,
-    payload: Value,
 }
 
-async fn load_timesheet(tx: &mut Transaction<'_, Sqlite>, id: &str) -> Result<(TimesheetHeader, Vec<TimesheetLine>), String> {
-    let r = sqlx::query("SELECT id, project_id, contract_id, timesheet_number, work_date, shift, status, payload FROM labor_timesheets WHERE id = ?")
+async fn load_timesheet(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+) -> Result<(TimesheetHeader, Vec<TimesheetLine>), String> {
+    let r = sqlx::query("SELECT id, project_id, contract_id, timesheet_number, work_date, shift, submitter, approved_by, status, payload FROM labor_timesheets WHERE id = ?")
         .bind(id)
         .fetch_optional(&mut **tx)
         .await
@@ -203,11 +221,13 @@ async fn load_timesheet(tx: &mut Transaction<'_, Sqlite>, id: &str) -> Result<(T
         timesheet_number: r.try_get("timesheet_number").map_err(|e| e.to_string())?,
         work_date: r.try_get("work_date").map_err(|e| e.to_string())?,
         shift: r.try_get("shift").map_err(|e| e.to_string())?,
+        submitter: r.try_get("submitter").map_err(|e| e.to_string())?,
+        approved_by: r.try_get("approved_by").ok(),
         status: r.try_get("status").map_err(|e| e.to_string())?,
         payload,
     };
 
-    let line_rows = sqlx::query("SELECT id, resource_id, schedule_activity_id, control_account_id, cost_code_id, regular_hours, overtime_hours, regular_rate, overtime_rate, calculated_amount, non_working_override_reason, payload FROM labor_timesheet_lines WHERE timesheet_id = ? ORDER BY id ASC")
+    let line_rows = sqlx::query("SELECT l.id, l.resource_id, l.schedule_activity_id, l.control_account_id, l.cost_code_id, l.regular_hours, l.overtime_hours, l.regular_rate, l.overtime_rate, l.non_working_override_reason, ca.boq_item_id FROM labor_timesheet_lines l JOIN control_accounts ca ON ca.id = l.control_account_id WHERE l.timesheet_id = ? ORDER BY l.id ASC")
         .bind(id)
         .fetch_all(&mut **tx)
         .await
@@ -215,21 +235,22 @@ async fn load_timesheet(tx: &mut Transaction<'_, Sqlite>, id: &str) -> Result<(T
 
     let mut lines = Vec::new();
     for lr in line_rows {
-        let l_payload_str: String = lr.try_get("payload").map_err(|e| e.to_string())?;
-        let l_payload: Value = serde_json::from_str(&l_payload_str).map_err(|e| e.to_string())?;
         lines.push(TimesheetLine {
             id: lr.try_get("id").map_err(|e| e.to_string())?,
             resource_id: lr.try_get("resource_id").map_err(|e| e.to_string())?,
-            schedule_activity_id: lr.try_get("schedule_activity_id").map_err(|e| e.to_string())?,
-            control_account_id: lr.try_get("control_account_id").map_err(|e| e.to_string())?,
+            schedule_activity_id: lr
+                .try_get("schedule_activity_id")
+                .map_err(|e| e.to_string())?,
+            control_account_id: lr
+                .try_get("control_account_id")
+                .map_err(|e| e.to_string())?,
+            boq_item_id: lr.try_get("boq_item_id").map_err(|e| e.to_string())?,
             cost_code_id: lr.try_get("cost_code_id").ok(),
             regular_hours: lr.try_get("regular_hours").unwrap_or(0.0),
             overtime_hours: lr.try_get("overtime_hours").unwrap_or(0.0),
             regular_rate: lr.try_get("regular_rate").unwrap_or(0.0),
             overtime_rate: lr.try_get("overtime_rate").unwrap_or(0.0),
-            calculated_amount: lr.try_get("calculated_amount").unwrap_or(0.0),
             non_working_override_reason: lr.try_get("non_working_override_reason").ok(),
-            payload: l_payload,
         });
     }
 
@@ -246,7 +267,9 @@ async fn validate_timesheet_rules(
     }
 
     // Check project and contract scope
-    let contract_valid: Option<String> = sqlx::query_scalar("SELECT id FROM contracts WHERE id = ? AND project_id = ?")
+    let contract_valid: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM contracts WHERE id = ? AND project_id = ? AND parent_main_contract_id IS NULL"
+    )
         .bind(&header.contract_id)
         .bind(&header.project_id)
         .fetch_optional(&mut **tx)
@@ -269,7 +292,10 @@ async fn validate_timesheet_rules(
     .map_err(|e| e.to_string())?;
 
     if locked_period_count > 0 {
-        return Err(format!("Work date {} falls within a locked or closed reporting period.", header.work_date));
+        return Err(format!(
+            "Work date {} falls within a locked or closed reporting period.",
+            header.work_date
+        ));
     }
 
     // Check work calendar
@@ -282,12 +308,20 @@ async fn validate_timesheet_rules(
     .map_err(|e| e.to_string())?;
 
     let mut is_non_working_day = false;
+    let mut calendar_capacity: Option<f64> = None;
     if let Some(cal_str) = cal_payload {
         if let Ok(cal_json) = serde_json::from_str::<Value>(&cal_str) {
             if let Some((y, m_val, d)) = parse_ymd(&header.work_date) {
                 let dow = day_of_week(y, m_val, d);
-                let working_days = cal_json.get("working_days").and_then(Value::as_array);
-                let holidays = cal_json.get("holidays").and_then(Value::as_array);
+                let working_days = cal_json
+                    .get("calendar_working_days")
+                    .or_else(|| cal_json.get("working_days"))
+                    .and_then(Value::as_array);
+                let holidays = cal_json
+                    .get("calendar_exceptions")
+                    .or_else(|| cal_json.get("holidays"))
+                    .and_then(Value::as_array);
+                calendar_capacity = cal_json.get("hours_per_day").and_then(Value::as_f64);
 
                 if let Some(wd) = working_days {
                     let wd_ints: Vec<i64> = wd.iter().filter_map(Value::as_i64).collect();
@@ -313,18 +347,34 @@ async fn validate_timesheet_rules(
         let line_num = idx + 1;
 
         if line.regular_hours < 0.0 || line.overtime_hours < 0.0 {
-            return Err(format!("Line #{}: Labor hours cannot be negative.", line_num));
+            return Err(format!(
+                "Line #{}: Labor hours cannot be negative.",
+                line_num
+            ));
         }
 
         if line.regular_hours + line.overtime_hours <= 0.0 {
-            return Err(format!("Line #{}: Total hours must be greater than zero.", line_num));
+            return Err(format!(
+                "Line #{}: Total hours must be greater than zero.",
+                line_num
+            ));
         }
 
         if line.regular_hours > 24.0 || line.overtime_hours > 24.0 {
-            return Err(format!("Line #{}: Hours exceed 24 in a single shift.", line_num));
+            return Err(format!(
+                "Line #{}: Hours exceed 24 in a single shift.",
+                line_num
+            ));
         }
 
-        if is_non_working_day && line.non_working_override_reason.as_deref().unwrap_or("").trim().is_empty() {
+        if is_non_working_day
+            && line
+                .non_working_override_reason
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+        {
             return Err(format!(
                 "Line #{}: Work date {} is a non-working calendar day. Documented override reason is required.",
                 line_num, header.work_date
@@ -332,7 +382,10 @@ async fn validate_timesheet_rules(
         }
 
         if !seen_workers.insert(&line.resource_id) {
-            return Err(format!("Line #{}: Duplicate worker entry {} in this timesheet shift.", line_num, line.resource_id));
+            return Err(format!(
+                "Line #{}: Duplicate worker entry {} in this timesheet shift.",
+                line_num, line.resource_id
+            ));
         }
 
         // Validate Resource Master (Labor type and Active status)
@@ -344,59 +397,156 @@ async fn validate_timesheet_rules(
 
         let res_payload_str: String = match res_row {
             Some(r) => r.try_get("payload").map_err(|e| e.to_string())?,
-            None => return Err(format!("Line #{}: Worker resource {} does not exist.", line_num, line.resource_id)),
+            None => {
+                return Err(format!(
+                    "Line #{}: Worker resource {} does not exist.",
+                    line_num, line.resource_id
+                ))
+            }
         };
 
-        let res_payload: Value = serde_json::from_str(&res_payload_str).map_err(|e| e.to_string())?;
+        let res_payload: Value =
+            serde_json::from_str(&res_payload_str).map_err(|e| e.to_string())?;
         let res_type = s(&res_payload, "resource_type");
         if !res_type.is_empty() && res_type != "Labor" {
-            return Err(format!("Line #{}: Resource is of type '{}', must be 'Labor'.", line_num, res_type));
+            return Err(format!(
+                "Line #{}: Resource is of type '{}', must be 'Labor'.",
+                line_num, res_type
+            ));
         }
         let res_status = s(&res_payload, "status");
         if res_status == "Inactive" || res_status == "Terminated" {
-            return Err(format!("Line #{}: Worker is {} and cannot log timesheet hours.", line_num, res_status));
+            return Err(format!(
+                "Line #{}: Worker is {} and cannot log timesheet hours.",
+                line_num, res_status
+            ));
         }
 
+        let governed_regular_rate = res_payload
+            .get("standard_rate")
+            .and_then(Value::as_f64)
+            .filter(|value| *value > 0.0)
+            .ok_or_else(|| {
+                format!(
+                    "Line #{}: Worker {} requires a governed standard rate.",
+                    line_num, line.resource_id
+                )
+            })?;
+        if (line.regular_rate - governed_regular_rate).abs() > 0.009 {
+            return Err(format!(
+                "Line #{}: Regular rate does not match the governed resource rate.",
+                line_num
+            ));
+        }
+        if line.overtime_hours > 0.0 {
+            let governed_overtime_rate = res_payload
+                .get("overtime_rate")
+                .and_then(Value::as_f64)
+                .filter(|value| *value > 0.0)
+                .ok_or_else(|| {
+                    format!(
+                        "Line #{}: Overtime requires a governed overtime rate on the resource.",
+                        line_num
+                    )
+                })?;
+            if (line.overtime_rate - governed_overtime_rate).abs() > 0.009 {
+                return Err(format!(
+                    "Line #{}: Overtime rate does not match the governed resource rate.",
+                    line_num
+                ));
+            }
+        }
+
+        let governed_capacity = res_payload
+            .get("daily_capacity_hours")
+            .and_then(Value::as_f64)
+            .or(calendar_capacity)
+            .filter(|value| *value > 0.0)
+            .ok_or_else(|| format!(
+                "Line #{}: Worker {} requires a governed daily capacity on the resource or work calendar.",
+                line_num, line.resource_id
+            ))?;
+
         // Validate Schedule Activity scope
-        let act_row = sqlx::query("SELECT project_id, contract_id FROM schedules WHERE id = ?")
-            .bind(&line.schedule_activity_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| e.to_string())?;
+        let act_row = sqlx::query(
+            "SELECT project_id, contract_id, control_account_id FROM schedules WHERE id = ?",
+        )
+        .bind(&line.schedule_activity_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
         match act_row {
             Some(ar) => {
                 let act_proj: String = ar.try_get("project_id").unwrap_or_default();
                 let act_cont: String = ar.try_get("contract_id").unwrap_or_default();
+                let act_ca: Option<String> = ar.try_get("control_account_id").ok();
                 if !act_proj.is_empty() && act_proj != header.project_id {
-                    return Err(format!("Line #{}: Activity {} belongs to another project.", line_num, line.schedule_activity_id));
+                    return Err(format!(
+                        "Line #{}: Activity {} belongs to another project.",
+                        line_num, line.schedule_activity_id
+                    ));
                 }
                 if !act_cont.is_empty() && act_cont != header.contract_id {
-                    return Err(format!("Line #{}: Activity {} belongs to another contract.", line_num, line.schedule_activity_id));
+                    return Err(format!(
+                        "Line #{}: Activity {} belongs to another contract.",
+                        line_num, line.schedule_activity_id
+                    ));
+                }
+                if act_ca.as_deref() != Some(line.control_account_id.as_str()) {
+                    return Err(format!(
+                        "Line #{}: Activity {} is not assigned to control account {}.",
+                        line_num, line.schedule_activity_id, line.control_account_id
+                    ));
                 }
             }
-            None => return Err(format!("Line #{}: Schedule activity {} not found.", line_num, line.schedule_activity_id)),
+            None => {
+                return Err(format!(
+                    "Line #{}: Schedule activity {} not found.",
+                    line_num, line.schedule_activity_id
+                ))
+            }
         }
 
         // Validate Control Account scope
-        let ca_row = sqlx::query("SELECT project_id, contract_id FROM control_accounts WHERE id = ?")
-            .bind(&line.control_account_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| e.to_string())?;
+        let ca_row = sqlx::query(
+            "SELECT project_id, contract_id, cost_code_id FROM control_accounts WHERE id = ?",
+        )
+        .bind(&line.control_account_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
         match ca_row {
             Some(cr) => {
                 let ca_proj: String = cr.try_get("project_id").unwrap_or_default();
                 let ca_cont: String = cr.try_get("contract_id").unwrap_or_default();
+                let ca_cost_code: String = cr.try_get("cost_code_id").unwrap_or_default();
                 if !ca_proj.is_empty() && ca_proj != header.project_id {
-                    return Err(format!("Line #{}: Control account {} belongs to another project.", line_num, line.control_account_id));
+                    return Err(format!(
+                        "Line #{}: Control account {} belongs to another project.",
+                        line_num, line.control_account_id
+                    ));
                 }
                 if !ca_cont.is_empty() && ca_cont != header.contract_id {
-                    return Err(format!("Line #{}: Control account {} belongs to another contract.", line_num, line.control_account_id));
+                    return Err(format!(
+                        "Line #{}: Control account {} belongs to another contract.",
+                        line_num, line.control_account_id
+                    ));
+                }
+                if line.cost_code_id.as_deref() != Some(ca_cost_code.as_str()) {
+                    return Err(format!(
+                        "Line #{}: Cost code must match the selected control account.",
+                        line_num
+                    ));
                 }
             }
-            None => return Err(format!("Line #{}: Control account {} not found.", line_num, line.control_account_id)),
+            None => {
+                return Err(format!(
+                    "Line #{}: Control account {} not found.",
+                    line_num, line.control_account_id
+                ))
+            }
         }
 
         // Check duplicate worker across other active timesheets on same work_date and shift
@@ -417,6 +567,26 @@ async fn validate_timesheet_rules(
                 line_num, line.resource_id, header.work_date, header.shift
             ));
         }
+
+        let other_daily_hours: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(l.regular_hours + l.overtime_hours), 0) AS REAL) FROM labor_timesheet_lines l JOIN labor_timesheets t ON t.id = l.timesheet_id WHERE l.timesheet_id <> ? AND t.work_date = ? AND t.status <> 'Reversed' AND l.resource_id = ?"
+        )
+        .bind(&header.id)
+        .bind(&header.work_date)
+        .bind(&line.resource_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let requested_hours = line.regular_hours + line.overtime_hours;
+        if other_daily_hours + requested_hours > governed_capacity + 0.000_001 {
+            return Err(format!(
+                "Line #{}: Worker {} daily hours ({}) exceed governed capacity ({}).",
+                line_num,
+                line.resource_id,
+                m(other_daily_hours + requested_hours),
+                m(governed_capacity)
+            ));
+        }
     }
 
     Ok(())
@@ -426,7 +596,10 @@ pub async fn submit_labor_timesheet(
     path: &Path,
     request: SubmitLaborTimesheetRequest,
 ) -> Result<LaborTimesheetOperationResult, String> {
-    if request.operation_id.trim().is_empty() || request.actor.trim().is_empty() || request.submitted_at.trim().is_empty() {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.submitted_at.trim().is_empty()
+    {
         return Err("Timesheet submission requires operation ID, actor and date.".into());
     }
 
@@ -436,8 +609,14 @@ pub async fn submit_labor_timesheet(
     let result = async {
         let (header, lines) = load_timesheet(&mut tx, &request.timesheet_id).await?;
 
+        if header.status == "Submitted" {
+            return Ok(());
+        }
         if header.status != "Draft" {
             return Err(format!("Only a Draft timesheet can be submitted (current status: '{}').", header.status));
+        }
+        if request.actor != header.submitter {
+            return Err("Only the recorded timesheet submitter can submit this draft.".into());
         }
 
         validate_timesheet_rules(&mut tx, &header, &lines).await?;
@@ -518,7 +697,10 @@ pub async fn approve_labor_timesheet(
     path: &Path,
     request: ApproveLaborTimesheetRequest,
 ) -> Result<LaborTimesheetOperationResult, String> {
-    if request.operation_id.trim().is_empty() || request.actor.trim().is_empty() || request.approved_at.trim().is_empty() {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.approved_at.trim().is_empty()
+    {
         return Err("Timesheet approval requires operation ID, actor and date.".into());
     }
 
@@ -528,8 +710,14 @@ pub async fn approve_labor_timesheet(
     let result = async {
         let (header, lines) = load_timesheet(&mut tx, &request.timesheet_id).await?;
 
+        if header.status == "Approved" {
+            return Ok(());
+        }
         if header.status != "Submitted" {
             return Err(format!("Timesheet {} in status '{}' cannot be approved (must be Submitted first).", header.timesheet_number, header.status));
+        }
+        if request.actor == header.submitter {
+            return Err("Maker-checker violation: the submitter cannot approve the same timesheet.".into());
         }
 
         validate_timesheet_rules(&mut tx, &header, &lines).await?;
@@ -602,7 +790,10 @@ pub async fn post_labor_timesheet(
     path: &Path,
     request: PostLaborTimesheetRequest,
 ) -> Result<LaborTimesheetOperationResult, String> {
-    if request.operation_id.trim().is_empty() || request.actor.trim().is_empty() || request.posted_at.trim().is_empty() {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.posted_at.trim().is_empty()
+    {
         return Err("Timesheet posting requires operation ID, actor and date.".into());
     }
 
@@ -619,6 +810,9 @@ pub async fn post_labor_timesheet(
 
         if header.status != "Approved" {
             return Err(format!("Only an Approved timesheet can be posted (current status: '{}').", header.status));
+        }
+        if header.approved_by.as_deref() == Some(request.actor.as_str()) {
+            return Err("Maker-checker violation: the approver cannot post the same timesheet.".into());
         }
 
         // Validate posting date reporting period lock
@@ -659,6 +853,7 @@ pub async fn post_labor_timesheet(
                 "control_account_id": line.control_account_id,
                 "cost_code_id": line.cost_code_id,
                 "schedule_activity_id": line.schedule_activity_id,
+                "boq_item_id": line.boq_item_id,
                 "date": header.work_date,
                 "cost_type": "Labor",
                 "amount": line_amt,
@@ -670,16 +865,15 @@ pub async fn post_labor_timesheet(
                 "created_at": stamp(),
             });
 
-            // Idempotent replace
             sqlx::query(
                 "INSERT INTO cost_entries (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, control_account_id, payload)
-                 VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
-                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, control_account_id = excluded.control_account_id"
+                 VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)"
             )
             .bind(&cost_entry_id)
             .bind(stamp())
             .bind(&header.project_id)
             .bind(&header.contract_id)
+            .bind(&line.boq_item_id)
             .bind(&line.control_account_id)
             .bind(cost_payload.to_string())
             .execute(&mut *tx)
@@ -759,6 +953,9 @@ pub async fn reverse_labor_timesheet(
     let result = async {
         let (header, lines) = load_timesheet(&mut tx, &request.timesheet_id).await?;
 
+        if header.status == "Reversed" {
+            return Ok(());
+        }
         if header.status != "Posted" {
             return Err(format!("Only a Posted timesheet can be reversed (current status: '{}').", header.status));
         }
@@ -794,6 +991,7 @@ pub async fn reverse_labor_timesheet(
                 "control_account_id": line.control_account_id,
                 "cost_code_id": line.cost_code_id,
                 "schedule_activity_id": line.schedule_activity_id,
+                "boq_item_id": line.boq_item_id,
                 "date": request.reversed_at,
                 "cost_type": "Labor",
                 "amount": -line_amt,
@@ -811,13 +1009,13 @@ pub async fn reverse_labor_timesheet(
 
             sqlx::query(
                 "INSERT INTO cost_entries (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, control_account_id, payload)
-                 VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
-                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, control_account_id = excluded.control_account_id"
+                 VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)"
             )
             .bind(&reversal_cost_id)
             .bind(stamp())
             .bind(&header.project_id)
             .bind(&header.contract_id)
+            .bind(&line.boq_item_id)
             .bind(&line.control_account_id)
             .bind(reversal_payload.to_string())
             .execute(&mut *tx)
@@ -881,19 +1079,22 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     async fn fixture_db() -> std::path::PathBuf {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!("buildtrack-timesheet-test-{nonce}.db"));
         let pool = db(&path).await.unwrap();
 
         sqlx::query(
             "CREATE TABLE projects (id TEXT PRIMARY KEY);
-             CREATE TABLE contracts (id TEXT PRIMARY KEY, project_id TEXT);
-             CREATE TABLE control_accounts (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT);
-             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT);
+             CREATE TABLE contracts (id TEXT PRIMARY KEY, project_id TEXT, parent_main_contract_id TEXT);
+             CREATE TABLE control_accounts (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, boq_item_id TEXT, cost_code_id TEXT);
+             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, control_account_id TEXT);
              CREATE TABLE resource_masters (id TEXT PRIMARY KEY, payload TEXT);
              CREATE TABLE reporting_periods (id TEXT PRIMARY KEY, project_id TEXT, start_date TEXT, end_date TEXT, cutoff_date TEXT, status TEXT);
              CREATE TABLE work_calendars (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT);
-             CREATE TABLE supplier_ap_mutation_guard (operation_id TEXT PRIMARY KEY, created_at TEXT);
+             CREATE TABLE labor_timesheet_mutation_guard (operation_id TEXT PRIMARY KEY, created_at TEXT);
              CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, payload TEXT);
              CREATE TABLE cost_entries (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, parent_main_project_id TEXT, parent_main_contract_id TEXT, boq_header_id TEXT, boq_item_id TEXT, control_account_id TEXT, payload TEXT);
              CREATE TABLE labor_timesheets (
@@ -943,19 +1144,50 @@ mod tests {
                  non_working_override_reason TEXT,
                  notes TEXT,
                  payload TEXT NOT NULL
-             );"
+             );
+             CREATE TRIGGER labor_timesheet_governed_update_v2
+             BEFORE UPDATE ON labor_timesheets
+             WHEN (OLD.status <> 'Draft' OR NEW.status <> 'Draft')
+               AND NOT EXISTS (SELECT 1 FROM labor_timesheet_mutation_guard)
+             BEGIN SELECT RAISE(ABORT, 'Governed labor-timesheet changes must use a lifecycle command.'); END;
+             CREATE TRIGGER labor_timesheet_governed_delete_v2
+             BEFORE DELETE ON labor_timesheets
+             WHEN OLD.status <> 'Draft'
+             BEGIN SELECT RAISE(ABORT, 'Governed labor timesheets cannot be deleted.'); END;
+             CREATE TRIGGER labor_timesheet_line_governed_insert_v2
+             BEFORE INSERT ON labor_timesheet_lines
+             WHEN COALESCE((SELECT status FROM labor_timesheets WHERE id = NEW.timesheet_id), '') <> 'Draft'
+             BEGIN SELECT RAISE(ABORT, 'Lines can only be added to a Draft labor timesheet.'); END;
+             CREATE TRIGGER labor_timesheet_line_governed_update_v2
+             BEFORE UPDATE ON labor_timesheet_lines
+             WHEN COALESCE((SELECT status FROM labor_timesheets WHERE id = OLD.timesheet_id), '') <> 'Draft'
+             BEGIN SELECT RAISE(ABORT, 'Governed lines are immutable.'); END;"
         )
         .execute(&pool)
         .await
         .unwrap();
 
         // Seed master records
-        sqlx::query("INSERT INTO projects VALUES ('PRJ-1')").execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO contracts VALUES ('CTR-1', 'PRJ-1')").execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO control_accounts VALUES ('CA-1', 'PRJ-1', 'CTR-1')").execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO schedules VALUES ('ACT-1', 'PRJ-1', 'CTR-1')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO projects VALUES ('PRJ-1')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO contracts VALUES ('CTR-1', 'PRJ-1', NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query(
-            "INSERT INTO resource_masters VALUES ('RES-1', json('{\"id\":\"RES-1\",\"name\":\"John Carpenter\",\"resource_type\":\"Labor\",\"status\":\"Active\"}'))"
+            "INSERT INTO control_accounts VALUES ('CA-1', 'PRJ-1', 'CTR-1', 'BOQ-1', 'CC-1')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO schedules VALUES ('ACT-1', 'PRJ-1', 'CTR-1', 'CA-1')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO resource_masters VALUES ('RES-1', json('{\"id\":\"RES-1\",\"name\":\"John Carpenter\",\"resource_type\":\"Labor\",\"status\":\"Active\",\"daily_capacity_hours\":12,\"standard_rate\":50,\"overtime_rate\":75}'))"
         )
         .execute(&pool)
         .await
@@ -989,6 +1221,7 @@ mod tests {
             "resource_id": "RES-1",
             "schedule_activity_id": "ACT-1",
             "control_account_id": "CA-1",
+            "cost_code_id": "CC-1",
             "regular_hours": 8.0,
             "overtime_hours": 2.0,
             "regular_rate": 50.0,
@@ -1010,8 +1243,8 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO labor_timesheet_lines (id, timesheet_id, created_at, project_id, contract_id, resource_id, schedule_activity_id, control_account_id, regular_hours, overtime_hours, regular_rate, overtime_rate, total_hours, calculated_amount, payload)
-             VALUES (?, ?, '2026-09-07T08:00:00Z', 'PRJ-1', 'CTR-1', 'RES-1', 'ACT-1', 'CA-1', 8.0, 2.0, 50.0, 75.0, 10.0, 550.0, ?)"
+            "INSERT INTO labor_timesheet_lines (id, timesheet_id, created_at, project_id, contract_id, resource_id, schedule_activity_id, control_account_id, cost_code_id, regular_hours, overtime_hours, regular_rate, overtime_rate, total_hours, calculated_amount, payload)
+             VALUES (?, ?, '2026-09-07T08:00:00Z', 'PRJ-1', 'CTR-1', 'RES-1', 'ACT-1', 'CA-1', 'CC-1', 8.0, 2.0, 50.0, 75.0, 10.0, 550.0, ?)"
         )
         .bind(line_id)
         .bind(ts_id)
@@ -1041,6 +1274,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(sub_res.status, "Submitted");
+        assert_eq!(
+            submit_labor_timesheet(
+                &path,
+                SubmitLaborTimesheetRequest {
+                    operation_id: "op-sub-repeat".into(),
+                    timesheet_id: "ts-1".into(),
+                    actor: "Foreman Dave".into(),
+                    submitted_at: "2026-09-07".into(),
+                },
+            )
+            .await
+            .unwrap()
+            .status,
+            "Submitted"
+        );
 
         // 2. Approve (cannot approve Draft, but now it's Submitted)
         let app_res = approve_labor_timesheet(
@@ -1055,6 +1303,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(app_res.status, "Approved");
+        assert_eq!(
+            approve_labor_timesheet(
+                &path,
+                ApproveLaborTimesheetRequest {
+                    operation_id: "op-app-repeat".into(),
+                    timesheet_id: "ts-1".into(),
+                    actor: "PM Alice".into(),
+                    approved_at: "2026-09-07".into(),
+                },
+            )
+            .await
+            .unwrap()
+            .status,
+            "Approved"
+        );
 
         // 3. Post
         let post_res = post_labor_timesheet(
@@ -1069,6 +1332,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(post_res.status, "Posted");
+        assert_eq!(
+            post_labor_timesheet(
+                &path,
+                PostLaborTimesheetRequest {
+                    operation_id: "op-post-repeat".into(),
+                    timesheet_id: "ts-1".into(),
+                    actor: "Finance Bob".into(),
+                    posted_at: "2026-09-07".into(),
+                },
+            )
+            .await
+            .unwrap()
+            .status,
+            "Posted"
+        );
 
         // Verify cost entry created
         let pool = db(&path).await.unwrap();
@@ -1094,6 +1372,22 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rev_res.status, "Reversed");
+        assert_eq!(
+            reverse_labor_timesheet(
+                &path,
+                ReverseLaborTimesheetRequest {
+                    operation_id: "op-rev-repeat".into(),
+                    timesheet_id: "ts-1".into(),
+                    actor: "Finance Bob".into(),
+                    reason: "Incorrect shift logged".into(),
+                    reversed_at: "2026-09-08".into(),
+                },
+            )
+            .await
+            .unwrap()
+            .status,
+            "Reversed"
+        );
 
         // Verify negative reversal cost entry created
         let rev_amount: f64 = sqlx::query_scalar(
@@ -1105,11 +1399,21 @@ mod tests {
         assert_eq!(rev_amount, -550.0);
 
         // Verify audit log entries count
-        let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE json_extract(payload, '$.entity_id') = 'ts-1'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM audit_log WHERE json_extract(payload, '$.entity_id') = 'ts-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(audit_count, 4); // Submit, Approve, Post, Reverse
+
+        let net_cost: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(json_extract(payload, '$.amount')), 0) AS REAL) FROM cost_entries WHERE json_extract(payload, '$.source_type') = 'LaborTimesheet'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(net_cost, 0.0);
 
         pool.close().await;
         let _ = std::fs::remove_file(path);
@@ -1139,7 +1443,18 @@ mod tests {
     #[tokio::test]
     async fn posting_fails_if_in_draft_or_submitted_status() {
         let path = fixture_db().await;
-        seed_timesheet(&path, "ts-sub", "line-sub", "Submitted").await;
+        seed_timesheet(&path, "ts-sub", "line-sub", "Draft").await;
+        submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-submit-before-post".into(),
+                timesheet_id: "ts-sub".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
 
         let err = post_labor_timesheet(
             &path,
@@ -1185,7 +1500,372 @@ mod tests {
         .unwrap_err();
 
         assert!(err.contains("locked or closed reporting period"));
+
+        let pool = db(&path).await.unwrap();
+        sqlx::query("DELETE FROM reporting_periods WHERE id = 'rp-1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-sub-open".into(),
+                timesheet_id: "ts-locked".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+        approve_labor_timesheet(
+            &path,
+            ApproveLaborTimesheetRequest {
+                operation_id: "op-app-open".into(),
+                timesheet_id: "ts-locked".into(),
+                actor: "PM Alice".into(),
+                approved_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+        post_labor_timesheet(
+            &path,
+            PostLaborTimesheetRequest {
+                operation_id: "op-post-open".into(),
+                timesheet_id: "ts-locked".into(),
+                actor: "Finance Bob".into(),
+                posted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let pool = db(&path).await.unwrap();
+        sqlx::query(
+            "INSERT INTO reporting_periods (id, project_id, start_date, end_date, cutoff_date, status)
+             VALUES ('rp-2', 'PRJ-1', '2026-09-01', '2026-09-30', '2026-09-30', 'Locked')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let err = reverse_labor_timesheet(
+            &path,
+            ReverseLaborTimesheetRequest {
+                operation_id: "op-reverse-locked".into(),
+                timesheet_id: "ts-locked".into(),
+                actor: "Finance Bob".into(),
+                reason: "Correction requested".into(),
+                reversed_at: "2026-09-08".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Reversal date") && err.contains("locked or closed"));
+
+        let pool = db(&path).await.unwrap();
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM labor_timesheets WHERE id = 'ts-locked'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let reversal_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM cost_entries WHERE id = 'labor-timesheet-reversal:line-locked'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "Posted");
+        assert_eq!(reversal_count, 0);
+        pool.close().await;
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn conflicting_existing_cost_fact_rolls_back_posting_without_overwrite() {
+        let path = fixture_db().await;
+        seed_timesheet(&path, "ts-conflict", "line-conflict", "Draft").await;
+        submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-conflict-submit".into(),
+                timesheet_id: "ts-conflict".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+        approve_labor_timesheet(
+            &path,
+            ApproveLaborTimesheetRequest {
+                operation_id: "op-conflict-approve".into(),
+                timesheet_id: "ts-conflict".into(),
+                actor: "PM Alice".into(),
+                approved_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let pool = db(&path).await.unwrap();
+        sqlx::query(
+            "INSERT INTO cost_entries (id, created_at, project_id, contract_id, boq_item_id, control_account_id, payload)
+             VALUES ('labor-timesheet-cost:line-conflict', '2026-09-07', 'PRJ-1', 'CTR-1', 'BOQ-1', 'CA-1', json('{\"amount\":999,\"source_type\":\"ManualConflict\"}'))",
+        )
+        .execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let err = post_labor_timesheet(
+            &path,
+            PostLaborTimesheetRequest {
+                operation_id: "op-conflict-post".into(),
+                timesheet_id: "ts-conflict".into(),
+                actor: "Finance Bob".into(),
+                posted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("UNIQUE constraint failed"));
+
+        let pool = db(&path).await.unwrap();
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM labor_timesheets WHERE id = 'ts-conflict'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let preserved: f64 = sqlx::query_scalar(
+            "SELECT CAST(json_extract(payload, '$.amount') AS REAL) FROM cost_entries WHERE id = 'labor-timesheet-cost:line-conflict'",
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(status, "Approved");
+        assert_eq!(preserved, 999.0);
+        pool.close().await;
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn maker_checker_separates_submit_approve_and_post_actors() {
+        let path = fixture_db().await;
+        seed_timesheet(&path, "ts-sod", "line-sod", "Draft").await;
+
+        let err = submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-sod-wrong-submitter".into(),
+                timesheet_id: "ts-sod".into(),
+                actor: "Someone Else".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("recorded timesheet submitter"));
+
+        submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-sod-submit".into(),
+                timesheet_id: "ts-sod".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = approve_labor_timesheet(
+            &path,
+            ApproveLaborTimesheetRequest {
+                operation_id: "op-sod-self-approve".into(),
+                timesheet_id: "ts-sod".into(),
+                actor: "Foreman Dave".into(),
+                approved_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("submitter cannot approve"));
+
+        approve_labor_timesheet(
+            &path,
+            ApproveLaborTimesheetRequest {
+                operation_id: "op-sod-approve".into(),
+                timesheet_id: "ts-sod".into(),
+                actor: "PM Alice".into(),
+                approved_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = post_labor_timesheet(
+            &path,
+            PostLaborTimesheetRequest {
+                operation_id: "op-sod-self-post".into(),
+                timesheet_id: "ts-sod".into(),
+                actor: "PM Alice".into(),
+                posted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("approver cannot post"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn rejects_subcontract_mismatched_control_account_and_daily_overload() {
+        let path = fixture_db().await;
+        seed_timesheet(&path, "ts-scope", "line-scope", "Draft").await;
+        let pool = db(&path).await.unwrap();
+
+        sqlx::query("INSERT INTO contracts VALUES ('CTR-SUB', 'PRJ-1', 'CTR-1')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE labor_timesheets SET contract_id = 'CTR-SUB', payload = json_set(payload, '$.contract_id', 'CTR-SUB') WHERE id = 'ts-scope'")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let err = submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-subcontract".into(),
+                timesheet_id: "ts-scope".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Main contract"));
+
+        let pool = db(&path).await.unwrap();
+        sqlx::query("UPDATE labor_timesheets SET contract_id = 'CTR-1', payload = json_set(payload, '$.contract_id', 'CTR-1') WHERE id = 'ts-scope'")
+            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "UPDATE labor_timesheet_lines SET cost_code_id = 'WRONG' WHERE id = 'line-scope'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+        let err = submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-cost-scope".into(),
+                timesheet_id: "ts-scope".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Cost code"));
+
+        let pool = db(&path).await.unwrap();
+        sqlx::query(
+            "UPDATE labor_timesheet_lines SET cost_code_id = 'CC-1' WHERE id = 'line-scope'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+        seed_timesheet(&path, "ts-other", "line-other", "Draft").await;
+        let pool = db(&path).await.unwrap();
+        sqlx::query("UPDATE labor_timesheets SET shift = 'Night', payload = json_set(payload, '$.shift', 'Night') WHERE id = 'ts-other'")
+            .execute(&pool).await.unwrap();
+        sqlx::query("UPDATE labor_timesheet_lines SET regular_hours = 3, overtime_hours = 0 WHERE id = 'line-other'")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+        let err = submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-capacity".into(),
+                timesheet_id: "ts-scope".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("governed capacity"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn late_audit_failure_rolls_back_posting_and_sql_guards_block_direct_mutation() {
+        let path = fixture_db().await;
+        seed_timesheet(&path, "ts-rollback", "line-rollback", "Draft").await;
+        submit_labor_timesheet(
+            &path,
+            SubmitLaborTimesheetRequest {
+                operation_id: "op-rb-submit".into(),
+                timesheet_id: "ts-rollback".into(),
+                actor: "Foreman Dave".into(),
+                submitted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let pool = db(&path).await.unwrap();
+        let direct =
+            sqlx::query("UPDATE labor_timesheets SET status = 'Approved' WHERE id = 'ts-rollback'")
+                .execute(&pool)
+                .await;
+        assert!(direct.is_err());
+        pool.close().await;
+
+        approve_labor_timesheet(
+            &path,
+            ApproveLaborTimesheetRequest {
+                operation_id: "op-rb-approve".into(),
+                timesheet_id: "ts-rollback".into(),
+                actor: "B".into(),
+                approved_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let pool = db(&path).await.unwrap();
+        sqlx::query("CREATE TRIGGER fail_labor_post_audit BEFORE INSERT ON audit_log WHEN json_extract(NEW.payload, '$.action') = 'Post' BEGIN SELECT RAISE(ABORT, 'forced audit failure'); END;")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let err = post_labor_timesheet(
+            &path,
+            PostLaborTimesheetRequest {
+                operation_id: "op-rb-post".into(),
+                timesheet_id: "ts-rollback".into(),
+                actor: "C".into(),
+                posted_at: "2026-09-07".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("forced audit failure"));
+
+        let pool = db(&path).await.unwrap();
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM labor_timesheets WHERE id = 'ts-rollback'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let costs: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM cost_entries WHERE id = 'labor-timesheet-cost:line-rollback'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "Approved");
+        assert_eq!(costs, 0);
+        pool.close().await;
         let _ = std::fs::remove_file(path);
     }
 }
-

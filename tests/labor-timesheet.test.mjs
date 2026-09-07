@@ -247,6 +247,44 @@ test('validateLaborTimesheet enforces override reason for non-working calendar d
   assert.ok(issues.some((i) => i.message.includes('non-working calendar day')));
 });
 
+test('validateLaborTimesheet accepts a fully governed labor line and rejects rate or capacity drift', () => {
+  const header = {
+    id: 'TS-GOV', project_id: 'PRJ-1', contract_id: 'CTR-1',
+    timesheet_number: 'TS-2026-099', work_date: '2026-09-07', shift: 'Day',
+    submitter: 'Foreman Dave',
+  };
+  const line = {
+    id: 'LINE-GOV', timesheet_id: 'TS-GOV', project_id: 'PRJ-1', contract_id: 'CTR-1',
+    resource_id: 'RES-1', schedule_activity_id: 'ACT-1', control_account_id: 'CA-1',
+    cost_code_id: 'CC-1', regular_hours: 8, overtime_hours: 2,
+    regular_rate: 50, overtime_rate: 75,
+  };
+  const context = {
+    resourceMasters: [{
+      id: 'RES-1', name: 'Worker 1', resource_type: 'Labor', status: 'Active',
+      daily_capacity_hours: 12, standard_rate: 50, overtime_rate: 75,
+    }],
+    schedules: [{
+      id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1', control_account_id: 'CA-1',
+    }],
+    controlAccounts: [{
+      id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1', cost_code_id: 'CC-1',
+    }],
+  };
+
+  assert.deepStrictEqual(validateLaborTimesheet(header, [line], context), []);
+
+  const rateIssues = validateLaborTimesheet(header, [{ ...line, regular_rate: 51 }], context);
+  assert.ok(rateIssues.some((i) => i.field === 'regular_rate' && i.message.includes('governed')));
+
+  const capacityIssues = validateLaborTimesheet(
+    header,
+    [{ ...line, regular_hours: 11, overtime_hours: 2 }],
+    context,
+  );
+  assert.ok(capacityIssues.some((i) => i.message.includes('governed daily capacity')));
+});
+
 test('F1 Rust backend labor_timesheet module provides atomic submit, approve, post, and reverse commands', () => {
   const rustModule = read('src-tauri/src/labor_timesheet.rs');
   assert.match(rustModule, /pub async fn submit_labor_timesheet/);
@@ -270,6 +308,23 @@ test('F1 SQLite migration 61 creates labor_timesheets, labor_timesheet_lines and
   assert.match(libSource, /labor_timesheet_locked_delete/);
   assert.match(libSource, /labor_timesheet_lines_locked_mutation/);
   assert.match(libSource, /labor_timesheet_lines_locked_delete/);
+});
+
+test('W01 hardening uses dedicated SQL lifecycle guards, immutable postings, and governed UI wiring', () => {
+  const libSource = read('src-tauri/src/lib.rs');
+  const rustModule = read('src-tauri/src/labor_timesheet.rs');
+  const appSource = read('src/App.tsx');
+  const modalSource = read('src/components/LaborTimesheetModal.tsx');
+
+  assert.match(libSource, /version:\s*72/);
+  assert.match(libSource, /labor_timesheet_mutation_guard/);
+  assert.match(libSource, /labor_timesheet_governed_update_v2/);
+  assert.match(rustModule, /Maker-checker violation/);
+  assert.match(rustModule, /governed standard rate/);
+  assert.doesNotMatch(rustModule, /ON CONFLICT\s*\(id\)\s*DO UPDATE/i);
+  assert.match(appSource, /timesheet_id:\s*ts\.id/);
+  assert.match(modalSource, /parent_main_contract_id/);
+  assert.match(modalSource, /Timesheet submission requires the governed desktop environment/);
 });
 
 test('F1 Data Dictionary and SQLite Repository register labor timesheets', () => {

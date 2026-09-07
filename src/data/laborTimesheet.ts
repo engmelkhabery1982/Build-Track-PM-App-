@@ -122,9 +122,13 @@ export function validateLaborTimesheet(
     if (calendar) {
       const dateObj = new Date(timesheet.work_date + 'T00:00:00');
       const dayOfWeek = dateObj.getDay(); // 0 = Sun, 5 = Fri, 6 = Sat
-      const workingDays = Array.isArray(calendar.working_days) ? calendar.working_days : [0, 1, 2, 3, 4]; // default Sun-Thu
-      const holidays = Array.isArray(calendar.holidays) ? calendar.holidays : [];
-      if (!workingDays.includes(dayOfWeek) || holidays.includes(timesheet.work_date)) {
+      const workingDays = Array.isArray(calendar.calendar_working_days)
+        ? calendar.calendar_working_days
+        : (Array.isArray(calendar.working_days) ? calendar.working_days : []);
+      const holidays = Array.isArray(calendar.calendar_exceptions)
+        ? calendar.calendar_exceptions
+        : (Array.isArray(calendar.holidays) ? calendar.holidays : []);
+      if ((workingDays.length > 0 && !workingDays.includes(dayOfWeek)) || holidays.includes(timesheet.work_date)) {
         isNonWorkingDay = true;
       }
     }
@@ -150,6 +154,56 @@ export function validateLaborTimesheet(
         }
         if (resource.status && resource.status !== 'Active') {
           issues.push({ lineIndex: index, field: 'resource_id', message: `Line #${index + 1}: Worker "${resource.name}" is ${resource.status}.`, severity: 'error' });
+        }
+        const capacity = Number(resource.daily_capacity_hours || 0);
+        if (!(capacity > 0)) {
+          issues.push({
+            lineIndex: index,
+            field: 'resource_id',
+            message: `Line #${index + 1}: Worker requires a governed daily capacity.`,
+            severity: 'error',
+          });
+        } else if ((Number(line.regular_hours) || 0) + (Number(line.overtime_hours) || 0) > capacity) {
+          issues.push({
+            lineIndex: index,
+            field: 'regular_hours',
+            message: `Line #${index + 1}: Hours exceed the worker's governed daily capacity (${capacity}).`,
+            severity: 'error',
+          });
+        }
+        const governedRegularRate = Number(resource.standard_rate || 0);
+        if (!(governedRegularRate > 0)) {
+          issues.push({
+            lineIndex: index,
+            field: 'resource_id',
+            message: `Line #${index + 1}: Worker requires a governed standard rate.`,
+            severity: 'error',
+          });
+        } else if (Math.abs((Number(line.regular_rate) || 0) - governedRegularRate) > 0.009) {
+          issues.push({
+            lineIndex: index,
+            field: 'regular_rate',
+            message: `Line #${index + 1}: Regular rate must match the governed Resource Master rate.`,
+            severity: 'error',
+          });
+        }
+        if ((Number(line.overtime_hours) || 0) > 0) {
+          const governedOvertimeRate = Number(resource.overtime_rate || 0);
+          if (!(governedOvertimeRate > 0)) {
+            issues.push({
+              lineIndex: index,
+              field: 'overtime_rate',
+              message: `Line #${index + 1}: Overtime requires a governed Resource Master rate.`,
+              severity: 'error',
+            });
+          } else if (Math.abs((Number(line.overtime_rate) || 0) - governedOvertimeRate) > 0.009) {
+            issues.push({
+              lineIndex: index,
+              field: 'overtime_rate',
+              message: `Line #${index + 1}: Overtime rate must match the governed Resource Master rate.`,
+              severity: 'error',
+            });
+          }
         }
       }
 
@@ -191,6 +245,9 @@ export function validateLaborTimesheet(
         if (activity.contract_id && timesheet.contract_id && activity.contract_id !== timesheet.contract_id) {
           issues.push({ lineIndex: index, field: 'schedule_activity_id', message: `Line #${index + 1}: Activity belongs to another contract.`, severity: 'error' });
         }
+        if (activity.control_account_id && activity.control_account_id !== line.control_account_id) {
+          issues.push({ lineIndex: index, field: 'control_account_id', message: `Line #${index + 1}: Activity and Control Account do not match.`, severity: 'error' });
+        }
       }
     }
 
@@ -200,8 +257,16 @@ export function validateLaborTimesheet(
       const ca = context.controlAccounts.find((c) => c.id === line.control_account_id);
       if (!ca) {
         issues.push({ lineIndex: index, field: 'control_account_id', message: `Line #${index + 1}: Control account not found.`, severity: 'error' });
-      } else if (ca.project_id && timesheet.project_id && ca.project_id !== timesheet.project_id) {
-        issues.push({ lineIndex: index, field: 'control_account_id', message: `Line #${index + 1}: Control account belongs to another project.`, severity: 'error' });
+      } else {
+        if (ca.project_id && timesheet.project_id && ca.project_id !== timesheet.project_id) {
+          issues.push({ lineIndex: index, field: 'control_account_id', message: `Line #${index + 1}: Control account belongs to another project.`, severity: 'error' });
+        }
+        if (ca.contract_id && timesheet.contract_id && ca.contract_id !== timesheet.contract_id) {
+          issues.push({ lineIndex: index, field: 'control_account_id', message: `Line #${index + 1}: Control account belongs to another contract.`, severity: 'error' });
+        }
+        if (!line.cost_code_id || line.cost_code_id !== ca.cost_code_id) {
+          issues.push({ lineIndex: index, field: 'cost_code_id', message: `Line #${index + 1}: Cost code must match the selected Control Account.`, severity: 'error' });
+        }
       }
     }
 

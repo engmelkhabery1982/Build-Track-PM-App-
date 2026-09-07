@@ -3090,6 +3090,53 @@ pub fn run() {
             ",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 72,
+            description: "govern_labor_timesheet_entry_points",
+            sql: r#"
+            CREATE TABLE IF NOT EXISTS labor_timesheet_mutation_guard (
+              operation_id TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL
+            );
+
+            DROP TRIGGER IF EXISTS labor_timesheet_locked_delete;
+            DROP TRIGGER IF EXISTS labor_timesheet_lines_locked_mutation;
+            DROP TRIGGER IF EXISTS labor_timesheet_lines_locked_delete;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_governed_insert_v2
+            BEFORE INSERT ON labor_timesheets
+            WHEN NEW.status <> 'Draft'
+              AND NOT EXISTS (SELECT 1 FROM labor_timesheet_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Labor timesheet must be created as Draft.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_governed_update_v2
+            BEFORE UPDATE ON labor_timesheets
+            WHEN (OLD.status <> 'Draft' OR NEW.status <> 'Draft')
+              AND NOT EXISTS (SELECT 1 FROM labor_timesheet_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Governed labor-timesheet changes must use a lifecycle command.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_governed_delete_v2
+            BEFORE DELETE ON labor_timesheets
+            WHEN OLD.status <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Submitted, approved, posted or reversed labor timesheets cannot be deleted.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_line_governed_insert_v2
+            BEFORE INSERT ON labor_timesheet_lines
+            WHEN COALESCE((SELECT status FROM labor_timesheets WHERE id = NEW.timesheet_id), '') <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Lines can only be added to a Draft labor timesheet.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_line_governed_update_v2
+            BEFORE UPDATE ON labor_timesheet_lines
+            WHEN COALESCE((SELECT status FROM labor_timesheets WHERE id = OLD.timesheet_id), '') <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Lines of a governed labor timesheet are immutable.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS labor_timesheet_line_governed_delete_v2
+            BEFORE DELETE ON labor_timesheet_lines
+            WHEN COALESCE((SELECT status FROM labor_timesheets WHERE id = OLD.timesheet_id), '') <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Lines of a governed labor timesheet cannot be deleted.'); END;
+            "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
