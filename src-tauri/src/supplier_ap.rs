@@ -140,6 +140,7 @@ mod tests {
   "CREATE TABLE procurement_receipts(id TEXT PRIMARY KEY,payload TEXT)",
   "CREATE TABLE supplier_invoices(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE supplier_invoice_lines(id TEXT PRIMARY KEY,payload TEXT)","CREATE TABLE supplier_invoice_payments(id TEXT PRIMARY KEY,payload TEXT)","CREATE TABLE supplier_ap_mutation_guard(operation_id TEXT PRIMARY KEY,created_at TEXT)",
+  "CREATE TABLE audit_log(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,payload TEXT)",
   "CREATE TRIGGER supplier_invoice_guard BEFORE UPDATE ON supplier_invoices WHEN json_extract(NEW.payload,'$.status') IN ('Approved','Partially Paid','Paid') AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed AP required'); END",
   "CREATE TRIGGER supplier_payment_guard BEFORE UPDATE ON supplier_invoice_payments WHEN json_extract(NEW.payload,'$.status')='Settled' AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed AP required'); END",
   "CREATE TRIGGER po_guard BEFORE UPDATE ON procurement WHEN json_extract(NEW.payload,'$.status') IN ('Ordered','Cancelled') AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed PO required'); END",

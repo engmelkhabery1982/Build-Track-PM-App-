@@ -221,6 +221,12 @@ pub async fn approve_report_template(path: &Path, request: ApproveReportTemplate
             .bind(&request.id).fetch_optional(&mut *tx).await.map_err(|error| error.to_string())?;
 
         if let Some(payload) = current_payload {
+            let approved_at: String = sqlx::query_scalar(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
             let mut v: Value = serde_json::from_str(&payload).map_err(|_| "Invalid JSON")?;
             let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("Draft");
             if status != "Draft" {
@@ -229,7 +235,7 @@ pub async fn approve_report_template(path: &Path, request: ApproveReportTemplate
 
             v["status"] = json!("Approved");
             v["approved_by"] = json!(request.approver);
-            v["approved_at"] = json!(chrono::Utc::now().to_rfc3339());
+            v["approved_at"] = json!(&approved_at);
 
             let new_payload = serde_json::to_string(&v).map_err(|_| "JSON serialization error")?;
 
@@ -237,16 +243,16 @@ pub async fn approve_report_template(path: &Path, request: ApproveReportTemplate
                 .bind(new_payload).bind(&request.id)
                 .execute(&mut *tx).await.map_err(|error| error.to_string())?;
 
-            let audit_id = uuid::Uuid::new_v4().to_string();
+            let audit_id = format!("audit:report-template:approve:{}", request.id);
             let audit_payload = json!({
                 "action": "APPROVE_REPORT_TEMPLATE",
                 "template_id": request.id,
                 "approver": request.approver,
-                "timestamp": chrono::Utc::now().to_rfc3339()
+                "timestamp": &approved_at
             }).to_string();
 
-            sqlx::query("INSERT INTO audit_log (id, created_at, project_id, payload) VALUES (?, datetime('now'), ?, ?)")
-                .bind(audit_id).bind(request.project_id.as_deref()).bind(audit_payload)
+            sqlx::query("INSERT INTO audit_log (id, created_at, project_id, payload) VALUES (?, ?, ?, ?)")
+                .bind(audit_id).bind(&approved_at).bind(request.project_id.as_deref()).bind(audit_payload)
                 .execute(&mut *tx).await.map_err(|error| error.to_string())?;
 
             Ok(())

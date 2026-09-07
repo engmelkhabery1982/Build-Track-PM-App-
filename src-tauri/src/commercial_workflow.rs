@@ -217,8 +217,9 @@ mod tests {
   "CREATE TABLE cost_entries(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE procurement(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE procurement_receipts(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
-  "CREATE TABLE commercial_mutation_guard(operation_id TEXT PRIMARY KEY,created_at TEXT)",
-  "CREATE TABLE commercial_workflow_postings(id TEXT PRIMARY KEY,created_at TEXT,source_table TEXT,source_id TEXT,posting_type TEXT,status TEXT,actor TEXT,effective_date TEXT,reason TEXT,snapshot_json TEXT,UNIQUE(source_table,source_id,posting_type))",
+ "CREATE TABLE commercial_mutation_guard(operation_id TEXT PRIMARY KEY,created_at TEXT)",
+ "CREATE TABLE audit_log(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,payload TEXT)",
+ "CREATE TABLE commercial_workflow_postings(id TEXT PRIMARY KEY,created_at TEXT,source_table TEXT,source_id TEXT,posting_type TEXT,status TEXT,actor TEXT,effective_date TEXT,reason TEXT,snapshot_json TEXT,UNIQUE(source_table,source_id,posting_type))",
   "CREATE TRIGGER cc_guard BEFORE UPDATE ON cost_changes WHEN json_extract(NEW.payload,'$.status') IN ('Approved','Reversed') AND NOT EXISTS(SELECT 1 FROM commercial_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed commercial required'); END",
   "CREATE TRIGGER cert_guard BEFORE UPDATE ON payment_certificates WHEN json_extract(NEW.payload,'$.status') IN ('Approved','Paid','Reversed') AND NOT EXISTS(SELECT 1 FROM commercial_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed commercial required'); END"
  ]{sqlx::query(q).execute(&p).await.unwrap();}

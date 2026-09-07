@@ -1,6 +1,0 @@
-{
-  "name": "BuildTrack — Construction Management",
-  "description": "Enterprise construction management platform with commercial control, schedule management, EVM, quality assurance, and governed workflows.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

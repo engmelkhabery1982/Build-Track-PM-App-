@@ -1105,7 +1105,7 @@ mod tests {
         assert_eq!(rev_amount, -550.0);
 
         // Verify audit log entries count
-        let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE entity_id = 'ts-1'")
+        let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE json_extract(payload, '$.entity_id') = 'ts-1'")
             .fetch_one(&pool)
             .await
             .unwrap();
