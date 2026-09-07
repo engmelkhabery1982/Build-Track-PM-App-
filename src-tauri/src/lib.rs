@@ -3074,6 +3074,37 @@ pub fn run() {
             ",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+
+        tauri_plugin_sql::Migration {
+            version: 71,
+            description: "add_g3_portal_outbox_tables",
+            sql: "
+            CREATE TABLE IF NOT EXISTS portal_outbox (
+                id TEXT PRIMARY KEY,
+                operation_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS portal_audit_log (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                party_id TEXT,
+                user_id TEXT,
+                action TEXT NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                ip_address TEXT,
+                details TEXT,
+                success INTEGER NOT NULL DEFAULT 1
+            );
+            ",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

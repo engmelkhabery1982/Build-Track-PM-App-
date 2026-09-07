@@ -8,7 +8,7 @@
 - Official reviewed C2 feature commit: `4d04d8de92e8bfaf7ca845c81b0108b54284781e`
 - Agent-cloud C2 synchronization commit: `8d22f5295bb491ec5c31e70d8db2940ad4ae0090`
 - Current capability: `G3 — Scoped External Portal`
-- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4/F5/F6/F7/F8/F9/G1/G2 await Codex acceptance`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10; F1..F9, G1..G3 await Codex acceptance`
 - Last accepted capability: `G2 — Users, Roles & Segregation of Duties (provisional)`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
@@ -27,6 +27,22 @@
 - تم إصلاح E1 لإزالة EV/WIR الوهمي وربطه بمحرك EVM الموحد وبيانات WIR الحقيقية.
 - تم استكمال E2 بدورة `Open → Assigned → In Progress → Resolved → Closed` وحراسة SQL للأدلة والحل والنطاق.
 - تم استكمال E3 بإصدار ذري، SHA-256، immutability، snapshot موحد لـPDF/Excel، تحقق إعادة الفتح، ونسخة القالب.
+- تم استكمال G3 ببوابة خارجية محكومة (Scoped External Portal) مع عزل المستأجر والطرف، حراسة الهوية والجلسات، تقييد أنواع التقديم للأدوار، فحص الملفات والحجر الصحي وتجزئة SHA-256، الفصل الصارم لواجبات الاعتماد، ودمج بروتوكول مزامنة G1 (portal_outbox) دون كتابة مباشرة لـSQLite.
+
+## تحديث التسليم — G3 (Scoped External Portal)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `G3 — Scoped External Portal (Client / Subcontractor / Supplier)`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - Security & Scope engine in `src/utils/portalEngine.ts` (`validateSession`, `validateScopeAccess`, `validateSubmissionTypeForRole`, `validateAndScanAttachment`, `validateWorkflowTransition`, `buildG1PortalSyncItem`).
+  - Migration 71 in `src-tauri/src/lib.rs` (`portal_outbox` and `portal_audit_log` tables).
+  - External Portal UI with persona simulation and attachment scanner in `src/components/ExternalPortalView.tsx`.
+  - Added `portal` view to navigation and rendering in `src/App.tsx`.
+  - Created automated test suite `tests/g3-scoped-portal.test.mjs` (8/8 passed). Full test suite (227 tests) passes.
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
+- Exact next action: Hand over for Codex review.
+
 
 ## تحديث التسليم — Codex acceptance through E3
 

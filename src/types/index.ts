@@ -1538,6 +1538,7 @@ export type ViewKey =
   | 'safety'
   | 'documents'
   | 'tracking'
+  | 'portal'
   | 'controlsCockpit'
   | 'varianceActions' | 'dataQuality';
 
@@ -2099,4 +2100,96 @@ export interface AppUser {
 export interface AuthSession {
   token: string;
   user: AppUser;
+}
+
+export type PortalPartyType = 'Client' | 'Subcontractor' | 'Supplier';
+
+export type PortalRole = 'Portal_Client' | 'Portal_Subcontractor' | 'Portal_Supplier';
+
+export interface PortalUser {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  party_id: string;
+  party_type: PortalPartyType;
+  contract_ids: string[];
+  project_ids: string[];
+  role: PortalRole;
+  notifications_opt_in?: boolean;
+  status: 'Active' | 'Suspended';
+  created_at: string;
+}
+
+export interface PortalSession {
+  token: string;
+  user: PortalUser;
+  expires_at: string;
+  created_at: string;
+  ip_address?: string;
+}
+
+export type PortalSubmissionType = 'WIR' | 'Invoice' | 'Submittal' | 'Document' | 'Comment';
+
+export type PortalSubmissionStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Requires Clarification';
+
+export interface PortalAttachment {
+  id: string;
+  submission_id?: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  sha256_hash: string;
+  storage_path?: string;
+  version: number;
+  scan_status: 'Pending' | 'Clean' | 'Quarantined';
+  scan_details?: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export interface PortalComment {
+  id: string;
+  submission_id: string;
+  author_id: string;
+  author_name: string;
+  author_type: 'External' | 'Internal';
+  content: string;
+  created_at: string;
+}
+
+export interface PortalSubmission {
+  id: string;
+  tenant_id: string;
+  party_id: string;
+  contract_id: string;
+  project_id: string;
+  submission_type: PortalSubmissionType;
+  reference_number: string;
+  title: string;
+  description?: string;
+  status: PortalSubmissionStatus;
+  internal_approval_status?: 'Pending' | 'Approved' | 'Rejected';
+  internal_reviewer?: string;
+  internal_comments?: string;
+  submission_data?: Record<string, unknown>;
+  attachments?: PortalAttachment[];
+  comments?: PortalComment[];
+  submitted_by: string;
+  submitted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PortalAuditLog {
+  id: string;
+  timestamp: string;
+  party_id: string;
+  user_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  ip_address?: string;
+  details?: string;
+  success: boolean;
 }

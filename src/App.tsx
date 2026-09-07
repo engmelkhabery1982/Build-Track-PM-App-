@@ -28,6 +28,7 @@ import { LaborTimesheetModal } from '@/components/LaborTimesheetModal';
 import { EquipmentLogModal } from '@/components/EquipmentLogModal';
 import { ClaimAssessmentModal } from '@/components/ClaimAssessmentModal';
 import { IntegratedProjectControlsCockpit } from '@/components/IntegratedProjectControlsCockpit';
+import { ExternalPortalView } from '@/components/ExternalPortalView';
 import { VarianceActionRegisterView } from '@/components/VarianceActionRegisterView';
 import { useVarianceActions } from '@/hooks/useVarianceActions';
 import { ProjectDataDateProvider, useProjectDataDate } from '@/context/ProjectDataDateContext';
@@ -92,6 +93,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: IconType; group: string }[
   { key: 'partyContacts', label: 'Party Contacts', icon: ClipboardList, group: 'Commercial & Cash' },
   { key: 'rateHistory', label: 'Rate History', icon: DollarSign, group: 'Commercial & Cash' },
   { key: 'reportTemplates', label: 'Report Templates', icon: FileText, group: 'Commercial & Cash' },
+  { key: 'portal', label: 'External Portal (G3)', icon: Building2, group: 'Commercial & Cash' },
   { key: 'costs', label: 'Cost Control', icon: DollarSign, group: 'Cost & Resources' },
   { key: 'costCodes', label: 'Cost Code / CBS Master', icon: Layers, group: 'Cost & Resources' },
   { key: 'wbs', label: 'WBS Master', icon: GitBranch, group: 'Planning & Controls' },
@@ -2376,6 +2378,9 @@ function AppWorkspace({ session, setSession }: { session: AuthSession, setSessio
     }
     if (activeView === 'auditLog') {
       return <AuditTrailExplorer records={data.auditLog as Record<string, any>[]} />;
+    }
+    if (activeView === 'portal') {
+      return <ExternalPortalView />;
     }
     if (activeView === 'reportPack') {
       return (
@@ -4909,7 +4914,6 @@ function AppWorkspace({ session, setSession }: { session: AuthSession, setSessio
   );
 }
 
-export default 
 function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

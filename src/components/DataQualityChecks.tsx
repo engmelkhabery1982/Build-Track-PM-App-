@@ -46,7 +46,7 @@ export function DataQualityChecks({
     setRunningRule(rule.id);
     try {
       const log = await executeDqRule(rule, globalData);
-      await saveDqLog(log);
+      await saveDqLog(log, dataRepository);
       onMutated('dq_execution_logs', { type: 'insert', row: log });
     } catch (e: any) {
       alert("Error executing rule: " + e.message);

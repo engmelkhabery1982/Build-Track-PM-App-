@@ -1,4 +1,4 @@
-import {
+import type {
   ResourceLevelingProposal,
   LevelingAlgorithm,
   LevelingProposalStatus,
@@ -6,10 +6,10 @@ import {
   LevelingOverloadedResourceSummary,
   LevelingImpactSummary,
 } from '../types/index.ts';
-import { calculatePlannedResourceLoads, ResourceLoad } from './resourceLoading.ts';
-import { calculateCpm, CpmResult, NetworkActivity } from './cpm.ts';
+import { calculatePlannedResourceLoads, type ResourceLoad } from './resourceLoading.ts';
+import { calculateCpm, type CpmResult, type NetworkActivity } from './cpm.ts';
 import { addWorkingDays, workingDatesBetween } from './schedulePlanning.ts';
-import { ScheduleVersionCaptureInput } from './scheduleVersioning.ts';
+import type { ScheduleVersionCaptureInput } from './scheduleVersioning.ts';
 
 export interface GenerateLevelingProposalInput {
   projectId: string;

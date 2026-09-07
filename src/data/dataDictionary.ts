@@ -15,6 +15,7 @@ export const STATUS_SETS = {
   document: ['Draft', 'Under Review', 'Approved', 'Current', 'Superseded'],
   laborTimesheet: ['Draft', 'Submitted', 'Approved', 'Posted', 'Reversed'],
   equipmentLog: ['Draft', 'Submitted', 'Approved', 'Posted', 'Reversed'],
+  portalSubmission: ['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Requires Clarification'],
 } as const;
 
 export const CANONICAL_FIELDS = {
