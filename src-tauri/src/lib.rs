@@ -2781,6 +2781,71 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 63,
+            description: "add_governed_claims_and_lines",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS claims (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT NOT NULL,
+        contract_id TEXT NOT NULL,
+        claim_number TEXT NOT NULL,
+        title TEXT NOT NULL,
+        notice_date TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        claimant_party_id TEXT,
+        respondent_party_id TEXT,
+        entitlement_basis TEXT NOT NULL,
+        linked_rfi_id TEXT,
+        linked_delay_id TEXT,
+        linked_document_id TEXT,
+        linked_activity_id TEXT,
+        linked_boq_item_id TEXT,
+        claimed_cost_impact REAL NOT NULL DEFAULT 0,
+        claimed_time_impact_days REAL NOT NULL DEFAULT 0,
+        assessed_cost_impact REAL NOT NULL DEFAULT 0,
+        assessed_time_impact_days REAL NOT NULL DEFAULT 0,
+        approved_cost_impact REAL NOT NULL DEFAULT 0,
+        approved_time_impact_days REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        owner TEXT NOT NULL,
+        evidence_notes TEXT,
+        reversal_reason TEXT,
+        converted_variation_id TEXT,
+        payload TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_claims_scope ON claims(project_id, contract_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_number ON claims(project_id, contract_id, lower(claim_number));
+
+      CREATE TABLE IF NOT EXISTS claim_lines (
+        id TEXT PRIMARY KEY,
+        claim_id TEXT NOT NULL,
+        contract_id TEXT NOT NULL,
+        item_code TEXT NOT NULL,
+        description TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        claimed_value REAL NOT NULL DEFAULT 0,
+        assessed_value REAL NOT NULL DEFAULT 0,
+        approved_value REAL NOT NULL DEFAULT 0,
+        boq_header_id TEXT,
+        boq_item_id TEXT,
+        value_impact REAL NOT NULL DEFAULT 0,
+        payload TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE CASCADE,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX IF NOT EXISTS idx_claim_lines_claim ON claim_lines(claim_id);
+
+      CREATE TRIGGER IF NOT EXISTS claims_converted_locked_delete
+      BEFORE DELETE ON claims
+      WHEN OLD.status = 'Converted to PVO'
+      BEGIN SELECT RAISE(ABORT, 'Claims converted to PVO cannot be deleted.'); END;
+    "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

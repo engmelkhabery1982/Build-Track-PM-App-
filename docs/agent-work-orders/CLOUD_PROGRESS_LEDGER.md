@@ -7,8 +7,8 @@
 
 - Official reviewed C2 feature commit: `4d04d8de92e8bfaf7ca845c81b0108b54284781e`
 - Agent-cloud C2 synchronization commit: `8d22f5295bb491ec5c31e70d8db2940ad4ae0090`
-- Current capability: `F3 — Claims / Potential Variation Order Workflow`
-- Status: `IN PROGRESS — provisional cloud execution; F1/F2 await Codex acceptance`
+- Current capability: `F5 — Versioned Cash Forecast Assumptions`
+- Status: `IN PROGRESS — provisional cloud execution; F1/F2/F3/F4 await Codex acceptance`
 - Last accepted capability: `E3 — Controlled Reproducible Report Pack (Codex-repaired, reviewed and gate-tested)`
 - Official repository: `engmelkhabery1982/Build-Track-PM-App-`
 - Writable agent repository only: `engmelkhabery1982/BuildTrack-Agent-Cloud`
@@ -70,6 +70,35 @@
   - Validation engine enforcing locked reporting periods, work calendar non-working day overrides, duplicate worker shifts, active worker status, and scope matching.
   - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed, 205/205 tests passed.
 - Exact next action: Codex review gate for F1, then proceed with F2 (Equipment Meter, Hours & Fuel Posting).
+
+## تحديث التسليم — F4 (Client/Subcontract Invoice & Certificate Reconciliation)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `F4 — Client/Subcontract Invoice & Certificate Reconciliation`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - WIR multi-item consolidation in `createInvoiceFromWir` (`src/App.tsx`).
+  - Strict revenue vs delivery cost separation: Client selling rates vs Subcontract unit rates for Control Account cost attribution.
+  - Commercial calculations for gross, retention, advance recovery, deductions, tax, and net certified values in `src/utils/commercialControl.ts`.
+  - Consolidated invoice tracking and cash flow synchronization in `consolidateInvoiceTracking` and `updateInvoiceTrackingAndCash`.
+  - Created automated test suite `tests/invoice-certificate-reconciliation.test.mjs`.
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
+- Exact next action: Proceed to F5 (Versioned Cash Forecast Assumptions).
+
+## تحديث التسليم — F3 (Claims / Potential Variation Order Workflow)
+
+- Agent/model: Google AI Studio Build Agent (Gemini 3.6 Flash)
+- Current feature: `F3 — Claims / Potential Variation Order Workflow`
+- Status: `READY FOR CODEX REVIEW — not CLOSED and not rated 8/10`
+- Evidence:
+  - Added `Claim` and `ClaimLine` interfaces to `src/types/index.ts`.
+  - Added SQLite Migration 63 to `src-tauri/src/lib.rs` for `claims` and `claim_lines` with indexes and delete triggers.
+  - Registered `claims` and `claim_lines` in `KNOWN_TABLES` (`src/data/sqliteRepository.ts`) and loaded in `useData` (`src/hooks/useData.ts`).
+  - Implemented `ClaimAssessmentModal.tsx` for notice dates, entitlement basis, cost/time impact analysis, line items, and governed conversion to Variation draft packages.
+  - Connected `Claims & PVO` navigation item and row actions in `src/App.tsx`.
+  - Created automated test suite `tests/claim-assessment-pvo.test.mjs` (207/207 tests passed).
+  - Quality verification: `npm run lint` clean (0 errors), `compile_applet` passed.
+- Exact next action: Proceed to F4 (Client/Subcontract Invoice & Certificate Reconciliation).
 
 ## تحديث التسليم — F2 (Equipment Meter, Hours & Fuel Posting)
 
