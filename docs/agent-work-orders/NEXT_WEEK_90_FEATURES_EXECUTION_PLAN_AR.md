@@ -106,9 +106,20 @@ Node/build/Cargo/diff. دليل التسليم يتضمن IDs للصفوف وا�
 
 ## ملف التنفيذ الكامل W02 — إغلاق فجوات F2 للمعدات والوقود
 
-**الحالة الحالية:** `PARTIAL — 4/10 — NOT ACCEPTED، STAGED BEHIND W01`. تحفظ
+```text
+FEATURE_ID=W02
+PREREQUISITE=W01:CLOSED_8_OF_10_BY_CODEX
+SOURCE_OF_TRUTH=equipment_logs|resource_masters|schedules|control_accounts|cost_entries|reporting_periods|audit_log
+MODIFY_ALLOWLIST=see ACTIVE.md
+DELETE_ALLOWLIST=[]
+ACCEPTANCE_GAPS=W02-G01|W02-G02|W02-G03|W02-G04|W02-G05|W02-G06|W02-G07|W02-G08|W02-G09|W02-G10
+DELIVERY_GATE=tools/agent-delivery-gate.ps1
+AGENT_FINAL_STATE=READY_FOR_CODEX_REVIEW_OR_WIP_BLOCKED
+```
+
+**الحالة الحالية:** `IN PROGRESS — NOT ACCEPTED؛ W01 CLOSED 8/10 BY CODEX`. تحفظ
 الكيانات والمخطط والتحميل والتحقق الأولي للعداد/التداخل وفصل Equipment/Fuel وقيد
-العكس الموجود. ممنوع بدء W02 قبل اعتماد W01 محليًا.
+العكس الموجود. W01 معتمدة في `8a0c4bd`؛ ممنوع تجاوز W02 إلى W03.
 
 **مصدر الحقيقة:** رأس/سطور سجل المعدة في SQLite، المعدة والمورد النشطان، قراءات
 العداد والفترات السابقة، الوقود والكميات والأسعار المحكومة، العقد الرئيسي، Activity/

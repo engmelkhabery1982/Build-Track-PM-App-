@@ -20,40 +20,45 @@ test('cloud continuation specification retains every ordered F1-H1 feature gate'
 });
 
 test('universal agent prompt enforces governed sources, atomic transitions and honest test evidence', () => {
-  const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md');
+  const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md');
   assert.match(prompt, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
-  assert.match(prompt, /W01-G01\.\.W01-G10/);
-  assert.match(prompt, /W02-G01\.\.W02-G10/);
-  assert.match(prompt, /PARTIAL — 4\/10 — NOT ACCEPTED/);
-  assert.match(prompt, /لا تختلق `EV\/PV\/ETC\/FAC\/progress`/);
-  assert.match(prompt, /backend ذريًا يشمل validation \+ transition \+ postings \+ audit \+ rollback/);
-  assert.match(prompt, /PASS\/FAIL\/NOT RUN/);
-  assert.match(prompt, /IN PROGRESS — provisional cloud execution/);
-  assert.match(prompt, /لا تمنح نفسك `CLOSED 8\/10`/);
-  assert.match(prompt, /MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR\.md` كاملًا/);
-  assert.match(prompt, /PROJECT_CHARTER_AR\.md` كاملًا/);
-  assert.match(prompt, /إيصال قراءة/);
-  assert.match(prompt, /RECOVER:/);
-  assert.match(prompt, /DEFINE:/);
-  assert.match(prompt, /BASELINE:/);
-  assert.match(prompt, /IMPLEMENT:/);
-  assert.match(prompt, /VERIFY:/);
-  assert.match(prompt, /INSPECT:/);
-  assert.match(prompt, /HANDOVER:/);
-  assert.match(prompt, /ADVANCE:/);
+  assert.match(prompt, /CURRENT_FEATURE/);
+  assert.match(prompt, /agent-preflight\.ps1/);
+  assert.match(prompt, /agent-delivery-gate\.ps1/);
+  assert.match(prompt, /MODIFY_ALLOWLIST/);
+  assert.match(prompt, /أي delete\/rename/);
+  assert.match(prompt, /لا تكتب CLOSED أو 8\/10/);
+  assert.match(prompt, /VITE_SUPABASE_\*/);
+  assert.match(prompt, /mounted UI → governed backend → SQLite/);
 });
 
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /## W02 \/ D1-02 — /);
-  assert.match(active, /IN PROGRESS — Codex acceptance and hardening/);
-  assert.match(active, /W01: `CLOSED — 8\/10 — CODEX ACCEPTED`/);
+  assert.match(active, /CURRENT_FEATURE=W02/);
+  assert.match(active, /CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED/);
+  assert.match(active, /PREREQUISITE=W01:CLOSED_8_OF_10_BY_CODEX/);
+  assert.match(active, /AGENT_MUST_NOT_EDIT=true/);
+  assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
-  assert.match(master, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
-  assert.match(master, /NEXT_FEATURES_DETAILED_EXECUTION_AR\.md/);
-  assert.match(master, /F1 → F2 → F3 → F4 → F5 → F6 → F7 → F8 → F9 → G1 → G2 → G3 → H1/);
+  assert.match(master, /مرجع أرشيفي — ليس مصدر اختيار مهمة/);
+  assert.match(master, /AGENT_START_HERE_AR\.md/);
   assert.match(master, /ممنوع اختيار `find\(\)` لأول version\/contract\/control account/);
+});
+
+test('machine agent gates enforce accepted ancestry, allowlists and executable evidence', () => {
+  const preflight = read('tools/agent-preflight.ps1');
+  const delivery = read('tools/agent-delivery-gate.ps1');
+  assert.match(preflight, /git status --porcelain=v1/);
+  assert.match(preflight, /merge-base --is-ancestor/);
+  assert.match(preflight, /CURRENT_FEATURE/);
+  assert.match(delivery, /outside MODIFY_ALLOWLIST/);
+  assert.match(delivery, /delete\/rename forbidden/);
+  assert.match(delivery, /npm test/);
+  assert.match(delivery, /npm run build/);
+  assert.match(delivery, /cargo test --manifest-path/);
+  assert.match(delivery, /Get-FileHash/);
+  assert.match(delivery, /EVIDENCE\.json/);
 });
 
 test('next-week execution plan contains exactly 90 ordered atomic increments and seven daily gates', () => {
@@ -76,10 +81,10 @@ test('next-week execution plan contains exactly 90 ordered atomic increments and
 test('every remaining feature has a token-bounded file read pack', () => {
   const readPacks = read('docs/agent-work-orders/FEATURE_READ_PACKS_AR.md');
   const specification = read('docs/agent-work-orders/NEXT_FEATURES_DETAILED_EXECUTION_AR.md');
-  const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md');
+  const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
   for (const feature of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'G1', 'G2', 'G3', 'H1']) {
-    assert.match(readPacks, new RegExp(`## ${feature}(?: / W\\d+)? —`), `${feature} must have an explicit read pack`);
+    assert.match(readPacks, new RegExp(`## ${feature}(?: / W\\d+)?(?: / RP-W\\d+)? —`), `${feature} must have an explicit read pack`);
   }
   assert.match(readPacks, /الحد الأولي: 12 ملفًا و40,000 حرف/);
   assert.match(readPacks, /يحظر فتح `src\/App\.tsx` أو/);

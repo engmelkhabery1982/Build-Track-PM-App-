@@ -1,4 +1,14 @@
-# BuildTrack Cloud Agent — سجل الاستمرار الإلزامي
+# BuildTrack Cloud Agent — سجل أدلة تاريخي
+
+> `NOT A TASK SELECTOR`. هذا الملف لا يحدد المهمة الحالية ولا آخر مهمة مقبولة.
+> المصدر الوحيد للاختيار هو `ACTIVE.md`، وCodex وحده يعدله ويمنح 8/10.
+
+## الحالة الحاكمة المختصرة — 2026-09-07
+
+- Codex accepted through: `W01 — CLOSED 8/10` at `8a0c4bd`.
+- Current: `W02 — IN PROGRESS — NOT ACCEPTED`.
+- Official tests at W01 gate: Node `230/230`، Rust `36/36`، production build PASS.
+- هذا السجل append-only للأدلة، ولا يجوز للوكيل تعديل current/accepted/next.
 
 ## Codex integration verification — 2026-09-07 — through G3
 
@@ -11,7 +21,7 @@
 - نتيجة البوابة: Node `227/227`، Rust `31/31`، Production build ناجح.
 - نقطة أمان Agent Cloud: `7e1ee2d`، ويتبعها commit التصحيحات والتخطيط.
 - F3–G3 متفاوتة النضج؛ لا تُخفى فجوات persistence/security، وتُغلق في W01–W13.
-- المهمة النشطة: `W01 / D1-01` كما في خطة W01–W90.
+- المهمة المذكورة هنا تاريخية؛ راجع `ACTIVE.md` فقط.
 
 > هذا الملف هو نقطة الاستلام الوحيدة لأي وكيل جديد. يجب قراءته وتحديثه في كل
 > commit تسليم. لا تعتمد على ذاكرة المحادثة السابقة.

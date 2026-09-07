@@ -6,10 +6,10 @@
 
 ## بروتوكول القراءة الإلزامي
 
-1. اقرأ فقط: `AGENTS.md`، قسم الحالة الحالية من
-   `docs/agent-work-orders/CLOUD_PROGRESS_LEDGER.md`، وقسم الميزة الحالية من
-   `docs/agent-work-orders/NEXT_FEATURES_DETAILED_EXECUTION_AR.md`، ثم حزمة الميزة
-   أدناه. لا تقرأ بقية خارطة الطريق أو تقارير الميزات المغلقة.
+1. اقرأ فقط: `AGENTS.md` و`AGENT_START_HERE_AR.md` و`ACTIVE.md`، ثم قسم W المحدد
+   في `SPEC_ANCHOR` من `NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md`، ثم حزمة
+   `READ_PACK` أدناه. Ledger وMaster والتقارير القديمة لا تختار المهمة ولا تُقرأ
+   إلا إذا سمت الحزمة ملفًا ومقطعًا بعينه.
 2. ابدأ بـ`rg -n "symbol|table|command" <listed-files>` ثم افتح المقطع المطابق فقط
    مع سياق لا يزيد عادة عن 120 سطرًا. يحظر فتح `src/App.tsx` أو
    `src-tauri/src/lib.rs` أو `src/types/index.ts` كاملًا.
@@ -58,7 +58,13 @@
 Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 يتم تلقائيًا
 من `cost_entries`; افتح مستهلكًا فقط إذا أثبت اختبار reconciliation عدم وصول القيد.
 
-## F2 / W02 — Equipment Meter, Hours & Fuel Posting
+## F2 / W02 / RP-W02 — Equipment Meter, Hours & Fuel Posting
+
+### MODIFY ALLOWLIST
+
+المرجع التنفيذي الوحيد هو `MODIFY_ALLOWLIST` في `ACTIVE.md`. هذه الحزمة تصريح
+قراءة فقط، و`READ ONLY IF DIRECTLY REQUIRED` لا يعني إذن تعديل. أي تعديل مشروط
+يُمرر صراحة إلى delivery gate ويسجل سببه في تقرير W02.
 
 ### MUST READ
 

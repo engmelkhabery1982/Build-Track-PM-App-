@@ -1,4 +1,12 @@
-# BuildTrack — أمر العمل السحابي الموحد لجميع الوكلاء
+# مرجع أرشيفي — ليس مصدر اختيار مهمة
+
+اعتبارًا من 2026-09-07، لا يقرأ الوكيل هذا الملف عند البدء ولا يختار منه F1–H1.
+ترتيب السلطة الوحيد هو:
+`AGENTS.md → AGENT_START_HERE_AR.md → ACTIVE.md → active W spec → active read pack`.
+الرسالة الوحيدة المستخدمة هي `UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`، وLedger
+والتقارير وهذا الملف مراجع تاريخية فقط. أي تعارض أدناه يحسم لصالح الترتيب السابق.
+
+# BuildTrack — أمر العمل السحابي الموحد لجميع الوكلاء (أرشيف)
 
 > **Current execution override — 2026-09-07:** التنفيذ الحالي محكوم بخطة
 > `NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md` وبالمؤشر في `ACTIVE.md`. لا يُعاد
