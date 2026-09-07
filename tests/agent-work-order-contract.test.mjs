@@ -22,7 +22,7 @@ test('cloud continuation specification retains every ordered F1-H1 feature gate'
 test('universal agent prompt enforces governed sources, atomic transitions and honest test evidence', () => {
   const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md');
   assert.match(prompt, /checkpoint-c4-e3-accepted-2026-09-07/);
-  assert.match(prompt, /NEXT_FEATURES_DETAILED_EXECUTION_AR\.md/);
+  assert.match(prompt, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
   assert.match(prompt, /لا تختلق `EV\/PV\/ETC\/FAC\/progress`/);
   assert.match(prompt, /backend ذريًا يشمل validation \+ transition \+ postings \+ audit \+ rollback/);
   assert.match(prompt, /PASS\/FAIL\/NOT RUN/);
@@ -44,12 +44,24 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /## (F[1-9]|G[1-3]|H1) — /);
-  assert.match(active, /READY FOR CODEX REVIEW/);
-  assert.match(active, /NEXT_FEATURES_DETAILED_EXECUTION_AR\.md/);
+  assert.match(active, /## W01 \/ D1-01 — /);
+  assert.match(active, /IN PROGRESS — Codex acceptance and hardening/);
+  assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
+  assert.match(master, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
   assert.match(master, /NEXT_FEATURES_DETAILED_EXECUTION_AR\.md/);
   assert.match(master, /F1 → F2 → F3 → F4 → F5 → F6 → F7 → F8 → F9 → G1 → G2 → G3 → H1/);
   assert.match(master, /ممنوع اختيار `find\(\)` لأول version\/contract\/control account/);
+});
+
+test('next-week execution plan contains exactly 90 ordered atomic increments and seven daily gates', () => {
+  const plan = read('docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md');
+  for (let index = 1; index <= 90; index += 1) {
+    const id = `W${String(index).padStart(2, '0')}`;
+    assert.ok(plan.includes(`\`${id}`), `${id} must be present`);
+  }
+  assert.equal((plan.match(/## اليوم /g) || []).length, 7);
+  assert.match(plan, /DELETE_ALLOWLIST: \[\]/);
+  assert.match(plan, /Codex وحده يضع `CLOSED — 8\/10`/);
 });
 
 test('every remaining feature has a token-bounded file read pack', () => {

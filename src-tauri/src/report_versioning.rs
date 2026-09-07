@@ -155,7 +155,7 @@ mod tests {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let path = std::env::temp_dir().join(format!("buildtrack-report-version-{nonce}.db"));
         let pool = database(&path).await.unwrap();
-        sqlx::query("CREATE TABLE projects(id TEXT PRIMARY KEY, created_at TEXT, payload TEXT NOT NULL); CREATE TABLE contracts(id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT NOT NULL); CREATE TABLE audit_log(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL); CREATE TABLE report_versions(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,project_id TEXT,contract_id TEXT,data_date TEXT,pack_type TEXT,template_id TEXT,version_code TEXT,status TEXT,snapshot_hash TEXT,snapshot_payload TEXT,issuer TEXT,sign_off_note TEXT,issued_at TEXT,superseded_by TEXT,payload TEXT NOT NULL); CREATE UNIQUE INDEX one_issued ON report_versions(COALESCE(project_id,''),pack_type) WHERE status='Issued';")
+        sqlx::query("CREATE TABLE projects(id TEXT PRIMARY KEY, created_at TEXT, payload TEXT NOT NULL); CREATE TABLE contracts(id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT NOT NULL); CREATE TABLE audit_log(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL); CREATE TABLE report_templates(id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL); CREATE TABLE report_versions(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,project_id TEXT,contract_id TEXT,data_date TEXT,pack_type TEXT,template_id TEXT,version_code TEXT,status TEXT,snapshot_hash TEXT,snapshot_payload TEXT,issuer TEXT,sign_off_note TEXT,issued_at TEXT,superseded_by TEXT,payload TEXT NOT NULL); CREATE UNIQUE INDEX one_issued ON report_versions(COALESCE(project_id,''),pack_type) WHERE status='Issued';")
             .execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO projects VALUES('p1','2026-01-01','{}'); INSERT INTO contracts VALUES('c1','2026-01-01','p1','{}');")
             .execute(&pool).await.unwrap();
@@ -189,6 +189,38 @@ mod tests {
         let pool = database(&path).await.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT count(*) FROM report_versions").fetch_one(&pool).await.unwrap();
         assert_eq!(count, 0);
+        pool.close().await;
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn template_approval_is_atomic_audited_and_cannot_be_repeated() {
+        let path = fixture().await;
+        let pool = database(&path).await.unwrap();
+        sqlx::query("INSERT INTO report_templates(id,project_id,payload) VALUES('tpl-1','p1',?)")
+            .bind(r#"{"status":"Draft","template_code":"MONTHLY"}"#)
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let approved = approve_report_template(&path, ApproveReportTemplateRequest {
+            id: "tpl-1".into(), project_id: Some("p1".into()), approver: "PMO Admin".into(),
+        }).await.unwrap();
+        assert_eq!(approved.status, "Approved");
+
+        let repeated = approve_report_template(&path, ApproveReportTemplateRequest {
+            id: "tpl-1".into(), project_id: Some("p1".into()), approver: "PMO Admin".into(),
+        }).await.unwrap_err();
+        assert!(repeated.contains("Only Draft"));
+
+        let pool = database(&path).await.unwrap();
+        let status: String = sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM report_templates WHERE id='tpl-1'")
+            .fetch_one(&pool).await.unwrap();
+        let approved_at: String = sqlx::query_scalar("SELECT json_extract(payload,'$.approved_at') FROM report_templates WHERE id='tpl-1'")
+            .fetch_one(&pool).await.unwrap();
+        let audit_time: String = sqlx::query_scalar("SELECT json_extract(payload,'$.timestamp') FROM audit_log WHERE id='audit:report-template:approve:tpl-1'")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(status, "Approved");
+        assert_eq!(approved_at, audit_time);
         pool.close().await;
         let _ = std::fs::remove_file(path);
     }

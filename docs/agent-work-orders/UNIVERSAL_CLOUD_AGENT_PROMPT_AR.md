@@ -1,5 +1,10 @@
 # الرسالة الموحدة الجاهزة لأي وكيل
 
+> **تحديث حاكم 2026-09-07:** نقطة الاستمرار هي HEAD الأحدث في Agent Cloud،
+> والتسلسل النشط أصبح `W01 → W02 → ... → W90` طبقًا لملف
+> `NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md`. أي إشارة أدناه إلى بدء F1 أو تسلسل
+> F1–H1 تاريخية ولا تختار المهمة الحالية. اقرأ `ACTIVE.md` ثم قسم الميزة النشطة فقط.
+
 انسخ النص التالي كاملًا إلى أي وكيل في Google AI Studio أو Aider أو AGY:
 
 ---
@@ -27,7 +32,7 @@
    - اقرأ قسم `الحالة الحالية` وأحدث `Codex verification` فقط من
      `docs/agent-work-orders/CLOUD_PROGRESS_LEDGER.md`؛ لا تقرأ تاريخ التسليم القديم.
    - اقرأ المقدمة والقواعد الفنية المشتركة ثم **قسم الميزة النشطة فقط** من
-     `docs/agent-work-orders/NEXT_FEATURES_DETAILED_EXECUTION_AR.md`.
+     `docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md`.
    - اقرأ بروتوكول القراءة ثم **حزمة الميزة النشطة فقط** من
      `docs/agent-work-orders/FEATURE_READ_PACKS_AR.md`، وافتح أي تقرير تصحيح أو نتيجة
      حالية تسميه تلك الحزمة. لا تقرأ حزم الميزات الأخرى.

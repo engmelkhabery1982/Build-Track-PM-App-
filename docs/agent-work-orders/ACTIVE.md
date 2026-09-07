@@ -1,17 +1,17 @@
 # أمر العمل النشط
 
-## G3 — Scoped External Portal
+## W01 / D1-01 — بوابة قبول دورة العمالة
 
-الحالة: **READY FOR CODEX REVIEW — not CLOSED and not rated 8/10**.
+الحالة: **IN PROGRESS — Codex acceptance and hardening**.
 
-مسودات F1 وF2 وF3 وF4 وF5 وF6 وF7 وF8 وF9 وG1 وG2 وG3 موجودة على Agent Cloud وأعلنها الوكيل `READY FOR CODEX REVIEW`؛
-هذا ليس إغلاق 8/10 ولا قبولًا رسميًا. لا تعد تنفيذها، ولا تعدل ملفاتها إلا إذا
-كشف اختبار regression مباشرًا موثقًا.
+تم دمج مسودات F1–G3 مع الحفاظ على الأجزاء الصحيحة، وتصحيح فشل Rust/SQLite، وإزالة
+أدوات الوكيل المؤقتة. بوابة regression الحالية: Node `227/227`، Rust `31/31`،
+وProduction build ناجح. هذا قبول تكاملي للحزمة، لكنه لا يمنح كل ميزة تلقائيًا 8/10.
 
-G3 المقصودة حصريًا هي **Scoped External Portal** كما وردت في:
+التسلسل الأسبوعي الملزم ووصف W01–W90 في:
 
-- قسم G3 من `docs/agent-work-orders/NEXT_FEATURES_DETAILED_EXECUTION_AR.md`.
-- حزمة G3 من `docs/agent-work-orders/FEATURE_READ_PACKS_AR.md`.
+- `docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md`.
+- يبدأ بـW01 ولا ينتقل إلى W02 إلا بعد إثبات دورة العمالة والتسوية وإعادة الفتح.
 
-ابدأ بإيصال القراءة وRECOVER، ثم نفذ دورة الميزة والاختبارات والتسليم كاملة.
+ابدأ بإيصال القراءة وRECOVER، واستخدم `RP-D1`، ثم نفذ بوابة W01 كاملة.
 
