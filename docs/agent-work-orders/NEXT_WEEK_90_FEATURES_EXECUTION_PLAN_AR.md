@@ -32,10 +32,124 @@ Codex. نجاح اختبار يبحث عن نص لا يكفي. أي رقم بل�
 لا يُفتح ملف ضخم كاملًا؛ يبدأ الوكيل بـ`rg` ثم يقرأ المقاطع اللازمة. أي توسع خارج
 الحزمة يسجل سببه قبل القراءة. `DELETE_ALLOWLIST: []` طوال الأسبوع.
 
+## عقد المواصفة الإلزامي لكل عنصر W01–W90
+
+الوصف المختصر في قائمة الأيام يحدد النتيجة، لكنه لا يرخّص تنفيذًا جزئيًا. قبل لمس
+الكود يجب تحويل **كل عنصر** إلى checklist في تقرير نتيجته، ويغطي دون استثناء:
+
+1. النتيجة التشغيلية وحدودها ومصدر الحقيقة المعتمد، مع تعريف المدخلات والمخرجات.
+2. ما هو موجود ويُحفظ `ACCEPT`، وما يحتاج إصلاحًا `REPAIR`، وما هو خارج النطاق
+   `DEFER`؛ لا تعاد كتابة الجزء الصحيح ولا تُرفض الحزمة كلها.
+3. مسارًا واحدًا مثبتًا: `UI → governed command/repository → SQLite transaction →
+   reload/reopen → downstream consumer/reconciliation`.
+4. Data Dictionary وSQL columns/foreign keys والمفاتيح المركبة وTypeScript mapping
+   لكل حقل حاكم؛ يمنع الاعتماد على payload مخفي أو lookup لأول سجل.
+5. الحالات القانونية والانتقالات والصلاحيات وmaker-checker وقفل الفترة، ومنع generic
+   CRUD من إنشاء حالة معتمدة أو منشورة أو تعديلها.
+6. الذرّية وidempotency: الفشل المتأخر يعيد كل المعاملة، والتكرار لا يضاعف الأثر،
+   والعكس قيد مقابل مؤرخ ولا يمحو الحقيقة الأصلية.
+7. اختبارات فعلية: موجب، سالب، cross-project/contract/control-account، locked-period،
+   duplicate/idempotency، late-failure rollback، reload/reopen، audit، وتسوية رقمية
+   حتى `0.01` حيث توجد قيمة مالية.
+8. اختبار wiring يثبت استعمال الشاشة لأمر الإنتاج وعودة بيانات SQLite بعد إعادة
+   الفتح؛ اختبار النص أو helper منفرد لا يثبت اكتمال الميزة.
+9. قائمة الملفات المقروءة/المعدلة وسبب أي توسع، مع `DELETE_ALLOWLIST: []` وفحص
+   الحذف/إعادة التسمية والـlockfiles قبل التسليم.
+10. جدول قبول `Criterion | Evidence | PASS/FAIL/NOT RUN | Gap ID`. أي `FAIL` أو
+    `NOT RUN` لبند حرج يمنع `ADVANCE`. الوكيل لا يمنح 8/10؛ Codex وحده يعتمدها.
+
+## ملف التنفيذ الكامل W01 — إغلاق فجوات F1 للعمالة
+
+**الحالة الحالية:** `PARTIAL — 4/10 — NOT ACCEPTED`. تحفظ الكيانات الموجودة،
+المفاتيح الخارجية، التحميل، التحقق الأولي، اشتقاق تكلفة العمالة، وقيد العكس المقابل.
+لا يعني وجودها قبول دورة العمل.
+
+**مصدر الحقيقة:** رأس كشف العمالة وسطوره في SQLite، مورد العمالة النشط، تقويم/وردية
+العمل، العقد الرئيسي، Activity وControl Account وCost Code ضمن النطاق نفسه، Financial
+Period Lock، وCost Entries/Audit الناتجة من أمر backend واحد. الواجهة ليست مصدرًا
+للحالة أو القيمة.
+
+**ملفات MUST READ فقط:** حزمة `F1` في `FEATURE_READ_PACKS_AR.md`، قسم F1 من
+`CODEX_F1_F2_VERIFICATION_2026-09-07.md`، ثم الرموز المحددة في
+`src-tauri/src/labor_timesheet.rs` و`src/data/laborTimesheet.ts` و
+`src/components/LaborTimesheetModal.tsx` و`tests/labor-timesheet.test.mjs`.
+
+**الفجوات الملزمة:**
+
+- `W01-G01 — UI wiring`: شاشة حقيقية للرأس والسطور تستدعي submit/approve/post/reverse
+  وتعيد تحميل الصف وحالته وقيوده من SQLite بعد كل أمر وبعد إعادة فتح التطبيق.
+- `W01-G02 — lifecycle`: إضافة Submit ومنع القفز. المسار الوحيد هو
+  `Draft → Submitted → Approved → Posted → Reversed`؛ لا Approve من Draft ولا Post
+  من Draft/Submitted، ولا تعديل مالي بعد الاعتماد/النشر.
+- `W01-G03 — CRUD guard`: generic repository لا يستطيع كتابة status حاكم أو تعديل
+  header/lines بعد خروجها من Draft؛ الحماية backend/SQL وليست تعطيل زر فقط.
+- `W01-G04 — atomic audit`: validation + transition + postings + audit في transaction
+  واحدة؛ فشل audit أو آخر قيد يعيد الحالة وكل القيود.
+- `W01-G05 — immutable exactly-once`: يمنع `ON CONFLICT DO UPDATE` من إعادة كتابة
+  حقيقة مالية منشورة. إعادة post بنفس correlation/source key تعيد النتيجة نفسها بلا
+  مضاعفة أو تغيير، والتعارض المختلف يُرفض.
+- `W01-G06 — reversal governance`: العكس بتاريخ عكس صريح داخل فترة مفتوحة، مع
+  صلاحية وسبب ومرجع للقيد الأصلي؛ لا يستخدم work date القديم لإدخال أثر في فترة مغلقة.
+- `W01-G07 — scope integrity`: إثبات أن العقد رئيسي، وأن Resource/Activity/Control
+  Account/Cost Code/Project/Contract تنتمي إلى النطاق المركب نفسه؛ رفض كل cross-scope.
+- `W01-G08 — calendar capacity`: مجموع ساعات العامل/اليوم/الوردية لا يتجاوز السعة
+  المحكومة، واليوم غير العامل يحتاج override معتمدًا ومُدققًا.
+- `W01-G09 — reconciliation`: مجموع Labor Cost Entries المنشورة يساوي مجموع
+  `hours × governed rate` حتى `0.01`، وبعد العكس يصبح صافي أثر الكشف صفرًا دون حذف.
+- `W01-G10 — executable evidence`: اختبارات Rust/SQLite تنفذ الدورة كاملة، الانتقالات
+  غير القانونية، القفل، cross-scope، duplicate، فشل متأخر، audit، reopen، والتسوية؛
+  ويضاف اختبار UI wiring. إزالة تحذيرات dead-code الناتجة عن هذا المسار.
+
+**القبول:** لا تُغلق W01 ولا يبدأ W02 قبل PASS لكل `W01-G01..G10`، ثم نجاح كامل
+Node/build/Cargo/diff. دليل التسليم يتضمن IDs للصفوف والقيود قبل/بعد reopen ومجموع
+الحساب، لا مجرد أسماء دوال أو لقطات شاشة.
+
+## ملف التنفيذ الكامل W02 — إغلاق فجوات F2 للمعدات والوقود
+
+**الحالة الحالية:** `PARTIAL — 4/10 — NOT ACCEPTED، STAGED BEHIND W01`. تحفظ
+الكيانات والمخطط والتحميل والتحقق الأولي للعداد/التداخل وفصل Equipment/Fuel وقيد
+العكس الموجود. ممنوع بدء W02 قبل اعتماد W01 محليًا.
+
+**مصدر الحقيقة:** رأس/سطور سجل المعدة في SQLite، المعدة والمورد النشطان، قراءات
+العداد والفترات السابقة، الوقود والكميات والأسعار المحكومة، العقد الرئيسي، Activity/
+Control Account/Cost Code، التقويم/السعة، Financial Period وCost Entries/Audit.
+
+**ملفات MUST READ فقط:** حزمة `F2` في `FEATURE_READ_PACKS_AR.md`، قسم F2 من تقرير
+التحقق، ثم الرموز المحددة في `src-tauri/src/equipment_log.rs` و
+`src/data/equipmentLog.ts` و`src/components/EquipmentLogModal.tsx` و
+`tests/equipment-log.test.mjs`.
+
+**الفجوات الملزمة:**
+
+- `W02-G01 — UI wiring`: إدخال الرأس والسطور وإجراءات submit/approve/post/reverse
+  من شاشة mounted، ثم reload/reopen من SQLite دون state وهمي.
+- `W02-G02 — lifecycle`: المسار الحصري
+  `Draft → Submitted → Approved → Posted → Reversed` مع منع القفز والتعديل اللاحق.
+- `W02-G03 — CRUD/SQL guards`: منع generic status mutation وإضافة triggers/guards
+  لثبات الرأس والسطور والانتقالات القانونية، لا الاكتفاء بمنع delete.
+- `W02-G04 — meter/time integrity`: رفض rollback، القراءة النهائية الأقل من البداية،
+  تداخل المعدة زمنيًا، duplicate source، والساعات فوق السعة اليومية/الوردية.
+- `W02-G05 — scope integrity`: المعدة والعقد الرئيسي والنشاط والحساب الرقابي وكود
+  التكلفة والمشروع ضمن المفتاح المركب نفسه؛ لا أول سجل ولا cross-scope.
+- `W02-G06 — separate valuation`: تكلفة تشغيل المعدة وتكلفة الوقود قيدان منفصلان
+  بمصادر وأسعار ووحدات موثقة، ومجموعهما فقط هو AC الخاص بالسجل؛ لا خلط أو double count.
+- `W02-G07 — atomic immutable posting`: استبدال `INSERT OR REPLACE` بحقيقة مالية
+  immutable exactly-once داخل transaction تشمل audit، مع rollback كامل عند الفشل.
+- `W02-G08 — governed reversal`: تاريخ عكس مفتوح وصلاحية وسبب ومرجع، وقيدان مقابلان
+  يحافظان على فصل Equipment/Fuel ولا يحذفان الأصل.
+- `W02-G09 — reconciliation`: Equipment AC يساوي usage × governed equipment rate،
+  وFuel AC يساوي fuel quantity × governed fuel rate حتى `0.01`؛ الصافي بعد العكس صفر.
+- `W02-G10 — executable evidence`: اختبارات Rust/SQLite للدورة والقفل والتداخل
+  والعداد والسعة وcross-scope/idempotency/late failure/audit/reopen/reconciliation،
+  واختبار UI wiring؛ إزالة dead-code الخاص بالمسار.
+
+**القبول:** PASS لكل `W02-G01..G10` وكامل Node/build/Cargo/diff. أي اعتماد على
+`INSERT OR REPLACE` أو generic status أو اختبار نصي فقط يبقي W02 مفتوحة وأقل من 8/10.
+
 ## اليوم 1 — قبول وتقسية F1–G3 (13)
 
-1. `W01 / D1-01` العمالة: إثبات Draft→Submit→Approve→Post→Reverse وإعادة الفتح؛ مجموع قيود التكلفة = الساعات × الأسعار بفارق ≤0.01. الحزمة `RP-D1`؛ الهدف `labor_timesheet.rs` و`LaborTimesheetModal.tsx` واختباراتهما.
-2. `W02 / D1-02` المعدات والوقود: منع تراجع/تداخل العداد، فصل Equipment وFuel، idempotency وعكس صحيح. الهدف `equipment_log.rs` و`EquipmentLogModal.tsx`.
+1. `W01 / D1-01` العمالة: تنفيذ ملف W01 الكامل أعلاه وإغلاق `W01-G01..G10`؛ الحزمة `F1/RP-D1`. لا يبدأ W02 قبل قبول Codex.
+2. `W02 / D1-02` المعدات والوقود: تنفيذ ملف W02 الكامل أعلاه وإغلاق `W02-G01..G10`؛ الحزمة `F2/RP-D1`.
 3. `W03 / D1-03` المطالبات/PVO: لا BOQ/ميزانية/تاريخ قبل الاعتماد؛ التحويل ينشئ Variation واحدة قابلة للتتبع. الهدف `claims.ts` و`ClaimAssessmentModal.tsx`.
 4. `W04 / D1-04` الشهادات: تجميع WIR بلا ازدواج، سعر بيع العميل منفصل عن تكلفة الباطن، وصافي الشهادة يتسوى إلى 0.01. الهدف `commercial_workflow.rs` واختبار invoice reconciliation.
 5. `W05 / D1-05` توقع النقد: Actual منفصل عن Forecast، Data Date محترم، والمسدد لا يعاد إدراجه. الهدف `cashFlowForecast.ts` و`CashFlowForecastBoard.tsx`.

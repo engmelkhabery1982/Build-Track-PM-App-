@@ -21,8 +21,10 @@ test('cloud continuation specification retains every ordered F1-H1 feature gate'
 
 test('universal agent prompt enforces governed sources, atomic transitions and honest test evidence', () => {
   const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md');
-  assert.match(prompt, /checkpoint-c4-e3-accepted-2026-09-07/);
   assert.match(prompt, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
+  assert.match(prompt, /W01-G01\.\.W01-G10/);
+  assert.match(prompt, /W02-G01\.\.W02-G10/);
+  assert.match(prompt, /PARTIAL — 4\/10 — NOT ACCEPTED/);
   assert.match(prompt, /لا تختلق `EV\/PV\/ETC\/FAC\/progress`/);
   assert.match(prompt, /backend ذريًا يشمل validation \+ transition \+ postings \+ audit \+ rollback/);
   assert.match(prompt, /PASS\/FAIL\/NOT RUN/);
@@ -62,6 +64,12 @@ test('next-week execution plan contains exactly 90 ordered atomic increments and
   assert.equal((plan.match(/## اليوم /g) || []).length, 7);
   assert.match(plan, /DELETE_ALLOWLIST: \[\]/);
   assert.match(plan, /Codex وحده يضع `CLOSED — 8\/10`/);
+  for (let index = 1; index <= 10; index += 1) {
+    assert.match(plan, new RegExp(`W01-G${String(index).padStart(2, '0')}`));
+    assert.match(plan, new RegExp(`W02-G${String(index).padStart(2, '0')}`));
+  }
+  assert.match(plan, /UI → governed command\/repository → SQLite transaction/);
+  assert.match(plan, /PARTIAL — 4\/10 — NOT ACCEPTED/);
 });
 
 test('every remaining feature has a token-bounded file read pack', () => {
@@ -70,13 +78,15 @@ test('every remaining feature has a token-bounded file read pack', () => {
   const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
   for (const feature of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'G1', 'G2', 'G3', 'H1']) {
-    assert.match(readPacks, new RegExp(`## ${feature} —`), `${feature} must have an explicit read pack`);
+    assert.match(readPacks, new RegExp(`## ${feature}(?: / W\\d+)? —`), `${feature} must have an explicit read pack`);
   }
   assert.match(readPacks, /الحد الأولي: 12 ملفًا و40,000 حرف/);
   assert.match(readPacks, /يحظر فتح `src\/App\.tsx` أو/);
   assert.match(readPacks, /package-lock\.json/);
   assert.match(readPacks, /CODEX_F1_F2_VERIFICATION_2026-09-07\.md` — قسم F1 فقط/);
   assert.match(readPacks, /CODEX_F1_F2_VERIFICATION_2026-09-07\.md` — قسم F2 فقط/);
+  assert.match(readPacks, /src\/components\/LaborTimesheetModal\.tsx/);
+  assert.match(readPacks, /src\/components\/EquipmentLogModal\.tsx/);
   assert.match(specification, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(prompt, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(master, /FEATURE_READ_PACKS_AR\.md/);

@@ -27,13 +27,14 @@
 6. لا توسع القراءة لأن اسم ملف يبدو متعلقًا. استخدمه فقط إذا ثبت dependency مباشر
    من import/call/schema/foreign key. سجل كل توسع في تقرير النتيجة.
 
-## F1 — Labor Timesheet Approval & Actual-Cost Posting
+## F1 / W01 — Labor Timesheet Approval & Actual-Cost Posting
 
 ### MUST READ
 
 - `docs/agent-results/CODEX_F1_F2_VERIFICATION_2026-09-07.md` — قسم F1 فقط
 - `src-tauri/src/labor_timesheet.rs`
 - `src/data/laborTimesheet.ts`
+- `src/components/LaborTimesheetModal.tsx`
 - `tests/labor-timesheet.test.mjs`
 - `src/utils/resourceLoading.ts` — calendar/capacity symbols فقط
 - `src/utils/controlAccountSummary.ts` — AC source rules فقط
@@ -57,13 +58,14 @@
 Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 يتم تلقائيًا
 من `cost_entries`; افتح مستهلكًا فقط إذا أثبت اختبار reconciliation عدم وصول القيد.
 
-## F2 — Equipment Meter, Hours & Fuel Posting
+## F2 / W02 — Equipment Meter, Hours & Fuel Posting
 
 ### MUST READ
 
 - `docs/agent-results/CODEX_F1_F2_VERIFICATION_2026-09-07.md` — قسم F2 فقط
 - `src-tauri/src/equipment_log.rs`
 - `src/data/equipmentLog.ts`
+- `src/components/EquipmentLogModal.tsx`
 - `tests/equipment-log.test.mjs`
 - `src/utils/resourceLoading.ts` — equipment capacity/calendar فقط
 - `src/utils/controlAccountSummary.ts` — AC source rules فقط
