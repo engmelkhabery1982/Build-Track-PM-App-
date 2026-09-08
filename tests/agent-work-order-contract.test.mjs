@@ -33,6 +33,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
   assert.match(prompt, /لا تكتب CLOSED أو 8\/10/);
   assert.match(prompt, /VITE_SUPABASE_\*/);
   assert.match(prompt, /mounted UI → governed backend → SQLite/);
+  assert.match(prompt, /FEATURE_BATCH_LIMIT=1/);
+  assert.match(prompt, /git diff --name-status/);
+  assert.match(prompt, /نجاح TypeScript أو Build لا يعوض أي خطأ Rust\/SQLite/);
 });
 
 test('active and master work orders point to the current gate and detailed authority', () => {
@@ -43,6 +46,8 @@ test('active and master work orders point to the current gate and detailed autho
   assert.match(active, /PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX/);
   assert.match(active, /CLOUD_BASE_BRANCH=main/);
   assert.match(active, /DELIVERY_BRANCH=main/);
+  assert.match(active, /FEATURE_BATCH_LIMIT=1/);
+  assert.match(active, /STOP_AFTER_CURRENT_FEATURE=true/);
   assert.match(active, /AGENT_MUST_NOT_EDIT=true/);
   assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
@@ -81,6 +86,9 @@ test('next-week execution plan contains exactly 90 ordered atomic increments and
     assert.match(plan, new RegExp(`W02-G${String(index).padStart(2, '0')}`));
     assert.match(plan, new RegExp(`W03-G${String(index).padStart(2, '0')}`));
   }
+  assert.match(plan, /مخطط `variations` و`variation_lines` الحالي يعتمد أعمدة النطاق و`payload`/);
+  assert.match(plan, /لا مدة notice افتراضية 28 يومًا/);
+  assert.match(plan, /لا يحتوي Payment Certificate\/Cash Forecast\/Report Designer/);
   assert.match(plan, /UI → governed command\/repository → SQLite transaction/);
   assert.match(plan, /PARTIAL — 4\/10 — NOT ACCEPTED/);
 });

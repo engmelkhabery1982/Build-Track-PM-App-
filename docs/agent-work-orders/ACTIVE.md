@@ -13,6 +13,9 @@ DELIVERY_BRANCH=main
 CURRENT_FEATURE=W03
 CURRENT_TITLE=Claims and Potential Variation Order Governance
 CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED
+FEATURE_BATCH_LIMIT=1
+STOP_AFTER_CURRENT_FEATURE=true
+OUT_OF_SCOPE_COMMITS=FORBIDDEN
 PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX
 SPEC_ANCHOR=W03
 SPEC_FILE=docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md
@@ -25,12 +28,15 @@ CONDITIONAL_MODIFY=src/data/dataDictionary.ts|src/data/sqliteRepository.ts|src/h
 FORBIDDEN=AGENTS.md|docs/agent-work-orders/**|package.json|package-lock.json|bun.lock|src-tauri/Cargo.toml|src-tauri/Cargo.lock|vite.config.*|.env*|metadata.json
 REQUIRED_GAPS=W03-G01|W03-G02|W03-G03|W03-G04|W03-G05|W03-G06|W03-G07|W03-G08|W03-G09|W03-G10
 REQUIRED_TESTS=npm test|npm run build|cargo test --manifest-path src-tauri/Cargo.toml|git diff --check
+KNOWN_FAILED_DELIVERY=archive/agent-batch-before-codex-review-20260908
 ```
 
 قواعد حاسمة:
 
 - ابدأ فقط بعد نجاح `tools/agent-preflight.ps1`.
 - نفذ W03 وحدها ولا تبدأ W04.
+- حتى لو ظننت أن W03 انتهت: لا تبدأ W04 أو W05 أو Report Designer؛ ادفع W03 وتوقف.
+- الحزمة السابقة في `KNOWN_FAILED_DELIVERY` مرجع فشل فقط وليست base ولا مصدر كود.
 - لا تعدل قائمة `CONDITIONAL_MODIFY` إلا عند إثبات dependency مباشر وتسجيل السبب.
 - لا commit ولا Push قبل نجاح `tools/agent-delivery-gate.ps1`.
 - لا تكتب `PASS` أو `CLOSED` أو تقييمًا ذاتيًا. النتيجة الوحيدة المسموحة:

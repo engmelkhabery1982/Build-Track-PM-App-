@@ -213,6 +213,22 @@ Cash حتى اعتماد المطالبة ثم تحويلها ذريًا إلى 
 تستخدم generic CRUD لتغيير status؛ لا تكتب مباشرة في BOQ/SOV/Budget/Cash أثناء
 conversion؛ لا تضف بيانات وهمية؛ ولا تبدأ W04 حتى يغلق Codex كل `W03-G01..G10`.
 
+**تصحيحات إلزامية بعد فحص تسليم الوكلاء السابق:**
+
+- مخطط `variations` و`variation_lines` الحالي يعتمد أعمدة النطاق و`payload`؛ ممنوع
+  كتابة أسماء أعمدة غير موجودة مثل `variation_number/status/source_claim_id` كأعمدة
+  فعلية. افحص migration الحقيقي واستخدم mapping المتوافق معه.
+- الواجهة لا تحفظ `Submitted/Approved/Converted` أولًا عبر generic CRUD ثم تستدعي
+  backend، ولا تبتلع فشل الأمر. الأمر الحاكم ينجح أولًا ثم يعاد التحميل من SQLite.
+- فتح claim موجود يحمل `claim_lines` الفعلية من state/repository؛ ممنوع إنشاء line
+  تجريبية تبدو محفوظة. حذف line في Draft يجب أن ينعكس ذريًا عند الحفظ.
+- لا `ON CONFLICT DO UPDATE` للتحويل: Variation وLines immutable exactly-once، والفشل
+  المتأخر يعيد كل المعاملة. العكس يستخدم workflow الحاكم ولا يحذف السجلات.
+- لا مدة notice افتراضية 28 يومًا. عند غياب شرط عقد فعلي تكون النتيجة `Requires setup`.
+- اختبارات Rust/SQLite إلزامية وتجب معالجة كل compile error؛ لا يكفي ملف TS يفحص نصًا.
+- تسليم W03 لا يحتوي Payment Certificate/Cash Forecast/Report Designer أو
+  `metadata.json`. هذه الحزم مؤجلة حتى تحديث `ACTIVE.md` بواسطة Codex.
+
 **القبول:** PASS لكل الفجوات وكامل Node/build/Cargo/diff. تقرير الوكيل لا يغلق الميزة
 ولا يمنح 8/10؛ Codex وحده يطابق الأدلة التنفيذية مع هذه البوابات.
 
