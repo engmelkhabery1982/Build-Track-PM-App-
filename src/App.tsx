@@ -961,6 +961,8 @@ const RESOURCE_MASTER_COLUMNS: ColumnDef[] = [
   { key: 'unit', label: 'Unit', type: 'text', editable: true },
   { key: 'standard_rate', label: 'Standard Rate', type: 'money', editable: true },
   { key: 'overtime_rate', label: 'Overtime Rate', type: 'money', editable: true },
+  { key: 'fuel_rate', label: 'Fuel Unit Rate', type: 'money', editable: true },
+  { key: 'fuel_unit', label: 'Fuel Unit', type: 'text', editable: true },
   { key: 'daily_capacity_hours', label: 'Daily Capacity (hrs)', type: 'number', editable: true },
   { key: 'calendar_id', label: 'Resource Calendar', type: 'select', editable: true },
   { key: 'availability_start_date', label: 'Available From', type: 'date', editable: true },
@@ -4501,7 +4503,7 @@ function AppWorkspace() {
               return rows.find((row) => row.id === id) || current;
             }
           }
-          if (patch.status === 'Approved' && (current?.status === 'Submitted' || current?.status === 'Draft')) {
+          if (patch.status === 'Approved' && current?.status === 'Submitted') {
             if ("__TAURI_INTERNALS__" in window) {
               await approveLaborTimesheet({ operationId: crypto.randomUUID(), timesheetId: id, actor: sessionUser?.username || 'Local User', approvedAt: patch.approved_at || new Date().toISOString().slice(0, 10) });
               const rows = await dataRepository.list<Record<string, any>>('labor_timesheets');
@@ -4547,7 +4549,7 @@ function AppWorkspace() {
               return rows.find((row) => row.id === id) || current;
             }
           }
-          if (['Approved', 'Posted', 'Reversed'].includes(String(current?.status || ''))) throw new Error('Governed equipment logs are immutable; use approval, posting, or reversal.');
+          if (String(current?.status || 'Draft') !== 'Draft') throw new Error('Submitted, approved, posted and reversed equipment logs are immutable; use the governed workflow.');
           return dataRepository.update<Record<string, any>>('equipment_logs', id, patch);
         } : tableName === 'supplier_invoice_lines' ? async (id, patch) => {
           const current = data.supplierInvoiceLines.find((row: any) => row.id === id) as any;
@@ -4749,6 +4751,9 @@ function AppWorkspace() {
         dataDate={unifiedDataDate}
         currentUser={sessionUser?.username || 'Site Engineer'}
         onSaveDraft={async (log) => {
+          if ((log.status || 'Draft') !== 'Draft') {
+            throw new Error('Governed equipment-log status changes must use Submit, Approve, Post or Reverse.');
+          }
           if (log.id && (data.equipmentLogs || []).some((l: any) => l.id === log.id)) {
             await dataRepository.update<Record<string, any>>('equipment_logs', log.id, log);
           } else {

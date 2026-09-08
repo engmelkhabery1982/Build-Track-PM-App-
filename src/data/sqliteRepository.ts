@@ -626,6 +626,32 @@ export class SqliteRepository implements DataRepository {
           nullableId(record.boq_header_id), nullableId(record.boq_item_id), nullableId(record.original_wir_id), JSON.stringify(record),
         ],
       );
+    } else if (tableName === "equipment_logs") {
+      if ((record.status || 'Draft') !== 'Draft') {
+        throw new Error('Equipment logs must be created as Draft and submitted through the governed workflow.');
+      }
+      await database.execute(
+        `INSERT INTO equipment_logs (
+          id, created_at, updated_at, project_id, contract_id, log_number, log_date, shift,
+          resource_id, schedule_activity_id, control_account_id, cost_code_id, operator_name,
+          submitter, meter_start, meter_end, meter_hours, operating_hours, idle_hours,
+          breakdown_hours, total_hours, hours_override_reason, hourly_rate, equipment_cost,
+          fuel_quantity, fuel_rate, fuel_cost, total_cost, status, notes, payload
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,'Draft',$29,$30)`,
+        [
+          record.id, record.created_at, record.updated_at || null, record.project_id, record.contract_id,
+          record.log_number, record.log_date, record.shift, record.resource_id,
+          record.schedule_activity_id, record.control_account_id, nullableId(record.cost_code_id),
+          record.operator_name || null, record.submitter, Number(record.meter_start) || 0,
+          Number(record.meter_end) || 0, Number(record.meter_hours) || 0,
+          Number(record.operating_hours) || 0, Number(record.idle_hours) || 0,
+          Number(record.breakdown_hours) || 0, Number(record.total_hours) || 0,
+          record.hours_override_reason || null, Number(record.hourly_rate) || 0,
+          Number(record.equipment_cost) || 0, Number(record.fuel_quantity) || 0,
+          Number(record.fuel_rate) || 0, Number(record.fuel_cost) || 0,
+          Number(record.total_cost) || 0, record.notes || null, JSON.stringify({ ...record, status: 'Draft' }),
+        ],
+      );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {
       await database.execute(
         `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, control_account_id, payload)
@@ -913,6 +939,32 @@ export class SqliteRepository implements DataRepository {
         [
           nullableId(record.project_id), nullableId(record.contract_id), nullableId(record.boq_header_id),
           nullableId(record.boq_item_id), nullableId(record.original_wir_id), JSON.stringify(record), id,
+        ],
+      );
+    } else if (tableName === "equipment_logs") {
+      if ((existing as any).status !== 'Draft' || (record.status || 'Draft') !== 'Draft') {
+        throw new Error('Governed equipment-log changes must use Submit, Approve, Post or Reverse.');
+      }
+      await database.execute(
+        `UPDATE equipment_logs SET updated_at=$1, project_id=$2, contract_id=$3,
+          log_number=$4, log_date=$5, shift=$6, resource_id=$7, schedule_activity_id=$8,
+          control_account_id=$9, cost_code_id=$10, operator_name=$11, submitter=$12,
+          meter_start=$13, meter_end=$14, meter_hours=$15, operating_hours=$16,
+          idle_hours=$17, breakdown_hours=$18, total_hours=$19, hours_override_reason=$20,
+          hourly_rate=$21, equipment_cost=$22, fuel_quantity=$23, fuel_rate=$24,
+          fuel_cost=$25, total_cost=$26, notes=$27, payload=$28 WHERE id=$29`,
+        [
+          new Date().toISOString(), record.project_id, record.contract_id, record.log_number,
+          record.log_date, record.shift, record.resource_id, record.schedule_activity_id,
+          record.control_account_id, nullableId(record.cost_code_id), record.operator_name || null,
+          record.submitter, Number(record.meter_start) || 0, Number(record.meter_end) || 0,
+          Number(record.meter_hours) || 0, Number(record.operating_hours) || 0,
+          Number(record.idle_hours) || 0, Number(record.breakdown_hours) || 0,
+          Number(record.total_hours) || 0, record.hours_override_reason || null,
+          Number(record.hourly_rate) || 0, Number(record.equipment_cost) || 0,
+          Number(record.fuel_quantity) || 0, Number(record.fuel_rate) || 0,
+          Number(record.fuel_cost) || 0, Number(record.total_cost) || 0,
+          record.notes || null, JSON.stringify({ ...record, status: 'Draft' }), id,
         ],
       );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {

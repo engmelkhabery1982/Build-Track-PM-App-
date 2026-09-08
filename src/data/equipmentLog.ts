@@ -62,6 +62,7 @@ export function validateEquipmentLog(
     schedules: Record<string, any>[];
     controlAccounts: Record<string, any>[];
     reportingPeriods?: Record<string, any>[];
+    workCalendars?: Record<string, any>[];
     existingLogs?: Record<string, any>[];
     dataDate?: string;
   }
@@ -125,6 +126,49 @@ export function validateEquipmentLog(
       if (resource.status && (resource.status === 'Inactive' || resource.status === 'Decommissioned')) {
         issues.push({ field: 'resource_id', message: `Equipment "${resource.name || resource.resource_name}" is ${resource.status}.`, severity: 'error' });
       }
+      if (Number(resource.standard_rate || 0) <= 0) {
+        issues.push({ field: 'hourly_rate', message: 'Equipment Resource Master requires a governed standard rate.', severity: 'error' });
+      } else if (Math.abs(Number(log.hourly_rate || 0) - Number(resource.standard_rate)) > 0.005) {
+        issues.push({ field: 'hourly_rate', message: 'Hourly rate must equal the governed Equipment Resource Master rate.', severity: 'error' });
+      }
+      if (Number(log.fuel_quantity || 0) > 0) {
+        if (Number(resource.fuel_rate || 0) <= 0) {
+          issues.push({ field: 'fuel_rate', message: 'Fuel consumption requires a governed Resource Master fuel rate.', severity: 'error' });
+        } else if (Math.abs(Number(log.fuel_rate || 0) - Number(resource.fuel_rate)) > 0.005) {
+          issues.push({ field: 'fuel_rate', message: 'Fuel rate must equal the governed Equipment Resource Master fuel rate.', severity: 'error' });
+        }
+      }
+      const capacity = Number(resource.daily_capacity_hours || 0);
+      if (capacity <= 0) {
+        issues.push({ field: 'total_hours', message: 'Equipment Resource Master requires governed daily capacity hours.', severity: 'error' });
+      } else if (log.log_date) {
+        const otherHours = (context.existingLogs || [])
+          .filter((item) => item.id !== log.id && item.resource_id === log.resource_id && item.log_date === log.log_date && ['Submitted', 'Approved', 'Posted'].includes(String(item.status)))
+          .reduce((sum, item) => sum + Number(item.operating_hours || 0) + Number(item.idle_hours || 0) + Number(item.breakdown_hours || 0), 0);
+        const currentHours = Number(log.operating_hours || 0) + Number(log.idle_hours || 0) + Number(log.breakdown_hours || 0);
+        if (otherHours + currentHours > capacity + 0.000001) {
+          issues.push({ field: 'total_hours', message: `Equipment daily hours (${otherHours + currentHours}) exceed governed capacity (${capacity}).`, severity: 'error' });
+        }
+      }
+
+      if (log.log_date && context.workCalendars?.length) {
+        const calendar = context.workCalendars.find((item) => item.id === resource.calendar_id)
+          || context.workCalendars.find((item) => item.status !== 'Inactive');
+        if (calendar) {
+          const toArray = (value: unknown): unknown[] => Array.isArray(value)
+            ? value
+            : typeof value === 'string' && value.trim()
+              ? (() => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return value.split(',').map((part) => part.trim()); } })()
+              : [];
+          const workingDays = toArray(calendar.calendar_working_days).map(Number).filter(Number.isFinite);
+          const exceptions = toArray(calendar.calendar_exceptions).map(String);
+          const weekday = new Date(`${log.log_date}T00:00:00Z`).getUTCDay();
+          const nonWorking = (workingDays.length > 0 && !workingDays.includes(weekday)) || exceptions.includes(log.log_date);
+          if (nonWorking && !log.hours_override_reason?.trim()) {
+            issues.push({ field: 'hours_override_reason', message: 'Non-working calendar date requires a documented override reason.', severity: 'error' });
+          }
+        }
+      }
     }
   }
 
@@ -142,6 +186,9 @@ export function validateEquipmentLog(
       if (activity.contract_id && log.contract_id && activity.contract_id !== log.contract_id) {
         issues.push({ field: 'schedule_activity_id', message: 'Activity belongs to another contract.', severity: 'error' });
       }
+      if (activity.control_account_id && log.control_account_id && activity.control_account_id !== log.control_account_id) {
+        issues.push({ field: 'control_account_id', message: 'Activity belongs to another control account.', severity: 'error' });
+      }
     }
   }
 
@@ -152,8 +199,16 @@ export function validateEquipmentLog(
     const ca = context.controlAccounts.find((c) => c.id === log.control_account_id);
     if (!ca) {
       issues.push({ field: 'control_account_id', message: 'Control account not found.', severity: 'error' });
-    } else if (ca.project_id && log.project_id && ca.project_id !== log.project_id) {
-      issues.push({ field: 'control_account_id', message: 'Control account belongs to another project.', severity: 'error' });
+    } else {
+      if (ca.project_id && log.project_id && ca.project_id !== log.project_id) {
+        issues.push({ field: 'control_account_id', message: 'Control account belongs to another project.', severity: 'error' });
+      }
+      if (ca.contract_id && log.contract_id && ca.contract_id !== log.contract_id) {
+        issues.push({ field: 'control_account_id', message: 'Control account belongs to another contract.', severity: 'error' });
+      }
+      if (ca.cost_code_id && log.cost_code_id && ca.cost_code_id !== log.cost_code_id) {
+        issues.push({ field: 'cost_code_id', message: 'Cost code must come from the selected control account.', severity: 'error' });
+      }
     }
   }
 
@@ -230,6 +285,13 @@ async function invokeEquipment<T>(command: string, request: Record<string, unkno
   }
   throw new Error('Tauri desktop backend required for native atomic posting.');
 }
+
+export const submitEquipmentLog = (request: {
+  operationId: string;
+  logId: string;
+  actor: string;
+  submittedAt: string;
+}) => invokeEquipment<EquipmentLogOperationResult>('submit_equipment_log', request);
 
 export const approveEquipmentLog = (request: {
   operationId: string;

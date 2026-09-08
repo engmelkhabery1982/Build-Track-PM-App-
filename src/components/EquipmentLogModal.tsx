@@ -31,6 +31,7 @@ import type {
 import {
   calculateEquipmentLogTotals,
   validateEquipmentLog,
+  submitEquipmentLog,
   approveEquipmentLog,
   postEquipmentLog,
   reverseEquipmentLog,
@@ -82,7 +83,11 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
 
   // Form State
   const [projectId, setProjectId] = useState(log?.project_id || (projects[0]?.id ?? ''));
-  const [contractId, setContractId] = useState(log?.contract_id || (contracts[0]?.id ?? ''));
+  const mainContracts = useMemo(
+    () => contracts.filter((contract) => !contract.parent_main_contract_id),
+    [contracts]
+  );
+  const [contractId, setContractId] = useState(log?.contract_id || '');
   const [logNumber, setLogNumber] = useState(
     log?.log_number || `EQ-LOG-${new Date().toISOString().slice(0, 10)}-001`
   );
@@ -102,9 +107,9 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
   const [idleHours, setIdleHours] = useState<number>(Number(log?.idle_hours) || 0);
   const [breakdownHours, setBreakdownHours] = useState<number>(Number(log?.breakdown_hours) || 0);
   const [hoursOverrideReason, setHoursOverrideReason] = useState(log?.hours_override_reason || '');
-  const [hourlyRate, setHourlyRate] = useState<number>(Number(log?.hourly_rate) || 150);
+  const [hourlyRate, setHourlyRate] = useState<number>(Number(log?.hourly_rate) || 0);
   const [fuelQuantity, setFuelQuantity] = useState<number>(Number(log?.fuel_quantity) || 0);
-  const [fuelRate, setFuelRate] = useState<number>(Number(log?.fuel_rate) || 4.2);
+  const [fuelRate, setFuelRate] = useState<number>(Number(log?.fuel_rate) || 0);
   const [notes, setNotes] = useState(log?.notes || '');
 
   // Workflow / Reversal state
@@ -117,7 +122,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
   useEffect(() => {
     if (log) {
       setProjectId(log.project_id || (projects[0]?.id ?? ''));
-      setContractId(log.contract_id || (contracts[0]?.id ?? ''));
+      setContractId(log.contract_id || '');
       setLogNumber(log.log_number || `EQ-LOG-${new Date().toISOString().slice(0, 10)}-001`);
       setLogDate(log.log_date || (dataDate ? dataDate.slice(0, 10) : new Date().toISOString().slice(0, 10)));
       setShift(log.shift || 'Day');
@@ -132,9 +137,9 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
       setIdleHours(Number(log.idle_hours) || 0);
       setBreakdownHours(Number(log.breakdown_hours) || 0);
       setHoursOverrideReason(log.hours_override_reason || '');
-      setHourlyRate(Number(log.hourly_rate) || 150);
+      setHourlyRate(Number(log.hourly_rate) || 0);
       setFuelQuantity(Number(log.fuel_quantity) || 0);
-      setFuelRate(Number(log.fuel_rate) || 4.2);
+      setFuelRate(Number(log.fuel_rate) || 0);
       setNotes(log.notes || '');
     }
   }, [log, dataDate, currentUser, projects, contracts]);
@@ -146,13 +151,12 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     );
   }, [resourceMasters]);
 
-  // When equipment is selected, auto-fill hourly rate if available
+  // Rates are governed by Resource Master and are never free-entry defaults.
   useEffect(() => {
     if (resourceId) {
       const eq = equipmentResources.find((r) => r.id === resourceId);
-      if (eq && Number(eq.standard_rate) > 0) {
-        setHourlyRate(Number(eq.standard_rate));
-      }
+      setHourlyRate(Number(eq?.standard_rate || 0));
+      setFuelRate(Number(eq?.fuel_rate || 0));
     }
   }, [resourceId, equipmentResources]);
 
@@ -169,9 +173,21 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     return controlAccounts.filter((ca) => {
       if (projectId && ca.project_id && ca.project_id !== projectId) return false;
       if (contractId && ca.contract_id && ca.contract_id !== contractId) return false;
+      const activity = schedules.find((item) => item.id === scheduleActivityId);
+      if (activity?.control_account_id && ca.id !== activity.control_account_id) return false;
       return true;
     });
-  }, [controlAccounts, projectId, contractId]);
+  }, [controlAccounts, projectId, contractId, schedules, scheduleActivityId]);
+
+  useEffect(() => {
+    const activity = schedules.find((item) => item.id === scheduleActivityId);
+    if (activity?.control_account_id) setControlAccountId(activity.control_account_id);
+  }, [scheduleActivityId, schedules]);
+
+  useEffect(() => {
+    const account = controlAccounts.find((item) => item.id === controlAccountId);
+    setCostCodeId(account?.cost_code_id || '');
+  }, [controlAccountId, controlAccounts]);
 
   // Calculated totals
   const totals = useMemo(() => {
@@ -199,6 +215,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
       resource_id: resourceId,
       schedule_activity_id: scheduleActivityId,
       control_account_id: controlAccountId,
+      cost_code_id: costCodeId || null,
       meter_start: meterStart,
       meter_end: meterEnd,
       operating_hours: operatingHours,
@@ -216,6 +233,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
       schedules,
       controlAccounts,
       reportingPeriods,
+      workCalendars,
       existingLogs: allLogs,
       dataDate,
     });
@@ -243,6 +261,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     schedules,
     controlAccounts,
     reportingPeriods,
+    workCalendars,
     allLogs,
     dataDate,
   ]);
@@ -261,6 +280,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     control_account_id: controlAccountId,
     cost_code_id: costCodeId || null,
     operator_name: operatorName,
+    submitter: log?.submitter || currentUser,
     meter_start: meterStart,
     meter_end: meterEnd,
     meter_hours: totals.meter_hours,
@@ -299,7 +319,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     }
   };
 
-  const handleTransition = async (targetStatus: 'Submitted' | 'Approved' | 'Posted') => {
+  const handleSubmit = async () => {
     if (hasErrors) {
       setErrorMessage('Please resolve validation errors before proceeding.');
       return;
@@ -307,37 +327,42 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
     try {
       setActionLoading(true);
       setErrorMessage(null);
-      const payload = buildLogPayload(targetStatus);
+      const payload = buildLogPayload('Draft');
       await onSaveDraft(payload);
-
-      const opId = `op-eq-${Date.now()}`;
-      if (targetStatus === 'Approved') {
-        await approveEquipmentLog({
-          operationId: opId,
-          logId: payload.id!,
-          actor: currentUser,
-          approvedAt: new Date().toISOString(),
-        });
-      } else if (targetStatus === 'Posted') {
-        await postEquipmentLog({
-          operationId: opId,
-          logId: payload.id!,
-          actor: currentUser,
-          postedAt: new Date().toISOString(),
-        });
-      }
-
+      await submitEquipmentLog({ operationId: crypto.randomUUID(), logId: payload.id!, actor: currentUser, submittedAt: new Date().toISOString().slice(0, 10) });
       await onRefresh();
-      setSuccessMessage(`Equipment log successfully transitioned to ${targetStatus} and cost entries posted.`);
-      setTimeout(() => {
-        setSuccessMessage(null);
-        onClose();
-      }, 1500);
+      onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || `Failed to transition equipment log to ${targetStatus}.`);
+      setErrorMessage(err.message || 'Failed to submit equipment log.');
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleApprove = async () => {
+    if (!log?.id) return;
+    try {
+      setActionLoading(true);
+      setErrorMessage(null);
+      await approveEquipmentLog({ operationId: crypto.randomUUID(), logId: log.id, actor: currentUser, approvedAt: new Date().toISOString().slice(0, 10) });
+      await onRefresh();
+      onClose();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to approve equipment log.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handlePost = async () => {
+    if (!log?.id) return;
+    try {
+      setActionLoading(true);
+      setErrorMessage(null);
+      await postEquipmentLog({ operationId: crypto.randomUUID(), logId: log.id, actor: currentUser, postedAt: new Date().toISOString().slice(0, 10) });
+      await onRefresh();
+      onClose();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to post equipment costs.');
+    } finally { setActionLoading(false); }
   };
 
   const handleReverse = async () => {
@@ -354,7 +379,7 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
         logId: log?.id!,
         actor: currentUser,
         reason: reversalReason.trim(),
-        reversedAt: new Date().toISOString(),
+        reversedAt: new Date().toISOString().slice(0, 10),
       });
       await onRefresh();
       setSuccessMessage('Equipment log successfully reversed with negative offsetting cost entries.');
@@ -454,7 +479,8 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
                 onChange={(e) => setContractId(e.target.value)}
                 className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100"
               >
-                {contracts.map((c) => (
+                <option value="">-- Select Main Contract --</option>
+                {mainContracts.filter((c) => !projectId || c.project_id === projectId).map((c) => (
                   <option key={c.id} value={c.id}>
                     {(c as any).contract_title || c.contract_number || c.id}
                   </option>
@@ -587,9 +613,9 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  disabled={!isEditable}
+                  disabled
                   value={hourlyRate}
-                  onChange={(e) => setHourlyRate(Number(e.target.value))}
+                  readOnly
                   className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 font-mono"
                 />
               </div>
@@ -677,9 +703,9 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  disabled={!isEditable}
+                  disabled
                   value={fuelRate}
-                  onChange={(e) => setFuelRate(Number(e.target.value))}
+                  readOnly
                   className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 font-mono"
                 />
               </div>
@@ -798,19 +824,25 @@ export const EquipmentLogModal: React.FC<EquipmentLogModalProps> = ({
             {currentStatus === 'Draft' && (
               <button
                 disabled={actionLoading || hasErrors}
-                onClick={() => handleTransition('Submitted')}
+                onClick={handleSubmit}
                 className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-md disabled:opacity-50 flex items-center space-x-2"
               >
                 <Send className="w-4 h-4" />
-                <span>Submit & Approve</span>
+                <span>Submit for Approval</span>
               </button>
             )}
-            {(currentStatus === 'Submitted' || currentStatus === 'Approved') && (
+            {currentStatus === 'Submitted' && (
               <button
-                disabled={actionLoading || hasErrors}
-                onClick={() => handleTransition('Posted')}
+                disabled={actionLoading}
+                onClick={handleApprove}
                 className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shadow-md disabled:opacity-50 flex items-center space-x-2"
               >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Approve</span>
+              </button>
+            )}
+            {currentStatus === 'Approved' && (
+              <button disabled={actionLoading} onClick={handlePost} className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shadow-md disabled:opacity-50 flex items-center space-x-2">
                 <ShieldCheck className="w-4 h-4" />
                 <span>Post Cost Entries</span>
               </button>

@@ -161,6 +161,19 @@ async fn reverse_labor_timesheet(
 }
 
 #[tauri::command]
+async fn submit_equipment_log(
+    app: tauri::AppHandle,
+    request: equipment_log::SubmitEquipmentLogRequest,
+) -> Result<equipment_log::EquipmentLogOperationResult, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    equipment_log::submit_equipment_log(&path, request).await
+}
+
+#[tauri::command]
 async fn approve_equipment_log(
     app: tauri::AppHandle,
     request: equipment_log::ApproveEquipmentLogRequest,
@@ -3137,6 +3150,40 @@ pub fn run() {
             "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 73,
+            description: "govern_equipment_log_entry_points",
+            sql: r#"
+            ALTER TABLE equipment_logs ADD COLUMN submitter TEXT;
+            ALTER TABLE equipment_logs ADD COLUMN submitted_by TEXT;
+            ALTER TABLE equipment_logs ADD COLUMN submitted_at TEXT;
+
+            CREATE TABLE IF NOT EXISTS equipment_log_mutation_guard (
+              operation_id TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL
+            );
+
+            DROP TRIGGER IF EXISTS equipment_log_locked_delete;
+
+            CREATE TRIGGER IF NOT EXISTS equipment_log_governed_insert_v2
+            BEFORE INSERT ON equipment_logs
+            WHEN NEW.status <> 'Draft'
+              AND NOT EXISTS (SELECT 1 FROM equipment_log_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Equipment log must be created as Draft.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS equipment_log_governed_update_v2
+            BEFORE UPDATE ON equipment_logs
+            WHEN (OLD.status <> 'Draft' OR NEW.status <> 'Draft')
+              AND NOT EXISTS (SELECT 1 FROM equipment_log_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Governed equipment-log changes must use a lifecycle command.'); END;
+
+            CREATE TRIGGER IF NOT EXISTS equipment_log_governed_delete_v2
+            BEFORE DELETE ON equipment_logs
+            WHEN OLD.status <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Submitted, approved, posted or reversed equipment logs cannot be deleted.'); END;
+            "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -3174,6 +3221,7 @@ pub fn run() {
             approve_labor_timesheet,
             post_labor_timesheet,
             reverse_labor_timesheet,
+            submit_equipment_log,
             approve_equipment_log,
             post_equipment_log,
             reverse_equipment_log,

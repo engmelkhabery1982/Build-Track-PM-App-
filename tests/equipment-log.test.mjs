@@ -7,6 +7,10 @@ import {
 } from '../src/data/equipmentLog.ts';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const equipmentResource = (id = 'RES-EQ1', name = 'Excavator 01', rate = 100) => ({
+  id, name, resource_type: 'Equipment', status: 'Active', standard_rate: rate,
+  daily_capacity_hours: 24, fuel_rate: 4.2,
+});
 
 test('calculateEquipmentLogTotals accurately computes meter hours, total hours, equipment cost, fuel cost, and total cost', () => {
   const log = {
@@ -53,7 +57,7 @@ test('validateEquipmentLog enforces required fields, scope matching, and non-neg
   };
 
   const issues2 = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Excavator 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource('RES-EQ1', 'Excavator 01', -50)],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
   });
@@ -79,7 +83,7 @@ test('validateEquipmentLog blocks meter rollback (meter_end < meter_start)', () 
   };
 
   const issues = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Excavator 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource()],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
   });
@@ -104,7 +108,7 @@ test('validateEquipmentLog requires documented override reason if operating hour
   };
 
   const issuesNoReason = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Excavator 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource()],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
   });
@@ -115,7 +119,7 @@ test('validateEquipmentLog requires documented override reason if operating hour
     hours_override_reason: 'Meter was running during standby maintenance check.',
   };
   const issuesWithReason = validateEquipmentLog(headerWithReason, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Excavator 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource()],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
   });
@@ -139,7 +143,7 @@ test('validateEquipmentLog prevents logging for inactive equipment or non-equipm
   };
 
   const issues = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-LABOR', name: 'John Carpenter', resource_type: 'Labor', status: 'Active' }],
+    resourceMasters: [{ ...equipmentResource('RES-LABOR', 'John Carpenter'), resource_type: 'Labor' }],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
   });
@@ -177,7 +181,7 @@ test('validateEquipmentLog prevents meter overlaps for the same equipment on the
   ];
 
   const issues = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Crane 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource('RES-EQ1', 'Crane 01', 120)],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     existingLogs,
@@ -213,7 +217,7 @@ test('validateEquipmentLog prevents logging in locked reporting periods', () => 
   ];
 
   const issues = validateEquipmentLog(header, {
-    resourceMasters: [{ id: 'RES-EQ1', name: 'Bulldozer 01', resource_type: 'Equipment', status: 'Active' }],
+    resourceMasters: [equipmentResource('RES-EQ1', 'Bulldozer 01')],
     schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     controlAccounts: [{ id: 'CA-1', project_id: 'PRJ-1', contract_id: 'CTR-1' }],
     reportingPeriods,
@@ -225,6 +229,7 @@ test('validateEquipmentLog prevents logging in locked reporting periods', () => 
 test('F2 Rust backend equipment_log module provides atomic approve, post, and reverse commands', () => {
   const rustModule = read('src-tauri/src/equipment_log.rs');
   assert.match(rustModule, /pub async fn approve_equipment_log/);
+  assert.match(rustModule, /pub async fn submit_equipment_log/);
   assert.match(rustModule, /pub async fn post_equipment_log/);
   assert.match(rustModule, /pub async fn reverse_equipment_log/);
   assert.match(rustModule, /guard_on/);
@@ -240,8 +245,11 @@ test('F2 Rust backend equipment_log module provides atomic approve, post, and re
 test('F2 SQLite migration 62 creates equipment_logs and immutability trigger', () => {
   const libSource = read('src-tauri/src/lib.rs');
   assert.match(libSource, /version:\s*62/);
+  assert.match(libSource, /version:\s*73/);
   assert.match(libSource, /CREATE TABLE IF NOT EXISTS equipment_logs/);
   assert.match(libSource, /equipment_log_locked_delete/);
+  assert.match(libSource, /equipment_log_governed_update_v2/);
+  assert.match(libSource, /submit_equipment_log/);
   assert.match(libSource, /approve_equipment_log/);
   assert.match(libSource, /post_equipment_log/);
   assert.match(libSource, /reverse_equipment_log/);
@@ -250,8 +258,42 @@ test('F2 SQLite migration 62 creates equipment_logs and immutability trigger', (
 test('F2 Data Dictionary and SQLite Repository register equipment logs', () => {
   const repoSource = read('src/data/sqliteRepository.ts');
   assert.match(repoSource, /"equipment_logs"/);
+  assert.match(repoSource, /INSERT INTO equipment_logs/);
+  assert.match(repoSource, /Equipment logs must be created as Draft/);
 
   const dictSource = read('src/data/dataDictionary.ts');
   assert.match(dictSource, /equipmentLog:\s*\[/);
   assert.match(dictSource, /log_number/);
+});
+
+test('equipment validation enforces governed rates and activity/control-account scope', () => {
+  const header = {
+    project_id: 'PRJ-1', contract_id: 'CTR-1', log_number: 'EQ-3', log_date: '2026-09-07',
+    shift: 'Day', resource_id: 'RES-EQ1', schedule_activity_id: 'ACT-1',
+    control_account_id: 'CA-WRONG', cost_code_id: 'CC-WRONG', meter_start: 10,
+    meter_end: 18, operating_hours: 8, hourly_rate: 90, fuel_quantity: 5, fuel_rate: 5,
+  };
+  const issues = validateEquipmentLog(header, {
+    resourceMasters: [equipmentResource()],
+    schedules: [{ id: 'ACT-1', project_id: 'PRJ-1', contract_id: 'CTR-1', control_account_id: 'CA-1' }],
+    controlAccounts: [{ id: 'CA-WRONG', project_id: 'PRJ-1', contract_id: 'CTR-2', cost_code_id: 'CC-1' }],
+  });
+  assert.ok(issues.some((issue) => issue.message.includes('Resource Master rate')));
+  assert.ok(issues.some((issue) => issue.message.includes('Fuel rate')));
+  assert.ok(issues.some((issue) => issue.message.includes('another control account')));
+  assert.ok(issues.some((issue) => issue.message.includes('another contract')));
+  assert.ok(issues.some((issue) => issue.message.includes('Cost code')));
+});
+
+test('equipment UI uses distinct governed lifecycle actions and no hard-coded rates', () => {
+  const modal = read('src/components/EquipmentLogModal.tsx');
+  const app = read('src/App.tsx');
+  assert.match(modal, /submitEquipmentLog/);
+  assert.match(modal, /Submit for Approval/);
+  assert.match(modal, /currentStatus === 'Submitted'/);
+  assert.match(modal, /currentStatus === 'Approved'/);
+  assert.doesNotMatch(modal, /\|\| 150/);
+  assert.doesNotMatch(modal, /\|\| 4\.2/);
+  assert.match(app, /key: 'fuel_rate', label: 'Fuel Unit Rate'/);
+  assert.match(app, /key: 'fuel_unit', label: 'Fuel Unit'/);
 });

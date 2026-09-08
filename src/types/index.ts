@@ -736,6 +736,9 @@ export interface EquipmentLog {
   control_account_id: string;
   cost_code_id?: string | null;
   operator_name?: string | null;
+  submitter: string;
+  submitted_by?: string | null;
+  submitted_at?: string | null;
   meter_start: number;
   meter_end: number;
   meter_hours: number;
@@ -839,6 +842,8 @@ export interface ResourceMaster {
   unit: string;
   standard_rate: number;
   overtime_rate?: number | null;
+  fuel_rate?: number | null;
+  fuel_unit?: string | null;
   daily_capacity_hours: number;
   availability_start_date?: string | null;
   availability_end_date?: string | null;
