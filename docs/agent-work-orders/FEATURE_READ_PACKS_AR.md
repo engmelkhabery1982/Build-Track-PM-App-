@@ -98,16 +98,22 @@ Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 ي
 
 ### MUST READ
 
+- `src-tauri/src/claims_workflow.rs` — أوامر lifecycle والمعاملات والاختبارات الخلفية فقط.
 - `src/data/variationPackage.ts`
 - `src/data/commercialWorkflow.ts`
+- `src/data/claims.ts`
 - `src/utils/delayImpact.ts`
 - `src/components/DelayRegisterModal.tsx`
+- `src/components/ClaimAssessmentModal.tsx`
 - `src/types/index.ts` — Claim/Variation/Delay/RFI/Document/Contract فقط
 - `src/data/dataDictionary.ts` — claim/variation fields فقط
 - `src/data/sqliteRepository.ts` — claim/variation mapping/guards فقط
 - `src/hooks/useData.ts` — claim/variation slices فقط
 - `src/App.tsx` — claim/variation nav/config/actions فقط
 - `src-tauri/src/lib.rs` — latest claim/variation migration/commands فقط
+- `tests/claim-assessment-pvo.test.mjs`
+- `tests/claims-governance.test.mjs`
+- `tests/tauri-command-registration.test.mjs`
 - `tests/delay-impact-register.test.mjs`
 - `tests/phase1-commercial.test.mjs` — variation tests فقط
 

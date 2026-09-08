@@ -8,7 +8,7 @@
 2. افتح لوحة **GitHub** واضغط **Pull changes to Google AI Studio** قبل بدء كل وكيل.
 3. تأكد أن المستودع هو `engmelkhabery1982/BuildTrack-Agent-Cloud` والفرع `main`.
 4. افتح محادثة جديدة مع النموذج المتاح، والصق النص الكامل من
-   `UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md`.
+   `UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`.
 5. عند توقف النموذج بسبب الحد، اطلب منه تنفيذ بروتوكول الانقطاع: commit متماسك،
    تحديث سجل الاستمرار، ثم اجعل تغييرات AI Studio جاهزة للدفع.
 6. اضغط **Push changes to GitHub**.
@@ -64,7 +64,7 @@ aider --model gemini/gemini-2.5-pro \
   --read docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md
 ```
 
-داخل Aider الصق الرسالة الموجودة في `UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md`.
+داخل Aider الصق الرسالة الموجودة في `UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`.
 
 ### تبديل النموذج عند الحد
 

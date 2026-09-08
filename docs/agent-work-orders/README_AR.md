@@ -2,11 +2,15 @@
 
 ## الاستمرار السحابي بين النماذج والوكلاء
 
-- أمر العمل الموحد: [MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md](MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md)
-- المواصفة التفصيلية F1–H1: [NEXT_FEATURES_DETAILED_EXECUTION_AR.md](NEXT_FEATURES_DETAILED_EXECUTION_AR.md)
-- سجل آخر نقطة: [CLOUD_PROGRESS_LEDGER.md](CLOUD_PROGRESS_LEDGER.md)
-- الرسالة الجاهزة لكل وكيل: [UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md](UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md)
+- نقطة البدء الإلزامية: [AGENT_START_HERE_AR.md](AGENT_START_HERE_AR.md)
+- مؤشر المهمة الوحيد: [ACTIVE.md](ACTIVE.md)
+- أمر العمل المرجعي: [MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md](MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md)
+- حزمة القراءة المحدودة: [FEATURE_READ_PACKS_AR.md](FEATURE_READ_PACKS_AR.md)
+- الرسالة الوحيدة الجاهزة لكل وكيل: [UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md](UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md)
 - خطوات Google Cloud/Aider: [GOOGLE_CLOUD_AGENTS_SETUP_AR.md](GOOGLE_CLOUD_AGENTS_SETUP_AR.md)
+
+الملفات `UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md` و`GITHUB_CONTINUATION_WORK_ORDER_AR.md`
+و`CLOUD_PROGRESS_LEDGER.md` مراجع تاريخية فقط، ولا تختار المهمة ولا تُرسل للوكيل.
 
 هذه الملفات خاصة بالعمل المتسلسل على `BuildTrack-Agent-Cloud`. لا يكتب الوكيل
 السحابي إلى المستودع الرسمي؛ Codex يراجع ويصلح ثم يدمج.

@@ -1,5 +1,10 @@
 # أمر عمل الوكيل البديل — A2 Unified Project Data Date
 
+> **مرجع تاريخي فقط — لا يُستخدم للتنفيذ الحالي.** لا تنفذ أي خطوة أو رابط أو فرع
+> وارد أدناه. نقطة البدء الحالية الوحيدة هي `AGENT_START_HERE_AR.md`، والمهمة الوحيدة
+> يحددها `ACTIVE.md`، والرسالة الوحيدة التي تُرسل للوكيل هي
+> `UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`.
+
 انسخ هذا النص كاملًا إلى الوكيل الذي سيعمل أثناء غياب Codex. لا تختصره ولا تسمح له باختيار ميزة أخرى.
 
 ## الدور وحدود السلطة
@@ -33,11 +38,11 @@
 - `docs/agent-work-orders/CLOUD_PROGRESS_LEDGER.md`
 - `docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md`
 - `docs/agent-work-orders/NEXT_FEATURES_DETAILED_EXECUTION_AR.md`
-- `docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md`
+- `docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`
 - `docs/FEATURE_CATALOG_37_AND_CONTINUATION_AR.md`
 
 هذا الملف لا يُرسل الآن للوكيل لأنه خاص تاريخيًا بـA2. الرسالة الوحيدة الجاهزة
-للبدء والاستمرار هي `UNIVERSAL_CLOUD_AGENT_PROMPT_AR.md`.
+للبدء والاستمرار هي `UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md`.
 
 ## الميزة المطلوبة فقط
 

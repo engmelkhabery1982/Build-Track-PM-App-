@@ -20,6 +20,23 @@ if ($Feature -ne $active.CURRENT_FEATURE) {
 & git cat-file -e "$StartHead^{commit}"
 if ($LASTEXITCODE -ne 0) { throw "DELIVERY FAIL: invalid START_HEAD $StartHead." }
 
+$resultPath = Join-Path $root "docs/agent-results/${Feature}_RESULT.md"
+if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+    throw "DELIVERY FAIL: missing required ${Feature}_RESULT.md."
+}
+$resultContent = Get-Content -LiteralPath $resultPath -Raw
+if ($resultContent -notmatch 'READY FOR CODEX REVIEW') {
+    throw "DELIVERY FAIL: result must declare READY FOR CODEX REVIEW (or stop as WIP/BLOCKED without delivery)."
+}
+if ($resultContent -match '(?im)\bCLOSED\b|8\s*/\s*10') {
+    throw "DELIVERY FAIL: agents cannot self-declare CLOSED or 8/10."
+}
+foreach ($gap in ($active.REQUIRED_GAPS -split '\|')) {
+    if ($gap -and $resultContent -notmatch [regex]::Escape($gap)) {
+        throw "DELIVERY FAIL: result does not report required gap $gap."
+    }
+}
+
 $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 ($active.MODIFY_ALLOWLIST -split '\|') | ForEach-Object { if ($_) { [void]$allowed.Add($_) } }
 $conditionalSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -76,17 +93,23 @@ foreach ($line in $changes) {
     }
 }
 $passed = -not ($results | Where-Object { $_.exit_code -ne 0 })
+$evidenceRelative = "docs/agent-results/${Feature}_EVIDENCE.json"
+$evidenceChanges = @($changes)
+if (-not ($evidenceChanges | Where-Object { (($_ -split "`t")[-1] -replace '\\','/') -eq $evidenceRelative })) {
+    $trackedEvidence = (& git ls-files --error-unmatch -- $evidenceRelative 2>$null)
+    $evidenceChanges += "$(if ($trackedEvidence) { 'M' } else { 'A' })`t$evidenceRelative"
+}
 $evidence = [ordered]@{
     feature = $Feature
     result = if ($passed) { 'PASS' } else { 'FAIL' }
     start_head = $StartHead
     end_head = $head
     generated_utc = (Get-Date).ToUniversalTime().ToString('o')
-    changes = $changes
+    changes = $evidenceChanges
     file_hashes = $hashes
     commands = $results
 }
-$evidencePath = Join-Path $root "docs/agent-results/${Feature}_EVIDENCE.json"
+$evidencePath = Join-Path $root $evidenceRelative
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidencePath -Encoding utf8
 $evidence | ConvertTo-Json -Depth 5
 if (-not $passed) { exit 1 }

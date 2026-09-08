@@ -70,6 +70,10 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(delivery, /cargo test --manifest-path/);
   assert.match(delivery, /Get-FileHash/);
   assert.match(delivery, /EVIDENCE\.json/);
+  assert.match(delivery, /missing required \$\{Feature\}_RESULT\.md/);
+  assert.match(delivery, /READY FOR CODEX REVIEW/);
+  assert.match(delivery, /REQUIRED_GAPS/);
+  assert.match(delivery, /evidenceChanges/);
 });
 
 test('next-week execution plan contains exactly 90 ordered atomic increments and seven daily gates', () => {
@@ -111,6 +115,9 @@ test('every remaining feature has a token-bounded file read pack', () => {
   assert.match(readPacks, /CODEX_F1_F2_VERIFICATION_2026-09-07\.md` — قسم F2 فقط/);
   assert.match(readPacks, /src\/components\/LaborTimesheetModal\.tsx/);
   assert.match(readPacks, /src\/components\/EquipmentLogModal\.tsx/);
+  assert.match(readPacks, /src-tauri\/src\/claims_workflow\.rs/);
+  assert.match(readPacks, /src\/components\/ClaimAssessmentModal\.tsx/);
+  assert.match(readPacks, /tests\/tauri-command-registration\.test\.mjs/);
   assert.match(specification, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(prompt, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(master, /FEATURE_READ_PACKS_AR\.md/);
