@@ -157,6 +157,65 @@ Control Account/Cost Code، التقويم/السعة، Financial Period وCost 
 **القبول:** PASS لكل `W02-G01..G10` وكامل Node/build/Cargo/diff. أي اعتماد على
 `INSERT OR REPLACE` أو generic status أو اختبار نصي فقط يبقي W02 مفتوحة وأقل من 8/10.
 
+## ملف التنفيذ الكامل W03 — المطالبات وأمر التغيير المحتمل PVO
+
+```text
+FEATURE_ID=W03
+PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX
+SOURCE_OF_TRUTH=claims|claim_lines|variations|variation_lines|contracts|delay_events|documents|rfi_entries|boq_items|reporting_periods|audit_log
+MODIFY_ALLOWLIST=see ACTIVE.md
+DELETE_ALLOWLIST=[]
+ACCEPTANCE_GAPS=W03-G01|W03-G02|W03-G03|W03-G04|W03-G05|W03-G06|W03-G07|W03-G08|W03-G09|W03-G10
+DELIVERY_GATE=tools/agent-delivery-gate.ps1
+AGENT_FINAL_STATE=READY_FOR_CODEX_REVIEW_OR_WIP_BLOCKED
+```
+
+**الحالة الحالية:** `PARTIAL — NOT ACCEPTED`. يوجد register وtypes وواجهة assessment
+وحفظ generic وتحويل frontend متتابع. هذه ليست دورة حاكمة: الحفظ والسطور غير ذريين،
+الحالات غير موحدة، التحويل قد يترك Variation جزئية أو مكررة، ولا توجد أوامر backend
+حاكمة أو maker-checker أو ضمان عدم الأثر قبل الاعتماد.
+
+**النتيجة التشغيلية:** فصل Claim/PVO المحتمل عن Variation المعتمد. الإشعار والتقييم
+والأدلة والوقت والقيمة تظل facts للمطالبة فقط؛ ولا تعدل BOQ/SOV/Budget/Contract finish/
+Cash حتى اعتماد المطالبة ثم تحويلها ذريًا إلى Variation واحدة Draft قابلة للتتبع.
+
+**الفجوات الملزمة:**
+
+- `W03-G01 — mounted workbench`: شاشة فعلية للرأس والسطور والأدلة تعرض claimed/
+  assessed/approved cost and days منفصلة، وتحفظ ثم تعيد الفتح من SQLite دون mock lines.
+- `W03-G02 — canonical lifecycle`: المسار الحصري `Draft → Notified → Submitted →
+  Under Assessment → Assessed → Approved/Rejected → Converted` مع منع القفز والتحرير
+  بعد الاعتماد ومنع self-approval؛ توحيد قيم status بين TypeScript وUI وSQLite.
+- `W03-G03 — atomic draft and lines`: حفظ الرأس والسطور (insert/update/remove) في
+  transaction واحدة، مع unique claim number داخل المشروع والعقد ومنع orphan/stale lines.
+- `W03-G04 — contractual scope`: project/contract/claimant/respondent وBOQ/activity/
+  delay/RFI/document links كلها ضمن النطاق نفسه، والعقد الباطن يعود إلى عقده الرئيسي؛
+  لا أول سجل ولا cross-project/cross-contract fallback.
+- `W03-G05 — notice and evidence`: event date وnotice date وdeadline من شرط عقد فعلي.
+  عند غياب الشرط تظهر `Requires setup` لا مدة مختلقة؛ late notice واضح، والدليل المطلوب
+  يمنع Submitted/Approved عند غيابه.
+- `W03-G06 — assessment integrity`: أنواع السطور New Item/Quantity/Rate/Time/Markup،
+  والقيم assessed/approved لا تتجاوز claimed دون reason؛ cost-only/time-only/mixed و
+  partial assessment مدعومة، والمجاميع مشتقة من السطور لا من رأس يدوي متعارض.
+- `W03-G07 — no premature impact`: كل الحالات قبل Converted لا تنشئ ولا تعدل
+  Variation/BOQ/SOV/Budget/Cash/contract finish؛ اختبارات سلبية تثبت ذلك بعد reopen.
+- `W03-G08 — exactly-once conversion`: Approved فقط يتحول داخل transaction واحدة إلى
+  Variation واحدة وVariation Lines قابلة للتتبع بـsource_claim_id/source_claim_line_id؛
+  retry يعيد نفس النتيجة، وأي فشل متأخر يعيد كل الكتابات والحالة والتدقيق.
+- `W03-G09 — rejection/reopen/reversal`: Rejected بلا أثر تجاري. إلغاء التحويل لا
+  يحذف التاريخ؛ يستخدم مسار variation reversal الحاكم ويعيد حالة قابلة للتدقيق مع سبب
+  وتاريخ مفتوح، ويحترم locked reporting period.
+- `W03-G10 — executable reconciliation`: اختبارات Rust/SQLite للدورة والـscope والـ
+  late notice/evidence/partial assessment/duplicate conversion/rollback/lock/reopen،
+  وتطابق claim approved values مع Variation draft حتى `0.01`، مع UI wiring حقيقي.
+
+**الممنوعات الخاصة:** لا تعتبر Migration 63 أو اختبار object literals دليل قبول؛ لا
+تستخدم generic CRUD لتغيير status؛ لا تكتب مباشرة في BOQ/SOV/Budget/Cash أثناء
+conversion؛ لا تضف بيانات وهمية؛ ولا تبدأ W04 حتى يغلق Codex كل `W03-G01..G10`.
+
+**القبول:** PASS لكل الفجوات وكامل Node/build/Cargo/diff. تقرير الوكيل لا يغلق الميزة
+ولا يمنح 8/10؛ Codex وحده يطابق الأدلة التنفيذية مع هذه البوابات.
+
 ## اليوم 1 — قبول وتقسية F1–G3 (13)
 
 1. `W01 / D1-01` العمالة: تنفيذ ملف W01 الكامل أعلاه وإغلاق `W01-G01..G10`؛ الحزمة `F1/RP-D1`. لا يبدأ W02 قبل قبول Codex.

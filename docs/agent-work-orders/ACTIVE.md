@@ -7,29 +7,29 @@
 STATE_SCHEMA=2
 OWNER=CODEX
 AGENT_MUST_NOT_EDIT=true
-ACCEPTED_HEAD=8a0c4bd1ec3351e6b7d50e7de8670e6b2b6d28a2
-CLOUD_BASE_BRANCH=codex/accepted-w01
-CURRENT_FEATURE=W02
-CURRENT_TITLE=Equipment Meter Hours and Fuel Posting
+ACCEPTED_HEAD=73fd3bdea4be2f4f4838d2e3e8b1a77671abae24
+CLOUD_BASE_BRANCH=codex/accepted-w02
+CURRENT_FEATURE=W03
+CURRENT_TITLE=Claims and Potential Variation Order Governance
 CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED
-PREREQUISITE=W01:CLOSED_8_OF_10_BY_CODEX
-SPEC_ANCHOR=W02
+PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX
+SPEC_ANCHOR=W03
 SPEC_FILE=docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md
-READ_PACK=RP-W02
+READ_PACK=RP-W03
 UNIFIED_PROMPT=docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md
-NEXT_FEATURE=W03
+NEXT_FEATURE=W04
 DELETE_ALLOWLIST=[]
-MODIFY_ALLOWLIST=src-tauri/src/equipment_log.rs|src-tauri/src/lib.rs|src/data/equipmentLog.ts|src/components/EquipmentLogModal.tsx|src/types/index.ts|src/App.tsx|tests/equipment-log.test.mjs|tests/financial-ledger-migration.test.mjs|tests/tauri-command-registration.test.mjs|docs/agent-results/W02_RESULT.md|docs/agent-results/W02_EVIDENCE.json
-CONDITIONAL_MODIFY=src/data/dataDictionary.ts|src/data/sqliteRepository.ts|src/hooks/useData.ts|src/utils/resourceLoading.ts|src/utils/controlAccountSummary.ts|src/utils/schedulePlanning.ts|tests/control-account-migration.test.mjs
+MODIFY_ALLOWLIST=src-tauri/src/claims_workflow.rs|src-tauri/src/lib.rs|src/data/claims.ts|src/components/ClaimAssessmentModal.tsx|src/types/index.ts|src/App.tsx|tests/claim-assessment-pvo.test.mjs|tests/tauri-command-registration.test.mjs|docs/agent-results/W03_RESULT.md|docs/agent-results/W03_EVIDENCE.json
+CONDITIONAL_MODIFY=src/data/dataDictionary.ts|src/data/sqliteRepository.ts|src/hooks/useData.ts|src/data/variationPackage.ts|src/data/commercialWorkflow.ts|src/utils/delayImpact.ts|tests/phase1-commercial.test.mjs|tests/delay-impact-register.test.mjs
 FORBIDDEN=AGENTS.md|docs/agent-work-orders/**|package.json|package-lock.json|bun.lock|src-tauri/Cargo.toml|src-tauri/Cargo.lock|vite.config.*|.env*|metadata.json
-REQUIRED_GAPS=W02-G01|W02-G02|W02-G03|W02-G04|W02-G05|W02-G06|W02-G07|W02-G08|W02-G09|W02-G10
+REQUIRED_GAPS=W03-G01|W03-G02|W03-G03|W03-G04|W03-G05|W03-G06|W03-G07|W03-G08|W03-G09|W03-G10
 REQUIRED_TESTS=npm test|npm run build|cargo test --manifest-path src-tauri/Cargo.toml|git diff --check
 ```
 
 قواعد حاسمة:
 
 - ابدأ فقط بعد نجاح `tools/agent-preflight.ps1`.
-- نفذ W02 وحدها ولا تبدأ W03.
+- نفذ W03 وحدها ولا تبدأ W04.
 - لا تعدل قائمة `CONDITIONAL_MODIFY` إلا عند إثبات dependency مباشر وتسجيل السبب.
 - لا commit ولا Push قبل نجاح `tools/agent-delivery-gate.ps1`.
 - لا تكتب `PASS` أو `CLOSED` أو تقييمًا ذاتيًا. النتيجة الوحيدة المسموحة:

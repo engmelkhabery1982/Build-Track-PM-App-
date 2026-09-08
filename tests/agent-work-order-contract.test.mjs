@@ -35,9 +35,10 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /CURRENT_FEATURE=W02/);
+  assert.match(active, /CURRENT_FEATURE=W03/);
   assert.match(active, /CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED/);
-  assert.match(active, /PREREQUISITE=W01:CLOSED_8_OF_10_BY_CODEX/);
+  assert.match(active, /PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX/);
+  assert.match(active, /CLOUD_BASE_BRANCH=codex\/accepted-w02/);
   assert.match(active, /AGENT_MUST_NOT_EDIT=true/);
   assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
@@ -73,6 +74,7 @@ test('next-week execution plan contains exactly 90 ordered atomic increments and
   for (let index = 1; index <= 10; index += 1) {
     assert.match(plan, new RegExp(`W01-G${String(index).padStart(2, '0')}`));
     assert.match(plan, new RegExp(`W02-G${String(index).padStart(2, '0')}`));
+    assert.match(plan, new RegExp(`W03-G${String(index).padStart(2, '0')}`));
   }
   assert.match(plan, /UI → governed command\/repository → SQLite transaction/);
   assert.match(plan, /PARTIAL — 4\/10 — NOT ACCEPTED/);
