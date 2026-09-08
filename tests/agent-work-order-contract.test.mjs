@@ -23,6 +23,8 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
   const prompt = read('docs/agent-work-orders/UNIVERSAL_CLOUD_AGENT_PROMPT_V2_AR.md');
   assert.match(prompt, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
   assert.match(prompt, /CURRENT_FEATURE/);
+  assert.match(prompt, /DELIVERY_BRANCH/);
+  assert.match(prompt, /لا تدفع إلى `main`/);
   assert.match(prompt, /agent-preflight\.ps1/);
   assert.match(prompt, /agent-delivery-gate\.ps1/);
   assert.match(prompt, /MODIFY_ALLOWLIST/);
@@ -39,6 +41,7 @@ test('active and master work orders point to the current gate and detailed autho
   assert.match(active, /CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED/);
   assert.match(active, /PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX/);
   assert.match(active, /CLOUD_BASE_BRANCH=codex\/accepted-w02/);
+  assert.match(active, /DELIVERY_BRANCH=agent\/w03-claims-pvo/);
   assert.match(active, /AGENT_MUST_NOT_EDIT=true/);
   assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
@@ -53,6 +56,7 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(preflight, /git status --porcelain=v1/);
   assert.match(preflight, /merge-base --is-ancestor/);
   assert.match(preflight, /CURRENT_FEATURE/);
+  assert.match(preflight, /must equal DELIVERY_BRANCH/);
   assert.match(delivery, /outside MODIFY_ALLOWLIST/);
   assert.match(delivery, /delete\/rename forbidden/);
   assert.match(delivery, /npm test/);

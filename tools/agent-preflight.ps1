@@ -13,7 +13,7 @@ Get-Content -LiteralPath $activePath | ForEach-Object {
     if ($_ -match '^([A-Z_]+)=(.*)$') { $active[$matches[1]] = $matches[2].Trim() }
 }
 
-foreach ($key in @('ACCEPTED_HEAD','CLOUD_BASE_BRANCH','CURRENT_FEATURE','MODIFY_ALLOWLIST','FORBIDDEN')) {
+foreach ($key in @('ACCEPTED_HEAD','CLOUD_BASE_BRANCH','DELIVERY_BRANCH','CURRENT_FEATURE','MODIFY_ALLOWLIST','FORBIDDEN')) {
     if (-not $active.ContainsKey($key) -or [string]::IsNullOrWhiteSpace($active[$key])) {
         throw "PREFLIGHT FAIL: ACTIVE.$key is missing."
     }
@@ -25,6 +25,9 @@ if ($status.Count -gt 0) { throw "PREFLIGHT FAIL: working tree is not clean.`n$(
 
 $head = (& git rev-parse HEAD).Trim()
 $branch = (& git branch --show-current).Trim()
+if ($branch -ne $active.DELIVERY_BRANCH) {
+    throw "PREFLIGHT FAIL: current branch '$branch' must equal DELIVERY_BRANCH '$($active.DELIVERY_BRANCH)'."
+}
 & git merge-base --is-ancestor $active.ACCEPTED_HEAD $head
 if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT FAIL: HEAD $head is not based on accepted $($active.ACCEPTED_HEAD)." }
 
@@ -45,6 +48,7 @@ foreach ($path in $required) {
     repository = $root
     branch = $branch
     required_base_branch = $active.CLOUD_BASE_BRANCH
+    delivery_branch = $active.DELIVERY_BRANCH
     head = $head
     accepted_ancestor = $active.ACCEPTED_HEAD
     feature = $active.CURRENT_FEATURE
