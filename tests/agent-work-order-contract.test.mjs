@@ -85,10 +85,13 @@ test('next-week execution plan contains exactly 90 ordered atomic increments and
     assert.match(plan, new RegExp(`W01-G${String(index).padStart(2, '0')}`));
     assert.match(plan, new RegExp(`W02-G${String(index).padStart(2, '0')}`));
     assert.match(plan, new RegExp(`W03-G${String(index).padStart(2, '0')}`));
+    assert.match(plan, new RegExp(`W04-G${String(index).padStart(2, '0')}`));
   }
   assert.match(plan, /مخطط `variations` و`variation_lines` الحالي يعتمد أعمدة النطاق و`payload`/);
   assert.match(plan, /لا مدة notice افتراضية 28 يومًا/);
   assert.match(plan, /لا يحتوي Payment Certificate\/Cash Forecast\/Report Designer/);
+  assert.match(plan, /append-only payments/);
+  assert.match(plan, /لا تخلط W05 Cash Forecast مع W04/);
   assert.match(plan, /UI → governed command\/repository → SQLite transaction/);
   assert.match(plan, /PARTIAL — 4\/10 — NOT ACCEPTED/);
 });

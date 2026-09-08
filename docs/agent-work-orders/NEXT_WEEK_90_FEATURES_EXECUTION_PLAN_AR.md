@@ -232,6 +232,42 @@ conversion؛ لا تضف بيانات وهمية؛ ولا تبدأ W04 حتى ي
 **القبول:** PASS لكل الفجوات وكامل Node/build/Cargo/diff. تقرير الوكيل لا يغلق الميزة
 ولا يمنح 8/10؛ Codex وحده يطابق الأدلة التنفيذية مع هذه البوابات.
 
+## ملف التنفيذ الكامل W04 — مصالحة الفواتير وشهادات الدفع
+
+```text
+FEATURE_ID=W04
+PREREQUISITE=W03:CLOSED_8_OF_10_BY_CODEX
+SOURCE_OF_TRUTH=wir_entries|boq_items|contracts|payment_certificates|client_invoices|subcontractor_invoices|client_invoice_tracking|subcontractor_invoice_tracking|cash_flow|reporting_periods|audit_log
+ACCEPTANCE_GAPS=W04-G01|W04-G02|W04-G03|W04-G04|W04-G05|W04-G06|W04-G07|W04-G08|W04-G09|W04-G10
+AGENT_FINAL_STATE=READY_FOR_CODEX_REVIEW_OR_WIP_BLOCKED
+```
+
+- `W04-G01 — mounted reconciliation`: workbench يفتح دون مخالفة Rules of Hooks،
+  يجمع WIR المقبول للفترة والبند ويعرض previous/current/cumulative ومصادر كل line.
+- `W04-G02 — authoritative scope/rates`: backend يعيد الاشتقاق من WIR/BOQ/contract؛
+  العميل بسعر البيع الرئيسي والباطن بسعر عقده الحقيقي، ويرفض missing/cross-scope facts.
+- `W04-G03 — quantity lock`: قفل source WIR quantities exactly-once ومنع duplicate أو
+  concurrent certification وover-certification مقابل revised BOQ quantity.
+- `W04-G04 — commercial formula`: gross/retention/advance/deductions/markup/tax/net
+  صيغ مركزية محكومة حتى `0.01` ومن شروط العقد، لا قيم رأس يثق بها backend.
+- `W04-G05 — lifecycle`: `Draft → Submitted → Approved → Partially Paid → Paid →
+  Reversed` حصري، وSQL triggers تشمل Partially Paid ولا generic CRUD/fallback.
+- `W04-G06 — append-only payments`: كل دفعة الجزئية قيد مستقل بمعرف فريد؛ الثانية
+  والثالثة تعملان، cumulative paid مشتق، والمبلغ صفر/سالب/أكبر من الرصيد مرفوض.
+- `W04-G07 — AR/AP synchronization`: سجل الفاتورة يظل Partially Paid بالمبلغ والرصيد،
+  ثم Paid؛ cash وtracking وcertificate تتغير ذريًا وتعود صحيحة بعد reopen/reversal.
+- `W04-G08 — cumulative governance`: التاريخ والـretention والـadvance يشملان Approved/
+  Partially Paid/Paid؛ الشهادة التالية لا تتجاوز caps ولا تتراجع زمنيًا.
+- `W04-G09 — optional back-to-back`: يطبق فقط بعلم contract term صريح وعلى البند/
+  الكمية/القيمة والتحصيل المرتبط، ويكون backend blocking لا advisory عام.
+- `W04-G10 — executable evidence`: Rust/SQLite يغطي 5 WIR aggregation، duplicate/race،
+  over-certification، locked period، cross-scope/rate، multiple partials، rollback،
+  reopen/reversal وAR/AP/Cash reconciliation؛ Node/build/Cargo/diff كلها PASS.
+
+**تصحيح التسليم السابق:** لا تخلط W05 Cash Forecast مع W04؛ لا تثق في خطوط أو gross
+قادمة من UI؛ لا تستخدم posting type واحدًا بقيد unique لكل الدفعات؛ لا تجعل missing
+payment amount يعني full payment؛ ولا تكتب اختبار utility فقط وتدعي قبول backend.
+
 ## اليوم 1 — قبول وتقسية F1–G3 (13)
 
 1. `W01 / D1-01` العمالة: تنفيذ ملف W01 الكامل أعلاه وإغلاق `W01-G01..G10`؛ الحزمة `F1/RP-D1`. لا يبدأ W02 قبل قبول Codex.
