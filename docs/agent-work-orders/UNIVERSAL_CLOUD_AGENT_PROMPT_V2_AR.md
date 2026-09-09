@@ -18,6 +18,8 @@
    المنصات هي `node tools/agent-preflight.mjs` ولا تحتاج PowerShell. لا تشغّل ملف
    `.ps1` في Linux/Arena ولا تعتبر غياب `pwsh` عائقًا. يسمح لبيئة Arena بفرع العمل
    المؤقت المطابق لـ`WORK_BRANCH_PATTERN`، بينما يظل هدف المزامنة النهائي `main`.
+   إذا كان التاريخ ضحلًا ولا يوجد `ACCEPTED_HEAD` محليًا، ستستخدم البوابة تلقائيًا
+   `REMOTE_MAIN_ATTESTATION`؛ لا تنشئ commit وهميًا ولا تغيّر `ACCEPTED_HEAD`.
    بدون PASS لا تعديل. `ACTIVE.CURRENT_FEATURE` وحدها تختار العمل.
 4. نفذ ميزة واحدة فقط. عدّل `MODIFY_ALLOWLIST` فقط. الملف المشروط يحتاج dependency
    مباشرًا مسجلًا. أي delete/rename أو ملف خارج النطاق مرفوض.

@@ -14,6 +14,9 @@
 - في Google Arena قد يكون فرع العمل `arena/*`؛ هذا مسموح إذا طابق
   `ACTIVE.WORK_BRANCH_PATTERN`. لا تغيّر المؤشر، ويظل GitHub sync إلى `main`.
 - استخدم بوابات Node `.mjs` في كل الأنظمة؛ ملفات PowerShell بديل Windows فقط.
+- إذا كانت Arena لا تحتوي commit التاريخي بسبب shallow snapshot، فالـpreflight لا يتجاوز
+  الحوكمة: يشترط أن يساوي HEAD نسخة `origin/main` المسحوبة وأن تطابق بصمة ملف قبول Codex
+  القيم المسجلة في `ACTIVE.md`.
 - كاتب واحد فقط لكل branch. العمل المتوازي يكون بفروع مستقلة وميزات مختلفة.
 
 ## حدود المنتج الثابتة

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -28,8 +29,27 @@ const patternText = active.WORK_BRANCH_PATTERN || `^${active.DELIVERY_BRANCH.rep
 let pattern;
 try { pattern = new RegExp(patternText); } catch { fail(`invalid WORK_BRANCH_PATTERN: ${patternText}`); }
 if (!pattern.test(branch)) fail(`current branch '${branch}' does not match WORK_BRANCH_PATTERN '${patternText}'.`);
-try { run('git', ['merge-base', '--is-ancestor', active.ACCEPTED_HEAD, head]); }
-catch { fail(`HEAD ${head} is not based on accepted ${active.ACCEPTED_HEAD}.`); }
+let lineage_verification = 'ANCESTOR';
+try {
+  run('git', ['cat-file', '-e', `${active.ACCEPTED_HEAD}^{commit}`]);
+  run('git', ['merge-base', '--is-ancestor', active.ACCEPTED_HEAD, head]);
+} catch {
+  if (active.ACCEPTED_LINEAGE_MODE !== 'ANCESTOR_OR_REMOTE_MAIN_ATTESTATION') {
+    fail(`HEAD ${head} is not based on accepted ${active.ACCEPTED_HEAD}.`);
+  }
+  let remoteHead;
+  try { remoteHead = run('git', ['rev-parse', `origin/${active.CLOUD_BASE_BRANCH}`]); }
+  catch { fail(`accepted commit is absent and origin/${active.CLOUD_BASE_BRANCH} cannot be verified.`); }
+  if (remoteHead !== head) fail(`accepted history is shallow and HEAD ${head} does not equal pulled origin/${active.CLOUD_BASE_BRANCH} ${remoteHead}.`);
+  const attestationRelative = active.ACCEPTED_ATTESTATION_FILE;
+  const expectedHash = active.ACCEPTED_ATTESTATION_SHA256;
+  if (!attestationRelative || !expectedHash) fail('shallow verification requires ACCEPTED_ATTESTATION_FILE and SHA256.');
+  const attestationPath = resolve(root, attestationRelative);
+  if (!existsSync(attestationPath)) fail(`accepted attestation is missing: ${attestationRelative}`);
+  const actualHash = createHash('sha256').update(readFileSync(attestationPath)).digest('hex').toUpperCase();
+  if (actualHash !== expectedHash.toUpperCase()) fail(`accepted attestation hash mismatch: ${attestationRelative}`);
+  lineage_verification = 'REMOTE_MAIN_ATTESTATION';
+}
 
 for (const path of ['AGENTS.md', 'docs/agent-work-orders/AGENT_START_HERE_AR.md', 'docs/agent-work-orders/ACTIVE.md',
   'docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md', 'docs/agent-work-orders/FEATURE_READ_PACKS_AR.md',
@@ -39,6 +59,6 @@ for (const path of ['AGENTS.md', 'docs/agent-work-orders/AGENT_START_HERE_AR.md'
 
 console.log(JSON.stringify({ result: 'PASS', repository: root, branch,
   required_base_branch: active.CLOUD_BASE_BRANCH, delivery_target: active.DELIVERY_BRANCH,
-  head, accepted_ancestor: active.ACCEPTED_HEAD, feature: active.CURRENT_FEATURE,
+  head, accepted_ancestor: active.ACCEPTED_HEAD, lineage_verification, feature: active.CURRENT_FEATURE,
   correction_file: active.CORRECTION_FILE || null, execution_plan_file: active.EXECUTION_PLAN_FILE || null,
   modify_allowlist: active.MODIFY_ALLOWLIST.split('|'), conditional_modify: (active.CONDITIONAL_MODIFY || '').split('|').filter(Boolean) }, null, 2));

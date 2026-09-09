@@ -85,6 +85,9 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(delivery, /evidenceChanges/);
   assert.match(portablePreflight, /WORK_BRANCH_PATTERN/);
   assert.match(portablePreflight, /merge-base/);
+  assert.match(portablePreflight, /REMOTE_MAIN_ATTESTATION/);
+  assert.match(portablePreflight, /ACCEPTED_ATTESTATION_SHA256/);
+  assert.match(portablePreflight, /origin\/\$\{active\.CLOUD_BASE_BRANCH\}/);
   assert.match(portableDelivery, /READY FOR CODEX REVIEW/);
   assert.match(portableDelivery, /REQUIRED_GAPS/);
   assert.match(portableDelivery, /execute\('npm', \['run', 'build'\]\)/);

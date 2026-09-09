@@ -38,8 +38,26 @@ $workBranchPattern = if ($active.WORK_BRANCH_PATTERN) { $active.WORK_BRANCH_PATT
 if ($branch -notmatch $workBranchPattern) {
     throw "PREFLIGHT FAIL: current branch '$branch' does not match WORK_BRANCH_PATTERN '$workBranchPattern'."
 }
-& git merge-base --is-ancestor $active.ACCEPTED_HEAD $head
-if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT FAIL: HEAD $head is not based on accepted $($active.ACCEPTED_HEAD)." }
+$lineageVerification = 'ANCESTOR'
+& git cat-file -e "$($active.ACCEPTED_HEAD)^{commit}" 2>$null
+$acceptedExists = $LASTEXITCODE -eq 0
+if ($acceptedExists) {
+    & git merge-base --is-ancestor $active.ACCEPTED_HEAD $head
+    if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT FAIL: HEAD $head is not based on accepted $($active.ACCEPTED_HEAD)." }
+} else {
+    if ($active.ACCEPTED_LINEAGE_MODE -ne 'ANCESTOR_OR_REMOTE_MAIN_ATTESTATION') {
+        throw "PREFLIGHT FAIL: accepted commit is missing and attestation fallback is disabled."
+    }
+    $remoteHead = (& git rev-parse "origin/$($active.CLOUD_BASE_BRANCH)").Trim()
+    if ($LASTEXITCODE -ne 0 -or $remoteHead -ne $head) {
+        throw "PREFLIGHT FAIL: shallow history requires HEAD to equal pulled origin/$($active.CLOUD_BASE_BRANCH)."
+    }
+    $attestationPath = Join-Path $root $active.ACCEPTED_ATTESTATION_FILE
+    if (-not (Test-Path -LiteralPath $attestationPath -PathType Leaf)) { throw 'PREFLIGHT FAIL: accepted attestation is missing.' }
+    $actualHash = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash
+    if ($actualHash -ne $active.ACCEPTED_ATTESTATION_SHA256) { throw 'PREFLIGHT FAIL: accepted attestation hash mismatch.' }
+    $lineageVerification = 'REMOTE_MAIN_ATTESTATION'
+}
 
 $required = @(
     'AGENTS.md',
@@ -61,6 +79,7 @@ foreach ($path in $required) {
     delivery_branch = $active.DELIVERY_BRANCH
     head = $head
     accepted_ancestor = $active.ACCEPTED_HEAD
+    lineage_verification = $lineageVerification
     feature = $active.CURRENT_FEATURE
     correction_file = $active.CORRECTION_FILE
     execution_plan_file = $active.EXECUTION_PLAN_FILE
