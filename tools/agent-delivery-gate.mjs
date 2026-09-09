@@ -15,7 +15,7 @@ const execute = (command, args = []) => {
 const git = (...args) => { const result = execute('git', args); if (result.exit_code) fail(result.output); return result.output; };
 const root = git('rev-parse', '--show-toplevel'); process.chdir(root);
 const active = Object.fromEntries(readFileSync(resolve(root, 'docs/agent-work-orders/ACTIVE.md'), 'utf8').split(/\r?\n/)
-  .map((line) => line.match(/^([A-Z_]+)=(.*)$/)).filter(Boolean).map((m) => [m[1], m[2].trim()]));
+  .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean).map((m) => [m[1], m[2].trim()]));
 const feature = argv.feature; const startHead = argv['start-head'];
 if (!feature || !startHead) fail('use --start-head <commit> --feature <Wxx>.');
 if (feature !== active.CURRENT_FEATURE) fail(`requested ${feature} but ACTIVE selects ${active.CURRENT_FEATURE}.`);

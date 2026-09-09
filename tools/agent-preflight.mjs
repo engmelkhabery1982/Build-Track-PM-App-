@@ -11,7 +11,7 @@ process.chdir(root);
 const activePath = resolve(root, 'docs/agent-work-orders/ACTIVE.md');
 if (!existsSync(activePath)) fail('ACTIVE.md is missing.');
 const active = Object.fromEntries(readFileSync(activePath, 'utf8').split(/\r?\n/)
-  .map((line) => line.match(/^([A-Z_]+)=(.*)$/)).filter(Boolean)
+  .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean)
   .map((match) => [match[1], match[2].trim()]));
 
 for (const key of ['ACCEPTED_HEAD', 'CLOUD_BASE_BRANCH', 'DELIVERY_BRANCH', 'CURRENT_FEATURE', 'MODIFY_ALLOWLIST', 'FORBIDDEN']) {

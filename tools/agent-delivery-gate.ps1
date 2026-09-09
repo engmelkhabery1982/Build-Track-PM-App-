@@ -12,7 +12,7 @@ Set-Location -LiteralPath $root
 
 $active = @{}
 Get-Content -LiteralPath (Join-Path $root 'docs/agent-work-orders/ACTIVE.md') | ForEach-Object {
-    if ($_ -match '^([A-Z_]+)=(.*)$') { $active[$matches[1]] = $matches[2].Trim() }
+    if ($_ -match '^([A-Z_][A-Z0-9_]*)=(.*)$') { $active[$matches[1]] = $matches[2].Trim() }
 }
 if ($Feature -ne $active.CURRENT_FEATURE) {
     throw "DELIVERY FAIL: requested $Feature but ACTIVE selects $($active.CURRENT_FEATURE)."

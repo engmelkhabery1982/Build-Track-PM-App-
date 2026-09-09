@@ -97,7 +97,11 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
 
 test('accepted W03 attestation is line-ending independent for Windows and Arena', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
+  const parsed = Object.fromEntries(active.split(/\r?\n/)
+    .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean)
+    .map((match) => [match[1], match[2].trim()]));
   const expected = active.match(/^ACCEPTED_ATTESTATION_SHA256=(.+)$/m)?.[1].trim();
+  assert.equal(parsed.ACCEPTED_ATTESTATION_SHA256, expected);
   const source = read('docs/agent-results/CODEX_W03_ACCEPTANCE_2026-09-09.md').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const digest = (text) => createHash('sha256').update(text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'), 'utf8').digest('hex').toUpperCase();
   assert.equal(digest(source), expected);

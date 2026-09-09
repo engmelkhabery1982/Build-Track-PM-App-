@@ -10,7 +10,7 @@ $activePath = Join-Path $root 'docs/agent-work-orders/ACTIVE.md'
 if (-not (Test-Path -LiteralPath $activePath)) { throw 'PREFLIGHT FAIL: ACTIVE.md is missing.' }
 $active = @{}
 Get-Content -LiteralPath $activePath | ForEach-Object {
-    if ($_ -match '^([A-Z_]+)=(.*)$') { $active[$matches[1]] = $matches[2].Trim() }
+    if ($_ -match '^([A-Z_][A-Z0-9_]*)=(.*)$') { $active[$matches[1]] = $matches[2].Trim() }
 }
 
 foreach ($key in @('ACCEPTED_HEAD','CLOUD_BASE_BRANCH','DELIVERY_BRANCH','CURRENT_FEATURE','MODIFY_ALLOWLIST','FORBIDDEN')) {
