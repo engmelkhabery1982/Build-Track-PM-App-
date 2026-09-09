@@ -11,6 +11,9 @@
 - الوكيل يسحب آخر `CLOUD_BASE_BRANCH` أولًا ويسجل HEAD الناتج باعتباره `START_HEAD`.
   `ACCEPTED_HEAD` هو سلف وظيفي موثوق للتحقق فقط، وليس commit للـcheckout أو reset.
 - الوكيل ينفذ ميزة واحدة فقط فوق `START_HEAD` الفعلي.
+- في Google Arena قد يكون فرع العمل `arena/*`؛ هذا مسموح إذا طابق
+  `ACTIVE.WORK_BRANCH_PATTERN`. لا تغيّر المؤشر، ويظل GitHub sync إلى `main`.
+- استخدم بوابات Node `.mjs` في كل الأنظمة؛ ملفات PowerShell بديل Windows فقط.
 - كاتب واحد فقط لكل branch. العمل المتوازي يكون بفروع مستقلة وميزات مختلفة.
 
 ## حدود المنتج الثابتة

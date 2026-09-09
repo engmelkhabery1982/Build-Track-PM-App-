@@ -26,8 +26,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
   assert.match(prompt, /DELIVERY_BRANCH/);
   assert.match(prompt, /BuildTrack-Agent-Cloud\/main/);
   assert.match(prompt, /ممنوع الوصول إلى المستودع الرسمي/);
-  assert.match(prompt, /agent-preflight\.ps1/);
-  assert.match(prompt, /agent-delivery-gate\.ps1/);
+  assert.match(prompt, /agent-preflight\.mjs/);
+  assert.match(prompt, /agent-delivery-gate\.mjs/);
+  assert.match(prompt, /WORK_BRANCH_PATTERN/);
   assert.match(prompt, /MODIFY_ALLOWLIST/);
   assert.match(prompt, /أي delete\/rename/);
   assert.match(prompt, /لا تكتب CLOSED أو 8\/10/);
@@ -62,10 +63,12 @@ test('active and master work orders point to the current gate and detailed autho
 test('machine agent gates enforce accepted ancestry, allowlists and executable evidence', () => {
   const preflight = read('tools/agent-preflight.ps1');
   const delivery = read('tools/agent-delivery-gate.ps1');
+  const portablePreflight = read('tools/agent-preflight.mjs');
+  const portableDelivery = read('tools/agent-delivery-gate.mjs');
   assert.match(preflight, /git status --porcelain=v1/);
   assert.match(preflight, /merge-base --is-ancestor/);
   assert.match(preflight, /CURRENT_FEATURE/);
-  assert.match(preflight, /must equal DELIVERY_BRANCH/);
+  assert.match(preflight, /WORK_BRANCH_PATTERN/);
   assert.match(delivery, /outside MODIFY_ALLOWLIST/);
   assert.match(delivery, /delete\/rename forbidden/);
   assert.match(delivery, /npm test/);
@@ -80,6 +83,12 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(preflight, /CORRECTION_FILE/);
   assert.match(preflight, /EXECUTION_PLAN_FILE/);
   assert.match(delivery, /evidenceChanges/);
+  assert.match(portablePreflight, /WORK_BRANCH_PATTERN/);
+  assert.match(portablePreflight, /merge-base/);
+  assert.match(portableDelivery, /READY FOR CODEX REVIEW/);
+  assert.match(portableDelivery, /REQUIRED_GAPS/);
+  assert.match(portableDelivery, /execute\('npm', \['run', 'build'\]\)/);
+  assert.match(portableDelivery, /execute\('cargo', \['test'/);
 });
 
 test('next-week execution plan contains exactly 90 ordered atomic increments and seven daily gates', () => {

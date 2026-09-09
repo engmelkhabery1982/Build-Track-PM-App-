@@ -34,8 +34,9 @@ if ($status.Count -gt 0) { throw "PREFLIGHT FAIL: working tree is not clean.`n$(
 
 $head = (& git rev-parse HEAD).Trim()
 $branch = (& git branch --show-current).Trim()
-if ($branch -ne $active.DELIVERY_BRANCH) {
-    throw "PREFLIGHT FAIL: current branch '$branch' must equal DELIVERY_BRANCH '$($active.DELIVERY_BRANCH)'."
+$workBranchPattern = if ($active.WORK_BRANCH_PATTERN) { $active.WORK_BRANCH_PATTERN } else { '^' + [regex]::Escape($active.DELIVERY_BRANCH) + '$' }
+if ($branch -notmatch $workBranchPattern) {
+    throw "PREFLIGHT FAIL: current branch '$branch' does not match WORK_BRANCH_PATTERN '$workBranchPattern'."
 }
 & git merge-base --is-ancestor $active.ACCEPTED_HEAD $head
 if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT FAIL: HEAD $head is not based on accepted $($active.ACCEPTED_HEAD)." }

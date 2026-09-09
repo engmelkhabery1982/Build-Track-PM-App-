@@ -14,8 +14,11 @@
    `READ_PACK` فقط من `FEATURE_READ_PACKS_AR.md`. لا تبدأ التعديل قبل اكتمال هذه
    القراءة، ولا تقرأ Master/Charter/Ledger أو
    نتائج قديمة إلا إذا سمت الحزمة مقطعًا محددًا.
-3. شغّل `tools/agent-preflight.ps1`. بدون PASS لا تعديل. `ACTIVE.CURRENT_FEATURE`
-   وحدها تختار العمل؛ Ledger/results/conversation لا تختاره.
+3. شغّل الأمر المكتوب حرفيًا في `ACTIVE.PREFLIGHT_COMMAND`. البوابة الأساسية متعددة
+   المنصات هي `node tools/agent-preflight.mjs` ولا تحتاج PowerShell. لا تشغّل ملف
+   `.ps1` في Linux/Arena ولا تعتبر غياب `pwsh` عائقًا. يسمح لبيئة Arena بفرع العمل
+   المؤقت المطابق لـ`WORK_BRANCH_PATTERN`، بينما يظل هدف المزامنة النهائي `main`.
+   بدون PASS لا تعديل. `ACTIVE.CURRENT_FEATURE` وحدها تختار العمل.
 4. نفذ ميزة واحدة فقط. عدّل `MODIFY_ALLOWLIST` فقط. الملف المشروط يحتاج dependency
    مباشرًا مسجلًا. أي delete/rename أو ملف خارج النطاق مرفوض.
    `FEATURE_BATCH_LIMIT=1` و`STOP_AFTER_CURRENT_FEATURE=true` أمران قاطعان: لا تبدأ
@@ -29,7 +32,8 @@
 8. اختبر positive/negative/cross-scope/locked/idempotency/late rollback/reopen/
    reconciliation حسب Gap IDs. اختبار نصي فقط لا يكفي ولا يُحذف اختبار قائم.
    يجب أن ينجح Cargo فعليًا؛ نجاح TypeScript أو Build لا يعوض أي خطأ Rust/SQLite.
-9. شغّل `tools/agent-delivery-gate.ps1 -StartHead <START_HEAD> -Feature <Wxx>`.
+9. شغّل الأمر الموجود في `ACTIVE.DELIVERY_GATE_COMMAND` بعد استبدال القيم، أي افتراضيًا
+   `node tools/agent-delivery-gate.mjs --start-head <START_HEAD> --feature <Wxx>`.
    لا commit/Push عند فشل أو Critical NOT RUN. لا تستخدم compile_applet بدل build.
 10. سلم `<Wxx>_RESULT.md` وEvidence JSON على `DELIVERY_BRANCH` (`main` في مستودع
     الوكلاء فقط). لا تكتب CLOSED أو 8/10
