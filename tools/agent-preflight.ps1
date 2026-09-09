@@ -19,6 +19,15 @@ foreach ($key in @('ACCEPTED_HEAD','CLOUD_BASE_BRANCH','DELIVERY_BRANCH','CURREN
     }
 }
 
+foreach ($dynamicKey in @('CORRECTION_FILE','EXECUTION_PLAN_FILE')) {
+    if ($active.ContainsKey($dynamicKey) -and -not [string]::IsNullOrWhiteSpace($active[$dynamicKey])) {
+        $dynamicPath = Join-Path $root $active[$dynamicKey]
+        if (-not (Test-Path -LiteralPath $dynamicPath -PathType Leaf)) {
+            throw "PREFLIGHT FAIL: ACTIVE.$dynamicKey points to missing file: $($active[$dynamicKey])"
+        }
+    }
+}
+
 $status = @(& git status --porcelain=v1 --untracked-files=all)
 if ($LASTEXITCODE -ne 0) { throw 'PREFLIGHT FAIL: git status failed.' }
 if ($status.Count -gt 0) { throw "PREFLIGHT FAIL: working tree is not clean.`n$($status -join "`n")" }
@@ -52,6 +61,8 @@ foreach ($path in $required) {
     head = $head
     accepted_ancestor = $active.ACCEPTED_HEAD
     feature = $active.CURRENT_FEATURE
+    correction_file = $active.CORRECTION_FILE
+    execution_plan_file = $active.EXECUTION_PLAN_FILE
     modify_allowlist = $active.MODIFY_ALLOWLIST -split '\|'
     conditional_modify = $active.CONDITIONAL_MODIFY -split '\|'
 } | ConvertTo-Json -Depth 4

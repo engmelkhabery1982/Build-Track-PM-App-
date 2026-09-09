@@ -34,6 +34,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
   assert.match(prompt, /VITE_SUPABASE_\*/);
   assert.match(prompt, /mounted UI → governed backend → SQLite/);
   assert.match(prompt, /FEATURE_BATCH_LIMIT=1/);
+  assert.match(prompt, /CORRECTION_FILE/);
+  assert.match(prompt, /EXECUTION_PLAN_FILE/);
+  assert.match(prompt, /GAP-ID=PASS/);
   assert.match(prompt, /git diff --name-status/);
   assert.match(prompt, /نجاح TypeScript أو Build لا يعوض أي خطأ Rust\/SQLite/);
 });
@@ -73,6 +76,9 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(delivery, /missing required \$\{Feature\}_RESULT\.md/);
   assert.match(delivery, /READY FOR CODEX REVIEW/);
   assert.match(delivery, /REQUIRED_GAPS/);
+  assert.match(delivery, /exact independent gate line/);
+  assert.match(preflight, /CORRECTION_FILE/);
+  assert.match(preflight, /EXECUTION_PLAN_FILE/);
   assert.match(delivery, /evidenceChanges/);
 });
 
@@ -119,6 +125,7 @@ test('every remaining feature has a token-bounded file read pack', () => {
   assert.match(readPacks, /src\/components\/ClaimAssessmentModal\.tsx/);
   assert.match(readPacks, /## F4 \/ W04 \/ RP-W04/);
   assert.match(readPacks, /W04_CODEX_REVIEW_AND_CORRECTION_AR\.md/);
+  assert.match(readPacks, /W04_EXECUTION_CLOSURE_PLAN_AR\.md/);
   assert.match(readPacks, /tests\/tauri-command-registration\.test\.mjs/);
   assert.match(specification, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(prompt, /FEATURE_READ_PACKS_AR\.md/);

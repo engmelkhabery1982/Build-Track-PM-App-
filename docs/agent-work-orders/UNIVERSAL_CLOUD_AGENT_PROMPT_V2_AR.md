@@ -10,7 +10,9 @@
    `Build-Track-PM-App-` أو الدفع إليه، فـCodex وحده يراجع ويدمج في الرسمي.
 2. اقرأ بالترتيب: `AGENTS.md`، ثم `AGENT_START_HERE_AR.md`، ثم `ACTIVE.md`، ثم قسم
    `CURRENT_FEATURE` فقط من `NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md`، ثم
-   `READ_PACK` فقط من `FEATURE_READ_PACKS_AR.md`. لا تقرأ Master/Charter/Ledger أو
+   الملفين المشار إليهما في `CORRECTION_FILE` و`EXECUTION_PLAN_FILE` إن وُجدا، ثم
+   `READ_PACK` فقط من `FEATURE_READ_PACKS_AR.md`. لا تبدأ التعديل قبل اكتمال هذه
+   القراءة، ولا تقرأ Master/Charter/Ledger أو
    نتائج قديمة إلا إذا سمت الحزمة مقطعًا محددًا.
 3. شغّل `tools/agent-preflight.ps1`. بدون PASS لا تعديل. `ACTIVE.CURRENT_FEATURE`
    وحدها تختار العمل؛ Ledger/results/conversation لا تختاره.
@@ -32,7 +34,8 @@
 10. سلم `<Wxx>_RESULT.md` وEvidence JSON على `DELIVERY_BRANCH` (`main` في مستودع
     الوكلاء فقط). لا تكتب CLOSED أو 8/10
     ولا تعدل المؤشر. النتيجة فقط `READY FOR CODEX REVIEW` أو `WIP/BLOCKED`،
-    ثم ادفع الفرع وتوقف لمراجعة Codex.
+    واكتب لكل Gap ID سطرًا مستقلًا بالصيغة الحرفية `GAP-ID=PASS` مع دليل الاختبار.
+    `PARTIAL/NOT RUN/FAIL` لا يسمح بالتسليم. ثم ادفع الفرع وتوقف لمراجعة Codex.
 11. قبل الدفع نفذ `git diff --name-status <START_HEAD>..HEAD`. إذا ظهر ملف خارج
     `MODIFY_ALLOWLIST` و`CONDITIONAL_MODIFY`، أو `metadata.json`، أو كود لميزة تالية،
     أزل هذا الجزء من التسليم. ممنوع ابتلاع خطأ backend أو اعتباره fallback ناجحًا.

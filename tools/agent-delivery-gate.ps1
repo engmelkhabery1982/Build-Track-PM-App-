@@ -32,8 +32,11 @@ if ($resultContent -match '(?im)\bCLOSED\b|8\s*/\s*10') {
     throw "DELIVERY FAIL: agents cannot self-declare CLOSED or 8/10."
 }
 foreach ($gap in ($active.REQUIRED_GAPS -split '\|')) {
-    if ($gap -and $resultContent -notmatch [regex]::Escape($gap)) {
-        throw "DELIVERY FAIL: result does not report required gap $gap."
+    if ($gap) {
+        $passPattern = '(?im)^\s*' + [regex]::Escape($gap) + '=PASS\s*$'
+        if ($resultContent -notmatch $passPattern) {
+            throw "DELIVERY FAIL: result must contain the exact independent gate line '$gap=PASS'."
+        }
     }
 }
 

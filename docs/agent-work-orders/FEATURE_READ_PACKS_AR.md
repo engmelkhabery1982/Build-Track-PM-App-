@@ -142,6 +142,7 @@ Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 ي
 - `src-tauri/src/certificate_workflow.rs`
 - `src/components/PaymentCertificateWorkbench.tsx`
 - `docs/agent-work-orders/W04_CODEX_REVIEW_AND_CORRECTION_AR.md`
+- `docs/agent-work-orders/W04_EXECUTION_CLOSURE_PLAN_AR.md`
 - `tests/phase1-commercial.test.mjs`
 - `tests/contract-schedule-wir-acceptance-20260825.test.mjs` — WIR/quantity tests فقط
 - `tests/invoice-certificate-reconciliation.test.mjs`
