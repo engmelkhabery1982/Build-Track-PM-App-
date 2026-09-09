@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -92,6 +93,15 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(portableDelivery, /REQUIRED_GAPS/);
   assert.match(portableDelivery, /execute\('npm', \['run', 'build'\]\)/);
   assert.match(portableDelivery, /execute\('cargo', \['test'/);
+});
+
+test('accepted W03 attestation is line-ending independent for Windows and Arena', () => {
+  const active = read('docs/agent-work-orders/ACTIVE.md');
+  const expected = active.match(/^ACCEPTED_ATTESTATION_SHA256=(.+)$/m)?.[1].trim();
+  const source = read('docs/agent-results/CODEX_W03_ACCEPTANCE_2026-09-09.md').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const digest = (text) => createHash('sha256').update(text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'), 'utf8').digest('hex').toUpperCase();
+  assert.equal(digest(source), expected);
+  assert.equal(digest(source.replace(/\n/g, '\r\n')), expected);
 });
 
 test('next-week execution plan contains exactly 90 ordered atomic increments and seven daily gates', () => {

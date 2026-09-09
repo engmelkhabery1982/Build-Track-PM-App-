@@ -54,7 +54,11 @@ if ($acceptedExists) {
     }
     $attestationPath = Join-Path $root $active.ACCEPTED_ATTESTATION_FILE
     if (-not (Test-Path -LiteralPath $attestationPath -PathType Leaf)) { throw 'PREFLIGHT FAIL: accepted attestation is missing.' }
-    $actualHash = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash
+    $canonicalContent = [System.IO.File]::ReadAllText($attestationPath).TrimStart([char]0xFEFF).Replace("`r`n", "`n").Replace("`r", "`n")
+    $canonicalBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($canonicalContent)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try { $actualHash = ([System.BitConverter]::ToString($sha256.ComputeHash($canonicalBytes))).Replace('-', '') }
+    finally { $sha256.Dispose() }
     if ($actualHash -ne $active.ACCEPTED_ATTESTATION_SHA256) { throw 'PREFLIGHT FAIL: accepted attestation hash mismatch.' }
     $lineageVerification = 'REMOTE_MAIN_ATTESTATION'
 }

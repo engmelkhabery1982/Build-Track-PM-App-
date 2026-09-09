@@ -46,7 +46,8 @@ try {
   if (!attestationRelative || !expectedHash) fail('shallow verification requires ACCEPTED_ATTESTATION_FILE and SHA256.');
   const attestationPath = resolve(root, attestationRelative);
   if (!existsSync(attestationPath)) fail(`accepted attestation is missing: ${attestationRelative}`);
-  const actualHash = createHash('sha256').update(readFileSync(attestationPath)).digest('hex').toUpperCase();
+  const canonicalContent = readFileSync(attestationPath, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const actualHash = createHash('sha256').update(canonicalContent, 'utf8').digest('hex').toUpperCase();
   if (actualHash !== expectedHash.toUpperCase()) fail(`accepted attestation hash mismatch: ${attestationRelative}`);
   lineage_verification = 'REMOTE_MAIN_ATTESTATION';
 }
