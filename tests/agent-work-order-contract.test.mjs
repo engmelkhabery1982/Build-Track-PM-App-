@@ -39,6 +39,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
   assert.match(prompt, /CORRECTION_FILE/);
   assert.match(prompt, /EXECUTION_PLAN_FILE/);
   assert.match(prompt, /GAP-ID=PASS/);
+  assert.match(prompt, /READY FOR CODEX LOCAL VERIFICATION/);
+  assert.match(prompt, /PENDING_LOCAL_CARGO/);
+  assert.match(prompt, /DEPENDENCY_BOOTSTRAP/);
   assert.match(prompt, /git diff --name-status/);
   assert.match(prompt, /نجاح TypeScript أو Build لا يعوض أي خطأ Rust\/SQLite/);
 });
@@ -93,6 +96,8 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(portableDelivery, /REQUIRED_GAPS/);
   assert.match(portableDelivery, /execute\('npm', \['run', 'build'\]\)/);
   assert.match(portableDelivery, /execute\('cargo', \['test'/);
+  assert.match(portableDelivery, /allow-missing-cargo/);
+  assert.match(portableDelivery, /PENDING_LOCAL_CARGO/);
 });
 
 test('accepted W03 attestation is line-ending independent for Windows and Arena', () => {

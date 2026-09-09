@@ -17,6 +17,7 @@ const root = git('rev-parse', '--show-toplevel'); process.chdir(root);
 const active = Object.fromEntries(readFileSync(resolve(root, 'docs/agent-work-orders/ACTIVE.md'), 'utf8').split(/\r?\n/)
   .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean).map((m) => [m[1], m[2].trim()]));
 const feature = argv.feature; const startHead = argv['start-head'];
+const allowMissingCargo = Object.hasOwn(argv, 'allow-missing-cargo');
 if (!feature || !startHead) fail('use --start-head <commit> --feature <Wxx>.');
 if (feature !== active.CURRENT_FEATURE) fail(`requested ${feature} but ACTIVE selects ${active.CURRENT_FEATURE}.`);
 git('cat-file', '-e', `${startHead}^{commit}`);
@@ -25,11 +26,16 @@ const resultRelative = `docs/agent-results/${feature}_RESULT.md`;
 const resultPath = resolve(root, resultRelative);
 if (!existsSync(resultPath)) fail(`missing required ${feature}_RESULT.md.`);
 const report = readFileSync(resultPath, 'utf8');
-if (!/READY FOR CODEX REVIEW/.test(report)) fail('result must declare READY FOR CODEX REVIEW.');
+const readyForReview = /READY FOR CODEX REVIEW/.test(report);
+const readyForLocalVerification = /READY FOR CODEX LOCAL VERIFICATION/.test(report);
+if (!readyForReview && !readyForLocalVerification) fail('result must declare READY FOR CODEX REVIEW or READY FOR CODEX LOCAL VERIFICATION.');
 if (/\bCLOSED\b|8\s*\/\s*10/i.test(report)) fail('agents cannot self-declare CLOSED or 8/10.');
 for (const gap of (active.REQUIRED_GAPS || '').split('|').filter(Boolean)) {
   const pattern = new RegExp(`^\\s*${gap.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=PASS\\s*$`, 'mi');
-  if (!pattern.test(report)) fail(`result must contain the exact independent gate line '${gap}=PASS'.`);
+  if (pattern.test(report)) continue;
+  const pendingCargoAllowed = allowMissingCargo && readyForLocalVerification && ['W04-G10', 'W04-R12'].includes(gap)
+    && new RegExp(`^\\s*${gap}=PENDING_LOCAL_CARGO\\s*$`, 'mi').test(report);
+  if (!pendingCargoAllowed) fail(`result must contain '${gap}=PASS'${allowMissingCargo ? ' or the explicitly allowed local-Cargo status' : ''}.`);
 }
 
 const allowed = new Set(active.MODIFY_ALLOWLIST.split('|'));
@@ -53,12 +59,16 @@ for (const line of changes) {
 
 const commands = [execute('npm', ['test']), execute('npm', ['run', 'build']),
   execute('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml']), execute('git', ['diff', '--check', startHead])];
+const cargoCommand = commands[2];
+const cargoUnavailable = cargoCommand.exit_code !== 0 && /ENOENT|not found|not recognized|cannot find/i.test(cargoCommand.output);
+const availableCommandsPass = commands.every((item, index) => item.exit_code === 0 || (index === 2 && allowMissingCargo && cargoUnavailable));
+const evidenceResult = availableCommandsPass ? (cargoUnavailable ? 'PENDING_LOCAL_CARGO' : 'PASS') : 'FAIL';
 const hashes = changes.map((line) => line.split('\t').at(-1).replaceAll('\\', '/')).filter((path) => existsSync(resolve(root, path)))
   .map((path) => ({ path, sha256: createHash('sha256').update(readFileSync(resolve(root, path))).digest('hex').toUpperCase() }));
 const evidenceRelative = `docs/agent-results/${feature}_EVIDENCE.json`;
-const evidence = { feature, result: commands.every((item) => item.exit_code === 0) ? 'PASS' : 'FAIL', start_head: startHead,
+const evidence = { feature, result: evidenceResult, start_head: startHead,
   end_head: git('rev-parse', 'HEAD'), generated_utc: new Date().toISOString(), changes: [...changes, `A\t${evidenceRelative}`],
   file_hashes: hashes, commands };
 writeFileSync(resolve(root, evidenceRelative), `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify(evidence, null, 2));
-if (evidence.result !== 'PASS') process.exit(1);
+if (evidence.result === 'FAIL') process.exit(1);

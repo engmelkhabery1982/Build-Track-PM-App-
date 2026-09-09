@@ -34,13 +34,21 @@
 8. اختبر positive/negative/cross-scope/locked/idempotency/late rollback/reopen/
    reconciliation حسب Gap IDs. اختبار نصي فقط لا يكفي ولا يُحذف اختبار قائم.
    يجب أن ينجح Cargo فعليًا؛ نجاح TypeScript أو Build لا يعوض أي خطأ Rust/SQLite.
+   إذا فشل Node فقط بسبب dependency مفقود مثل `react`، شغّل الأمر الموجود في
+   `ACTIVE.DEPENDENCY_BOOTSTRAP` مرة واحدة ثم أعد الاختبار؛ لا تعدل package/lock ولا
+   ترفع `node_modules`. إذا كان executable `cargo` غير موجود أصلًا في Arena، لا تتوقف
+   عن التنفيذ: أكمل كل المراحل واختبارات Node/build، وسلم `READY FOR CODEX LOCAL VERIFICATION`
+   مع `W04-G10=PENDING_LOCAL_CARGO` و`W04-R12=PENDING_LOCAL_CARGO`. هذا لا يعني PASS؛
+   Codex سيشغل Rust/SQLite محليًا قبل أي قبول أو دمج رسمي.
 9. شغّل الأمر الموجود في `ACTIVE.DELIVERY_GATE_COMMAND` بعد استبدال القيم، أي افتراضيًا
-   `node tools/agent-delivery-gate.mjs --start-head <START_HEAD> --feature <Wxx>`.
+   `node tools/agent-delivery-gate.mjs --start-head <START_HEAD> --feature <Wxx> --allow-missing-cargo`.
    لا commit/Push عند فشل أو Critical NOT RUN. لا تستخدم compile_applet بدل build.
 10. سلم `<Wxx>_RESULT.md` وEvidence JSON على `DELIVERY_BRANCH` (`main` في مستودع
     الوكلاء فقط). لا تكتب CLOSED أو 8/10
-    ولا تعدل المؤشر. النتيجة فقط `READY FOR CODEX REVIEW` أو `WIP/BLOCKED`،
-    واكتب لكل Gap ID سطرًا مستقلًا بالصيغة الحرفية `GAP-ID=PASS` مع دليل الاختبار.
+    ولا تعدل المؤشر. النتيجة `READY FOR CODEX REVIEW`، أو عند غياب Cargo فقط
+    `READY FOR CODEX LOCAL VERIFICATION`، أو `WIP/BLOCKED`،
+    واكتب لكل Gap ID سطرًا مستقلًا بالصيغة الحرفية `GAP-ID=PASS` مع دليل الاختبار؛
+    الاستثناء الوحيد هو G10/R12 بصيغة `PENDING_LOCAL_CARGO` عند غياب executable Cargo.
     `PARTIAL/NOT RUN/FAIL` لا يسمح بالتسليم. ثم ادفع الفرع وتوقف لمراجعة Codex.
 11. قبل الدفع نفذ `git diff --name-status <START_HEAD>..HEAD`. إذا ظهر ملف خارج
     `MODIFY_ALLOWLIST` و`CONDITIONAL_MODIFY`، أو `metadata.json`، أو كود لميزة تالية،

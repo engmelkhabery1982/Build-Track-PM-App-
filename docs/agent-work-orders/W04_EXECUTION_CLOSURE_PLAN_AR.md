@@ -24,7 +24,9 @@ W04 لا تُسلّم إلا إذا:
 - استخدم migration 76 أو الرقم الحر التالي بعد فحص القائمة، بلا تعديل migrations السابقة.
 - أصلح Rust `E0515` وأي warning يدل على منطق غير مستخدم قبل إضافة سلوك جديد.
 
-**بوابة 0:** `cargo check` ينجح؛ W03 tests تظل ناجحة؛ migration numbers فريدة.
+**بوابة 0:** أصلح عيوب Rust المعروفة وتأكد أن migration numbers فريدة. إن كان Cargo
+متاحًا يجب أن ينجح `cargo check`. إن كان executable غير موجود في Arena فقط، سجّل ذلك
+ولا تتوقف؛ Codex ينفذ بوابة Cargo محليًا قبل القبول.
 
 ## المرحلة 1 — النموذج الذري والنطاق الموثوق
 
@@ -110,10 +112,14 @@ buttons، reload/reopen. `npm test` و`npm run build` ينجحان.
 
 **تغلق:** `W04-R12,G10`.
 
-1. شغّل الاختبارات المستهدفة أولًا ثم كل `REQUIRED_TESTS`.
+1. إن ظهر `Cannot find package 'react'` شغّل `npm ci --ignore-scripts` ثم شغّل
+   الاختبارات المستهدفة وكل الاختبارات المتاحة.
 2. أنشئ `W04_RESULT.md` وفيه كل Gap ID مرة واحدة بصيغة `ID=PASS` ودليل تحته.
-3. شغّل `tools/agent-delivery-gate.ps1`; الملف الناتج فقط هو `W04_EVIDENCE.json`.
-4. إن فشل أي أمر: صحح W04 فقط وأعده؛ إن تعذر، سجّل `WIP/BLOCKED` ولا Push كجاهز.
+3. شغّل أمر Node الموجود في `ACTIVE.DELIVERY_GATE_COMMAND`; الملف الناتج فقط هو
+   `W04_EVIDENCE.json`. لا تستخدم PowerShell في Arena.
+4. إن فشل أي أمر متاح: صحح W04 فقط وأعده. غياب Cargo executable وحده يسمح بحالة
+   `READY FOR CODEX LOCAL VERIFICATION` و`PENDING_LOCAL_CARGO` للبوابتين G10/R12؛
+   أي فشل آخر = `WIP/BLOCKED`.
 5. لا تبدأ W05، ولا تعدل `ACTIVE.md` أو هذه الخطة.
 
 ## مصفوفة الملفات المسموح بوظيفتها
