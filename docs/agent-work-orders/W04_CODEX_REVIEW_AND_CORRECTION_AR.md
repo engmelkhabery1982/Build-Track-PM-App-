@@ -1,0 +1,104 @@
+# W04 — نتيجة مراجعة Codex وأمر التصحيح الإلزامي
+
+## القرار
+
+التسليم المحفوظ في `archive/w04-unreviewed-20260909` مفيد كمسودة، لكنه **غير مقبول
+للدفع إلى المنتج**. لا تحذفه ولا تنسخه wholesale. ابدأ من `ACTIVE.ACCEPTED_HEAD`،
+واستخدم المسودة كمرجع قراءة فقط عند الحاجة. المطلوب تصحيح W04 وحده وإثبات كل بوابة.
+
+## أدلة الفشل الحالية
+
+- `npm test`: ‏239 نجح و2 فشل من 241؛ فشل اختبار الصيغ واختبار retention/advance.
+- `cargo test`: لا يبدأ الاختبارات؛ يفشل compile عند `certificate_workflow.rs:351`
+  بالخطأ `E0515`، مع `period_id` محسوب ثم غير مستخدم عند السطر 555.
+- `calculateCertificateValues` يستقبل snake_case بينما Workbench والاختبار يرسلان camelCase؛
+  لذلك القيمة المحسوبة في الواجهة صفر.
+- لا يوجد `W04_RESULT.md` ولا `W04_EVIDENCE.json` في التسليم.
+- migration المسودة رقم 75، بينما W03 المقبولة تستخدم 75؛ يجب استخدام الرقم الحر التالي.
+
+## فجوات التصحيح الملزمة
+
+### W04-R01 — إنشاء ذري من المصدر
+
+أنشئ command خلفي واحدًا لإنشاء Draft من `projectId/contractId/periodId/certificateType`
+و`wirIds` فقط. ممنوع أن تنشئ الواجهة رأس الشهادة بـgeneric repository ثم تستدعي submit.
+المعاملة تعيد اشتقاق كل line والقيم وتحفظ header+lines/allocations+audit ذريًا.
+
+### W04-R02 — لا قيم وهمية ولا fallback نجاح
+
+احذف fallbacks مثل quantity `1`، rate `100/80`، unit `m3`، BOQ quantity `1000`،
+subcontract rate = 80%، وأول contract عند غياب الاختيار. missing data = رفض واضح. لا يوجد
+browser generic CRUD يحاكي نجاح lifecycle عند غياب Tauri.
+
+### W04-R03 — نطاق خلفي كامل
+
+الخلفية تتحقق أن project/contract/BOQ/WIR/reporting period مترابطة. WIR المرشح Approved
+وفعّال وفي نطاق العقد والفترة. العميل يستخدم main contract وmain BOQ؛ شهادة الباطن تستخدم
+subcontract المختار وربطه بالعقد والبند الرئيسيين. لا يكفي تطابق project فقط.
+
+### W04-R04 — أسعار حقيقية مفصولة
+
+Client line = كمية WIR المؤهلة × سعر بيع بند العقد الرئيسي. Subcontract line = كمية WIR
+الخاصة بعقد الباطن × سعر بند عقد الباطن الحقيقي. لا يرسل UI السعر الموثوق ولا يختلقه.
+اختبر missing rate وcross-contract rate كحالات رفض.
+
+### W04-R05 — تخصيص وقفل quantity صحيح
+
+لا تسند aggregate quantity لكل WIR كما تفعل المسودة. احفظ allocation لكل WIR بكمية ذلك
+الـWIR. امنع استعمال المصدر مرتين عبر فترات، مع فصل entitlement stream للعميل عن الباطن
+عندما يسمح نفس WIR بإثبات الاثنين. DB uniqueness/concurrency هي السلطة، وover-certification
+مقابل revised BOQ quantity blocking بلا زر Continue.
+لا تثق في `periodId` القادم داخل locks؛ اشتقه من رأس الشهادة/الفترة الموثوقة واستخدمه فعليًا.
+
+### W04-R06 — previous/current/cumulative
+
+كل line يعرض ويحفظ مصادره وprevious certified/current/cumulative quantity/value حتى تاريخ
+الشهادة. التجميع السابق يشمل Approved وPartially Paid وPaid فقط ويستبعد Reversed، وبنفس
+project+contract+BOQ+certificate type.
+
+### W04-R07 — صيغة تجارية مركزية
+
+وحّد أسماء الإدخال/الإخراج والصيغة في backend ثم utility العرض: gross، retention، advance
+recovery، deductions، markup، taxable base، VAT/tax، net بدقة 0.01. النسب والحدود تأتي من
+شروط العقد أو master صريح؛ UI لا يختار نسبة حاكمة بلا مصدر. اختبر cap والرصيد والتقريب.
+
+### W04-R08 — lifecycle وحماية SQL
+
+المسار حصري Draft→Submitted→Approved→Partially Paid→Paid→Reversed؛ approval من Submitted
+فقط، مع maker-checker. triggers تحمي كل حالة غير Draft، وتمنع generic update/delete.
+استخدم migration بعد W03/75 ولا تستبدل أو تحذف migration W03.
+
+### W04-R09 — دفعات append-only وidempotency
+
+كل دفعة سجل مستقل بمعرف/operation id دائم. replay للعملية نفسها يرجع نفس النتيجة، والثانية
+والثالثة تعملان، وzero/negative/excess مرفوضة. paid/remaining مشتقان من ledger لا من قيم
+header قابلة للتلاعب، مع منع concurrent over-payment.
+
+### W04-R10 — AR/AP/Cash وعكس غير هدّام
+
+حدّث certificate وinvoice tracking وinvoice register وcash داخل transaction واحدة، بما في
+ذلك paid amount وremaining لا status فقط. Approved ينشئ Forecast؛ الدفعات Actual مستقلة.
+العكس لا يحذف locks/payments/cash history؛ ينشئ reversal entries مترابطة ويعيد الرصيد
+والحالات حسابيًا. احترم reporting-period lock ولا تستخدم `INSERT OR REPLACE` لإخفاء سجل.
+
+### W04-R11 — Back-to-back اختياري ودقيق
+
+لا تفتح كل شهادات الباطن لمجرد Approved client certificate في نفس المشروع. طبّق blocking
+في backend فقط إذا contract term صريح، وبمطابقة main contract+BOQ/WIR quantity/value ومبلغ
+تحصيل Actual المرتبط. غياب الشرط يعني Not Applicable لا unlocked عام.
+
+### W04-R12 — اختبارات تنفيذية وتسليم
+
+أضف Rust/SQLite tests حقيقية للإنشاء من 5 WIRs، الفصل السعري، missing/cross-scope، duplicate
+وrace، revised-quantity over-certification، locked period، lifecycle، maker-checker،
+retention/advance/markup/tax rounding، ثلاث partial payments، idempotent replay، overpay،
+atomic rollback، reopen، non-destructive reversal، AR/AP/Cash reconciliation وback-to-back.
+صحح اختبارات Node لتستخدم العقد الحقيقي للدوال لا أسماءً متناقضة. شغّل كل REQUIRED_TESTS
+وأنشئ W04_RESULT/EVIDENCE؛ عند أي فشل سلّم `WIP/BLOCKED` ولا تبدأ W05.
+
+## ممنوعات إضافية
+
+- لا تعديل Claims/W03 أو Cash Forecast/W05 أو Dashboard/Reports/Primavera.
+- لا حذف ملفات أو migrations أو اختبارات قائمة.
+- لا إعادة تنسيق شامل لـ`src/App.tsx` أو`src-tauri/src/lib.rs`.
+- لا تعتبر warning أو confirm حوكمة؛ الرفض الحاكم يجب أن يكون backend/SQLite.

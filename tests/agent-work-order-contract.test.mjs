@@ -41,9 +41,9 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /CURRENT_FEATURE=W03/);
+  assert.match(active, /CURRENT_FEATURE=W04/);
   assert.match(active, /CURRENT_STATUS=IN_PROGRESS_NOT_ACCEPTED/);
-  assert.match(active, /PREREQUISITE=W02:CLOSED_8_OF_10_BY_CODEX/);
+  assert.match(active, /PREREQUISITE=W03:CLOSED_8_OF_10_BY_CODEX/);
   assert.match(active, /CLOUD_BASE_BRANCH=main/);
   assert.match(active, /DELIVERY_BRANCH=main/);
   assert.match(active, /FEATURE_BATCH_LIMIT=1/);
@@ -117,6 +117,8 @@ test('every remaining feature has a token-bounded file read pack', () => {
   assert.match(readPacks, /src\/components\/EquipmentLogModal\.tsx/);
   assert.match(readPacks, /src-tauri\/src\/claims_workflow\.rs/);
   assert.match(readPacks, /src\/components\/ClaimAssessmentModal\.tsx/);
+  assert.match(readPacks, /## F4 \/ W04 \/ RP-W04/);
+  assert.match(readPacks, /W04_CODEX_REVIEW_AND_CORRECTION_AR\.md/);
   assert.match(readPacks, /tests\/tauri-command-registration\.test\.mjs/);
   assert.match(specification, /FEATURE_READ_PACKS_AR\.md/);
   assert.match(prompt, /FEATURE_READ_PACKS_AR\.md/);

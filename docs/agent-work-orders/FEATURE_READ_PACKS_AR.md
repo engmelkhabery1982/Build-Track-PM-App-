@@ -122,7 +122,7 @@ Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 ي
 - `src/utils/cpm.ts` لنتيجة time claim فقط.
 - `src/components/DataTableView.tsx` للـprops الموجودة فقط.
 
-## F4 — Invoice & Certificate Reconciliation
+## F4 / W04 / RP-W04 — Invoice & Certificate Reconciliation
 
 ### MUST READ
 
@@ -139,8 +139,19 @@ Dashboard وReport Pack وPrimavera وClaims/Invoices/Portal. انعكاس F1 ي
 - `src-tauri/src/lib.rs` — commercial/AP migrations/wrappers/registration فقط
 - `src-tauri/src/commercial_workflow.rs`
 - `src-tauri/src/supplier_ap.rs`
+- `src-tauri/src/certificate_workflow.rs`
+- `src/components/PaymentCertificateWorkbench.tsx`
+- `docs/agent-work-orders/W04_CODEX_REVIEW_AND_CORRECTION_AR.md`
 - `tests/phase1-commercial.test.mjs`
 - `tests/contract-schedule-wir-acceptance-20260825.test.mjs` — WIR/quantity tests فقط
+- `tests/invoice-certificate-reconciliation.test.mjs`
+- `tests/payment-certificate-governance.test.mjs`
+- `tests/tauri-command-registration.test.mjs`
+
+### DO NOT READ/TOUCH
+
+Claims/W03 وCash Forecast/W05 وDashboard وReports وPrimavera وملفات الموارد. اقرأ من
+`src/App.tsx` و`src-tauri/src/lib.rs` المقاطع المسماة في الحزمة فقط، ولا تعِد تنسيق الملفين.
 
 ## F5 — Versioned Cash Forecast Assumptions
 
