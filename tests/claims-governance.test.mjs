@@ -5,8 +5,7 @@ import {
   evaluateContractNoticePeriod,
   validateClaim,
   canTransitionClaimStatus,
-  convertClaimToVariationPayload,
-  reverseClaimConversion,
+  getClaimFieldPermissions,
 } from '../src/data/claims.ts';
 
 test('W03 Claims: calculateClaimTotals computes correct sums and variances', () => {
@@ -71,14 +70,19 @@ test('W03 Claims: evaluateContractNoticePeriod detects contractual time-bar brea
   assert.match(late.message || '', /served 35 days after/i);
 });
 
-test('W03 Claims: canTransitionClaimStatus enforces maker-checker segregation', () => {
+test('W03 Claims: canTransitionClaimStatus enforces canonical lifecycle and maker-checker segregation', () => {
+  assert.equal(canTransitionClaimStatus('Draft', 'Submitted', 'Jane Smith', 'John Doe').allowed, false);
+  assert.equal(canTransitionClaimStatus('Draft', 'Notified', 'Jane Smith', 'John Doe').allowed, true);
+  assert.equal(canTransitionClaimStatus('Notified', 'Submitted', 'Jane Smith', 'John Doe').allowed, true);
+  assert.equal(canTransitionClaimStatus('Submitted', 'Under Assessment', 'Jane Smith', 'John Doe').allowed, true);
+
   // Author cannot assess own claim
-  const selfAssess = canTransitionClaimStatus('Submitted', 'Assessed', 'John Doe', 'John Doe');
+  const selfAssess = canTransitionClaimStatus('Under Assessment', 'Assessed', 'John Doe', 'John Doe');
   assert.equal(selfAssess.allowed, false);
   assert.match(selfAssess.reason || '', /Maker-Checker Policy/i);
 
   // Different user can assess
-  const validAssess = canTransitionClaimStatus('Submitted', 'Assessed', 'Jane Smith', 'John Doe');
+  const validAssess = canTransitionClaimStatus('Under Assessment', 'Assessed', 'Jane Smith', 'John Doe');
   assert.equal(validAssess.allowed, true);
 
   // Author cannot approve own claim
@@ -88,6 +92,51 @@ test('W03 Claims: canTransitionClaimStatus enforces maker-checker segregation', 
   // Invalid transition from Draft directly to Approved
   const invalidJump = canTransitionClaimStatus('Draft', 'Approved', 'Jane Smith', 'John Doe');
   assert.equal(invalidJump.allowed, false);
+});
+
+test('W03 Claims: explicit zero line days never fall back to stale header totals', () => {
+  const totals = calculateClaimTotals([
+    { claimed_value: 100, assessed_value: 80, approved_value: 0, claimed_days: 0, assessed_days: 0, approved_days: 0 },
+  ], {
+    claimed_time_impact_days: 12,
+    assessed_time_impact_days: 9,
+    approved_time_impact_days: 7,
+  });
+  assert.equal(totals.claimedDaysTotal, 0);
+  assert.equal(totals.assessedDaysTotal, 0);
+  assert.equal(totals.approvedDaysTotal, 0);
+  assert.equal(totals.approvedTotal, 0);
+});
+
+test('W03 Claims: lifecycle permissions isolate definition, assessment and approval fields', () => {
+  assert.deepEqual(getClaimFieldPermissions('Draft'), {
+    canEditDefinition: true,
+    canEditAssessment: false,
+    canEditApproval: false,
+  });
+  assert.deepEqual(getClaimFieldPermissions('Under Assessment'), {
+    canEditDefinition: false,
+    canEditAssessment: true,
+    canEditApproval: false,
+  });
+  assert.deepEqual(getClaimFieldPermissions('Assessed'), {
+    canEditDefinition: false,
+    canEditAssessment: false,
+    canEditApproval: true,
+  });
+  for (const status of ['Submitted', 'Approved', 'Rejected', 'Converted']) {
+    const permissions = getClaimFieldPermissions(status);
+    if (status !== 'Assessed') assert.equal(permissions.canEditApproval, false);
+    if (status !== 'Under Assessment') assert.equal(permissions.canEditAssessment, false);
+  }
+});
+test('W03 Claims: missing notice master data is Requires setup and never assumes 28 days', () => {
+  const result = evaluateContractNoticePeriod('2026-01-01', '2026-01-10', { id: 'c1' });
+  assert.equal(result.requiresSetup, true);
+  assert.equal(result.noticeDaysAllowed, null);
+  assert.equal(result.noticeDeadline, null);
+  assert.equal(result.isLate, false);
+  assert.match(result.message, /setup is required/i);
 });
 
 test('W03 Claims: validateClaim checks project scoping and mandatory entitlement', () => {
@@ -121,88 +170,4 @@ test('W03 Claims: validateClaim checks project scoping and mandatory entitlement
   const validation = validateClaim(claim, lines);
   assert.equal(validation.valid, false);
   assert.ok(validation.errors.some((e) => e.includes('Entitlement basis')));
-});
-
-test('W03 Claims: convertClaimToVariationPayload generates PVO with line items', () => {
-  const claim = {
-    id: 'clm-100',
-    claim_number: 'CLM-100',
-    project_id: 'p1',
-    contract_id: 'cnt-1',
-    title: 'Additional piling depth',
-    notice_date: '2026-03-10',
-    event_date: '2026-03-01',
-    entitlement_basis: 'Clause 4.12 unforeseen obstructions',
-    status: 'Approved',
-    approved_cost_impact: 85000,
-    approved_time_impact_days: 12,
-  };
-
-  const lines = [
-    {
-      id: 'l1',
-      claim_id: 'clm-100',
-      contract_id: 'cnt-1',
-      item_code: 'PIL-01',
-      description: 'Extra pile boring 5m depth',
-      change_type: 'Quantity Change',
-      claimed_value: 95000,
-      assessed_value: 85000,
-      approved_value: 85000,
-      claimed_days: 15,
-      assessed_days: 12,
-      approved_days: 12,
-      boq_item_id: 'boq-itm-1',
-    },
-  ];
-
-  const conversion = convertClaimToVariationPayload(claim, lines, {
-    actor: 'Lead Engineer',
-    convertedAt: '2026-03-15',
-  });
-
-  assert.equal(conversion.variation.source_claim_id, 'clm-100');
-  assert.equal(conversion.variation.contract_id, 'cnt-1');
-  assert.equal(conversion.variation.cost_impact, 85000);
-  assert.equal(conversion.variation.time_impact_days, 12);
-  assert.equal(conversion.variation.status, 'Draft');
-  assert.equal(conversion.variationLines.length, 1);
-  assert.equal(conversion.variationLines[0].source_claim_line_id, 'l1');
-  assert.equal(conversion.variationLines[0].value_impact, 85000);
-  assert.equal(conversion.updatedClaim.status, 'Converted');
-  assert.equal(conversion.updatedClaim.converted_variation_id, conversion.variation.id);
-});
-
-test('W03 Claims: reverseClaimConversion safely reverts converted claim back to Approved', () => {
-  const convertedClaim = {
-    id: 'clm-100',
-    claim_number: 'CLM-100',
-    contract_id: 'cnt-1',
-    status: 'Converted',
-    converted_variation_id: 'var-100',
-    converted_at: '2026-03-15',
-  };
-
-  // If variation is Draft, conversion can be reversed
-  const draftVariation = {
-    id: 'var-100',
-    variation_number: 'VAR-100',
-    status: 'Draft',
-  };
-
-  const result = reverseClaimConversion(convertedClaim, draftVariation, 'PVO package restructured', 'Director');
-  assert.equal(result.canDeleteVariation, true);
-  assert.equal(result.updatedClaim.status, 'Approved');
-  assert.equal(result.updatedClaim.converted_variation_id, null);
-  assert.match(result.updatedClaim.reversal_reason || '', /PVO package restructured/);
-
-  // If variation is already Approved, cannot reverse without reversing variation first
-  const approvedVariation = {
-    id: 'var-100',
-    variation_number: 'VAR-100',
-    status: 'Approved',
-  };
-  const blockedResult = reverseClaimConversion(convertedClaim, approvedVariation, 'Reason', 'Director');
-  assert.equal(blockedResult.canDeleteVariation, false);
-  assert.match(blockedResult.reasonError || '', /already Approved/i);
 });

@@ -1,4 +1,4 @@
-import type { Claim, ClaimLine, ClaimStatus, ClaimLineChangeType, Variation, VariationLine } from '../types/index.ts';
+import type { Claim, ClaimLine, ClaimStatus, ClaimLineChangeType } from '../types/index.ts';
 
 export const money = (val: number): number => Math.round((Number(val) || 0) * 100) / 100;
 
@@ -62,11 +62,26 @@ export function calculateClaimTotals(lines: ClaimLine[], fallbackHeader?: Partia
     claimedTotal: money(claimedTotal),
     assessedTotal: money(assessedTotal),
     approvedTotal: money(approvedTotal),
-    claimedDaysTotal: claimedDaysTotal || (fallbackHeader?.claimed_time_impact_days || 0),
-    assessedDaysTotal: assessedDaysTotal || (fallbackHeader?.assessed_time_impact_days || 0),
-    approvedDaysTotal: approvedDaysTotal || (fallbackHeader?.approved_time_impact_days || 0),
+    claimedDaysTotal,
+    assessedDaysTotal,
+    approvedDaysTotal,
     assessedCostVariance: money(assessedTotal - claimedTotal),
     approvedCostVariance: money(approvedTotal - claimedTotal),
+  };
+}
+
+export interface ClaimFieldPermissions {
+  canEditDefinition: boolean;
+  canEditAssessment: boolean;
+  canEditApproval: boolean;
+}
+
+/** Field-level permissions for the governed claim lifecycle. */
+export function getClaimFieldPermissions(status: ClaimStatus): ClaimFieldPermissions {
+  return {
+    canEditDefinition: status === 'Draft',
+    canEditAssessment: status === 'Under Assessment',
+    canEditApproval: status === 'Assessed',
   };
 }
 
@@ -102,20 +117,13 @@ export function evaluateContractNoticePeriod(
   const noticeDate = new Date(noticeDateStr);
   const diffDays = Math.round((noticeDate.getTime() - eventDate.getTime()) / (1000 * 60 * 60 * 24));
 
-  // Determine contractual notice days limit
-  let noticeDaysAllowed: number | null = 28; // Standard FIDIC Sub-Clause 20.1 baseline
-  let requiresSetup = false;
-
-  if (contract) {
-    if (typeof contract.claim_notice_period_days === 'number') {
-      noticeDaysAllowed = contract.claim_notice_period_days;
-    } else if (typeof contract.notice_period_days === 'number') {
-      noticeDaysAllowed = contract.notice_period_days;
-    } else if (contract.claim_notice_terms === 'None' || contract.claim_notice_period_days === null) {
-      noticeDaysAllowed = null;
-      requiresSetup = true;
-    }
-  }
+  // A contractual time bar must come from contract setup. Inventing a default
+  // notice window would turn missing master data into a false compliance result.
+  const configuredDays = contract?.claim_notice_period_days ?? contract?.notice_period_days;
+  const noticeDaysAllowed = typeof configuredDays === 'number' && Number.isFinite(configuredDays) && configuredDays >= 0
+    ? configuredDays
+    : null;
+  const requiresSetup = noticeDaysAllowed === null;
 
   let noticeDeadline: string | null = null;
   let isLate = false;
@@ -131,7 +139,7 @@ export function evaluateContractNoticePeriod(
       message = `Notice served ${diffDays} days after event (exceeds contractual ${noticeDaysAllowed}-day notice window). Time-bar / late-notice review required.`;
     }
   } else {
-    message = 'Contract notice period is unconfigured (requires commercial setup). Defaulting to un-gated review.';
+    message = 'Contract notice period is unconfigured. Commercial setup is required before time-bar compliance can be assessed.';
   }
 
   return {
@@ -321,12 +329,12 @@ export function canTransitionClaimStatus(
 
   // Valid transitions matrix
   const validMap: Record<ClaimStatus, ClaimStatus[]> = {
-    Draft: ['Notified', 'Submitted'],
-    Notified: ['Draft', 'Submitted'],
-    Submitted: ['Under Assessment', 'Assessed', 'Rejected', 'Draft'],
-    'Under Assessment': ['Assessed', 'Rejected', 'Submitted'],
+    Draft: ['Notified'],
+    Notified: ['Submitted'],
+    Submitted: ['Under Assessment', 'Rejected'],
+    'Under Assessment': ['Assessed', 'Rejected'],
     Assessed: ['Approved', 'Rejected', 'Under Assessment'],
-    Approved: ['Converted', 'Assessed'],
+    Approved: ['Converted'],
     Rejected: ['Draft', 'Under Assessment'],
     Converted: ['Approved'],
   };
@@ -352,151 +360,11 @@ export function canTransitionClaimStatus(
   return { allowed: true };
 }
 
-export interface GovernedConversionResult {
-  variation: Variation;
-  variationLines: VariationLine[];
-  updatedClaim: Claim;
-}
-
-export function convertClaimToVariationPayload(
-  claim: Claim,
-  lines: ClaimLine[],
-  options: {
-    variationNumber?: string;
-    actor?: string;
-    convertedAt?: string;
-    customVariationId?: string;
-  } = {}
-): GovernedConversionResult {
-  if (claim.status !== 'Approved') {
-    throw new Error(`Only an Approved Claim can be converted into a Variation package (current status: '${claim.status}').`);
-  }
-
-  const totals = calculateClaimTotals(lines, claim);
-  const nowStr = options.convertedAt || new Date().toISOString().slice(0, 10);
-  const variationId = options.customVariationId || `var-clm-${claim.id}`;
-  const varNumber = options.variationNumber?.trim() || `VO-CLM-${claim.claim_number.replace(/^CLM-?/i, '')}`;
-
-  const costImpact = totals.approvedTotal > 0 ? totals.approvedTotal : (totals.assessedTotal > 0 ? totals.assessedTotal : totals.claimedTotal);
-  const timeImpactDays = totals.approvedDaysTotal > 0 ? totals.approvedDaysTotal : (totals.assessedDaysTotal > 0 ? totals.assessedDaysTotal : totals.claimedDaysTotal);
-
-  const variation: Variation = {
-    id: variationId,
-    project_id: claim.project_id,
-    contract_id: claim.contract_id || null,
-    variation_number: varNumber,
-    type: 'PVO / Claim Conversion',
-    title: `PVO from Claim: ${claim.title}`,
-    description: `Governed conversion from Claim #${claim.claim_number}. Entitlement: ${claim.entitlement_basis}. ${claim.evidence_notes ? `Notes: ${claim.evidence_notes}` : ''}`.trim(),
-    status: 'Draft',
-    cost_impact: costImpact,
-    time_impact_days: timeImpactDays,
-    approved_by: '',
-    approved_date: null,
-    notes: '',
-    created_at: nowStr,
-    source_claim_id: claim.id,
-  };
-
-  const variationLines: VariationLine[] = lines.map((line, idx) => {
-    const lineId = `varline-clm-${claim.id}-${line.id || idx + 1}`;
-    const val = Number(line.approved_value) > 0 ? Number(line.approved_value) : (Number(line.assessed_value) > 0 ? Number(line.assessed_value) : Number(line.claimed_value) || 0);
-    const ct = (line.change_type === 'Markup' || line.change_type === 'Time Only') ? 'New Item' : line.change_type;
-
-    return {
-      id: lineId,
-      variation_id: variationId,
-      project_id: claim.project_id,
-      contract_id: claim.contract_id || null,
-      boq_header_id: line.boq_header_id || null,
-      boq_item_id: line.boq_item_id || null,
-      change_type: ct as 'New Item' | 'Quantity Change' | 'Rate Change' | 'Quantity & Rate Change',
-      pricing_scope: 'Changed Quantity Only',
-      item_code: line.item_code,
-      description: line.description,
-      unit: 'LS',
-      original_quantity: 0,
-      quantity_change: 1,
-      revised_quantity: 1,
-      original_rate: 0,
-      revised_rate: money(val),
-      value_impact: money(val),
-      effective_date: nowStr,
-      source_claim_line_id: line.id,
-      notes: line.justification || line.notes || '',
-      created_at: nowStr,
-    };
-  });
-
-  const updatedClaim: Claim = {
-    ...claim,
-    status: 'Converted',
-    converted_variation_id: variationId,
-    converted_at: nowStr,
-    approved_cost_impact: totals.approvedTotal || costImpact,
-    approved_time_impact_days: totals.approvedDaysTotal || timeImpactDays,
-    updated_at: nowStr,
-  };
-
-  return {
-    variation,
-    variationLines,
-    updatedClaim,
-  };
-}
-
-export function reverseClaimConversion(
-  claim: Claim,
-  existingVariation?: Variation | null,
-  reason?: string,
-  actor?: string,
-  reversedAt?: string
-): { updatedClaim: Claim; canDeleteVariation: boolean; reasonError?: string } {
-  if (claim.status !== 'Converted') {
-    return {
-      updatedClaim: claim,
-      canDeleteVariation: false,
-      reasonError: `Claim #${claim.claim_number} is not in Converted status.`,
-    };
-  }
-
-  if (existingVariation && existingVariation.status === 'Approved') {
-    return {
-      updatedClaim: claim,
-      canDeleteVariation: false,
-      reasonError: `Associated Variation '${existingVariation.variation_number}' is already Approved. It must be reversed via commercial variation reversal before reversing the claim conversion.`,
-    };
-  }
-
-  const nowStr = reversedAt || new Date().toISOString().slice(0, 10);
-  const updatedClaim: Claim = {
-    ...claim,
-    status: 'Approved',
-    converted_variation_id: null,
-    converted_at: null,
-    reversal_reason: reason || `Conversion reversed by ${actor || 'User'} on ${nowStr}`,
-    updated_at: nowStr,
-  };
-
-  return {
-    updatedClaim,
-    canDeleteVariation: true,
-  };
-}
-
 export interface ClaimOperationResult {
-  operation_id: string;
-  claim_id: string;
-  claim_number: string;
+  operationId: string;
+  claimId: string;
   status: string;
-  claimed_cost_impact: number;
-  assessed_cost_impact: number;
-  approved_cost_impact: number;
-  claimed_time_impact_days: number;
-  assessed_time_impact_days: number;
-  approved_time_impact_days: number;
-  variation_id?: string | null;
-  message: string;
+  variationId?: string | null;
 }
 
 async function invokeClaims<T>(command: string, request: Record<string, unknown>): Promise<T> {
@@ -506,6 +374,27 @@ async function invokeClaims<T>(command: string, request: Record<string, unknown>
   }
   throw new Error('Tauri desktop backend required for native atomic claims posting.');
 }
+
+export const saveClaimDraft = (request: {
+  operationId: string;
+  actor: string;
+  claim: Claim;
+  lines: ClaimLine[];
+}) => invokeClaims<ClaimOperationResult>('save_claim_draft', request);
+
+export const notifyClaim = (request: {
+  operationId: string;
+  claimId: string;
+  actor: string;
+  notifiedAt: string;
+}) => invokeClaims<ClaimOperationResult>('notify_claim', request);
+
+export const startClaimAssessment = (request: {
+  operationId: string;
+  claimId: string;
+  actor: string;
+  startedAt: string;
+}) => invokeClaims<ClaimOperationResult>('start_claim_assessment', request);
 
 export const submitClaim = (request: {
   operationId: string;
@@ -521,7 +410,8 @@ export const assessClaim = (request: {
   assessedAt: string;
   assessedCostImpact?: number | null;
   assessedTimeImpactDays?: number | null;
-  notes?: string | null;
+  lines?: Array<{ id: string; assessedValue: number; assessedDays?: number | null; justification?: string | null }>;
+  assessmentNotes?: string | null;
 }) => invokeClaims<ClaimOperationResult>('assess_claim', request);
 
 export const approveClaim = (request: {
@@ -531,7 +421,8 @@ export const approveClaim = (request: {
   approvedAt: string;
   approvedCostImpact?: number | null;
   approvedTimeImpactDays?: number | null;
-  notes?: string | null;
+  lines?: Array<{ id: string; approvedValue: number; approvedDays?: number | null; justification?: string | null }>;
+  approvalNotes?: string | null;
 }) => invokeClaims<ClaimOperationResult>('approve_claim', request);
 
 export const rejectClaim = (request: {
@@ -555,7 +446,6 @@ export const convertClaimToVariation = (request: {
   operationId: string;
   claimId: string;
   actor: string;
-  variationId?: string | null;
   variationNumber?: string | null;
   convertedAt: string;
 }) => invokeClaims<ClaimOperationResult>('convert_claim_to_variation', request);
@@ -567,4 +457,3 @@ export const reverseClaimConversionBackend = (request: {
   reason: string;
   reversedAt: string;
 }) => invokeClaims<ClaimOperationResult>('reverse_claim_conversion', request);
-

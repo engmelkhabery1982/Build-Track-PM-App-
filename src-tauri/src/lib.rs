@@ -2,15 +2,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-mod import_batch;
-mod supplier_ap;
-mod commercial_workflow;
-mod report_versioning;
-mod cost_plan_versioning;
-mod estimate_versioning;
-mod labor_timesheet;
-mod equipment_log;
 mod claims_workflow;
+mod commercial_workflow;
+mod cost_plan_versioning;
+mod equipment_log;
+mod estimate_versioning;
+mod import_batch;
+mod labor_timesheet;
+mod report_versioning;
+mod supplier_ap;
 
 #[tauri::command]
 async fn commit_governed_import(
@@ -30,74 +30,169 @@ async fn reverse_governed_import(
     app: tauri::AppHandle,
     request: import_batch::ImportReverseRequest,
 ) -> Result<import_batch::ImportReverseResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     import_batch::reverse_governed_import(&database_path, request).await
 }
 
 #[tauri::command]
-async fn reverse_supplier_ap_posting(app: tauri::AppHandle, request: supplier_ap::SupplierApOperationRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn reverse_supplier_ap_posting(
+    app: tauri::AppHandle,
+    request: supplier_ap::SupplierApOperationRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::reverse_supplier_ap_posting(&database_path, request).await
 }
 #[tauri::command]
-async fn approve_supplier_invoice(app: tauri::AppHandle, request: supplier_ap::SupplierInvoiceApprovalRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_supplier_invoice(
+    app: tauri::AppHandle,
+    request: supplier_ap::SupplierInvoiceApprovalRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::approve_supplier_invoice(&database_path, request).await
 }
 #[tauri::command]
-async fn settle_supplier_invoice_payment(app: tauri::AppHandle, request: supplier_ap::SupplierPaymentSettlementRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn settle_supplier_invoice_payment(
+    app: tauri::AppHandle,
+    request: supplier_ap::SupplierPaymentSettlementRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::settle_supplier_invoice_payment(&database_path, request).await
 }
 #[tauri::command]
-async fn approve_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderApprovalRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_purchase_order(
+    app: tauri::AppHandle,
+    request: supplier_ap::PurchaseOrderApprovalRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::approve_purchase_order(&database_path, request).await
 }
 #[tauri::command]
-async fn accept_procurement_receipt(app: tauri::AppHandle, request: supplier_ap::ProcurementReceiptAcceptanceRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn accept_procurement_receipt(
+    app: tauri::AppHandle,
+    request: supplier_ap::ProcurementReceiptAcceptanceRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::accept_procurement_receipt(&database_path, request).await
 }
 #[tauri::command]
-async fn cancel_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderCancellationRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn cancel_purchase_order(
+    app: tauri::AppHandle,
+    request: supplier_ap::PurchaseOrderCancellationRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::cancel_purchase_order(&database_path, request).await
 }
 #[tauri::command]
-async fn amend_purchase_order(app: tauri::AppHandle, request: supplier_ap::PurchaseOrderAmendmentRequest) -> Result<supplier_ap::SupplierApOperationResult, String> {
-    let database_path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn amend_purchase_order(
+    app: tauri::AppHandle,
+    request: supplier_ap::PurchaseOrderAmendmentRequest,
+) -> Result<supplier_ap::SupplierApOperationResult, String> {
+    let database_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     supplier_ap::amend_purchase_order(&database_path, request).await
 }
 
 #[tauri::command]
-async fn approve_cost_change(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_cost_change(
+    app: tauri::AppHandle,
+    request: commercial_workflow::ApprovalRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::approve_cost_change(&path, request).await
 }
 #[tauri::command]
-async fn approve_variation(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_variation(
+    app: tauri::AppHandle,
+    request: commercial_workflow::ApprovalRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::approve_variation_with_boq(&path, request).await
 }
 #[tauri::command]
-async fn approve_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::ApprovalRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_payment_certificate(
+    app: tauri::AppHandle,
+    request: commercial_workflow::ApprovalRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::approve_payment_certificate(&path, request).await
 }
 #[tauri::command]
-async fn settle_payment_certificate(app: tauri::AppHandle, request: commercial_workflow::CertificateSettlementRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn settle_payment_certificate(
+    app: tauri::AppHandle,
+    request: commercial_workflow::CertificateSettlementRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::settle_payment_certificate(&path, request).await
 }
 #[tauri::command]
-async fn reverse_commercial_posting(app: tauri::AppHandle, request: commercial_workflow::ReversalRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn reverse_commercial_posting(
+    app: tauri::AppHandle,
+    request: commercial_workflow::ReversalRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::reverse_commercial_posting(&path, request).await
 }
 #[tauri::command]
-async fn reverse_variation(app: tauri::AppHandle, request: commercial_workflow::ReversalRequest) -> Result<commercial_workflow::Result, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn reverse_variation(
+    app: tauri::AppHandle,
+    request: commercial_workflow::ReversalRequest,
+) -> Result<commercial_workflow::Result, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     commercial_workflow::reverse_variation(&path, request).await
 }
 
@@ -106,7 +201,11 @@ async fn issue_report_version(
     app: tauri::AppHandle,
     request: report_versioning::IssueReportVersionRequest,
 ) -> Result<report_versioning::IssueReportVersionResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     report_versioning::issue_report_version(&path, request).await
 }
 
@@ -115,13 +214,24 @@ async fn approve_cost_plan_version(
     app: tauri::AppHandle,
     request: cost_plan_versioning::ApproveCostPlanRequest,
 ) -> Result<cost_plan_versioning::ApproveCostPlanResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     cost_plan_versioning::approve_cost_plan(&path, request).await
 }
 
 #[tauri::command]
-async fn approve_estimate_version(app: tauri::AppHandle, request: estimate_versioning::ApproveEstimateRequest) -> Result<estimate_versioning::ApproveEstimateResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+async fn approve_estimate_version(
+    app: tauri::AppHandle,
+    request: estimate_versioning::ApproveEstimateRequest,
+) -> Result<estimate_versioning::ApproveEstimateResult, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     estimate_versioning::approve_estimate(&path, request).await
 }
 
@@ -130,7 +240,11 @@ async fn submit_labor_timesheet(
     app: tauri::AppHandle,
     request: labor_timesheet::SubmitLaborTimesheetRequest,
 ) -> Result<labor_timesheet::LaborTimesheetOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     labor_timesheet::submit_labor_timesheet(&path, request).await
 }
 
@@ -139,7 +253,11 @@ async fn approve_labor_timesheet(
     app: tauri::AppHandle,
     request: labor_timesheet::ApproveLaborTimesheetRequest,
 ) -> Result<labor_timesheet::LaborTimesheetOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     labor_timesheet::approve_labor_timesheet(&path, request).await
 }
 
@@ -148,7 +266,11 @@ async fn post_labor_timesheet(
     app: tauri::AppHandle,
     request: labor_timesheet::PostLaborTimesheetRequest,
 ) -> Result<labor_timesheet::LaborTimesheetOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     labor_timesheet::post_labor_timesheet(&path, request).await
 }
 
@@ -157,7 +279,11 @@ async fn reverse_labor_timesheet(
     app: tauri::AppHandle,
     request: labor_timesheet::ReverseLaborTimesheetRequest,
 ) -> Result<labor_timesheet::LaborTimesheetOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     labor_timesheet::reverse_labor_timesheet(&path, request).await
 }
 
@@ -179,7 +305,11 @@ async fn approve_equipment_log(
     app: tauri::AppHandle,
     request: equipment_log::ApproveEquipmentLogRequest,
 ) -> Result<equipment_log::EquipmentLogOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     equipment_log::approve_equipment_log(&path, request).await
 }
 
@@ -188,7 +318,11 @@ async fn post_equipment_log(
     app: tauri::AppHandle,
     request: equipment_log::PostEquipmentLogRequest,
 ) -> Result<equipment_log::EquipmentLogOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     equipment_log::post_equipment_log(&path, request).await
 }
 
@@ -197,7 +331,11 @@ async fn reverse_equipment_log(
     app: tauri::AppHandle,
     request: equipment_log::ReverseEquipmentLogRequest,
 ) -> Result<equipment_log::EquipmentLogOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     equipment_log::reverse_equipment_log(&path, request).await
 }
 
@@ -206,8 +344,51 @@ async fn submit_claim(
     app: tauri::AppHandle,
     request: claims_workflow::SubmitClaimRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::submit_claim(&path, request).await
+}
+
+#[tauri::command]
+async fn save_claim_draft(
+    app: tauri::AppHandle,
+    request: claims_workflow::SaveClaimDraftRequest,
+) -> Result<claims_workflow::ClaimOperationResult, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    claims_workflow::save_claim_draft(&path, request).await
+}
+
+#[tauri::command]
+async fn notify_claim(
+    app: tauri::AppHandle,
+    request: claims_workflow::NotifyClaimRequest,
+) -> Result<claims_workflow::ClaimOperationResult, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    claims_workflow::notify_claim(&path, request).await
+}
+
+#[tauri::command]
+async fn start_claim_assessment(
+    app: tauri::AppHandle,
+    request: claims_workflow::StartClaimAssessmentRequest,
+) -> Result<claims_workflow::ClaimOperationResult, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
+    claims_workflow::start_claim_assessment(&path, request).await
 }
 
 #[tauri::command]
@@ -215,7 +396,11 @@ async fn assess_claim(
     app: tauri::AppHandle,
     request: claims_workflow::AssessClaimRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::assess_claim(&path, request).await
 }
 
@@ -224,7 +409,11 @@ async fn approve_claim(
     app: tauri::AppHandle,
     request: claims_workflow::ApproveClaimRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::approve_claim(&path, request).await
 }
 
@@ -233,7 +422,11 @@ async fn reject_claim(
     app: tauri::AppHandle,
     request: claims_workflow::RejectClaimRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::reject_claim(&path, request).await
 }
 
@@ -242,7 +435,11 @@ async fn reopen_claim(
     app: tauri::AppHandle,
     request: claims_workflow::ReopenClaimRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::reopen_claim(&path, request).await
 }
 
@@ -251,7 +448,11 @@ async fn convert_claim_to_variation(
     app: tauri::AppHandle,
     request: claims_workflow::ConvertClaimToVariationRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::convert_claim_to_variation(&path, request).await
 }
 
@@ -260,7 +461,11 @@ async fn reverse_claim_conversion(
     app: tauri::AppHandle,
     request: claims_workflow::ReverseClaimConversionRequest,
 ) -> Result<claims_workflow::ClaimOperationResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     claims_workflow::reverse_claim_conversion(&path, request).await
 }
 
@@ -604,7 +809,6 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-
         tauri_plugin_sql::Migration {
             version: 2,
             description: "sync_local_invoice_tracking",
@@ -3053,7 +3257,6 @@ pub fn run() {
     "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-
         tauri_plugin_sql::Migration {
             version: 68,
             description: "add_audit_log_append_only_triggers",
@@ -3071,7 +3274,6 @@ pub fn run() {
             ",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-
         tauri_plugin_sql::Migration {
             version: 69,
             description: "add_sync_protocol_tables",
@@ -3112,7 +3314,6 @@ pub fn run() {
             ",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-
         tauri_plugin_sql::Migration {
             version: 70,
             description: "add_g2_auth_tables",
@@ -3136,7 +3337,6 @@ pub fn run() {
             ",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
-
         tauri_plugin_sql::Migration {
             version: 71,
             description: "add_g3_portal_outbox_tables",
@@ -3304,13 +3504,71 @@ pub fn run() {
             "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 75,
+            description: "complete_governed_claim_lifecycle",
+            sql: r#"
+            ALTER TABLE claims ADD COLUMN notified_by TEXT;
+            ALTER TABLE claims ADD COLUMN notified_at TEXT;
+            ALTER TABLE claims ADD COLUMN assessment_started_by TEXT;
+            ALTER TABLE claims ADD COLUMN assessment_started_at TEXT;
+
+            CREATE TABLE IF NOT EXISTS claim_workflow_operations (
+              operation_id TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL,
+              claim_id TEXT NOT NULL,
+              action TEXT NOT NULL,
+              status TEXT NOT NULL,
+              variation_id TEXT,
+              FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_claim_workflow_operations_claim
+              ON claim_workflow_operations(claim_id, created_at);
+
+            DROP TRIGGER IF EXISTS claims_governed_insert_v2;
+            DROP TRIGGER IF EXISTS claims_governed_update_v2;
+            DROP TRIGGER IF EXISTS claims_governed_delete_v2;
+            DROP TRIGGER IF EXISTS claim_lines_governed_mutation_v2;
+            DROP TRIGGER IF EXISTS claim_lines_governed_delete_v2;
+
+            CREATE TRIGGER claims_governed_insert_v3
+            BEFORE INSERT ON claims
+            WHEN NOT EXISTS (SELECT 1 FROM claims_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Claims must be created through governed Draft save.'); END;
+
+            CREATE TRIGGER claims_governed_update_v3
+            BEFORE UPDATE ON claims
+            WHEN NOT EXISTS (SELECT 1 FROM claims_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Governed claim changes must use a lifecycle command.'); END;
+
+            CREATE TRIGGER claims_governed_delete_v3
+            BEFORE DELETE ON claims
+            WHEN OLD.status <> 'Draft'
+            BEGIN SELECT RAISE(ABORT, 'Only a Draft claim may be deleted.'); END;
+
+            CREATE TRIGGER claim_lines_governed_insert_v3
+            BEFORE INSERT ON claim_lines
+            WHEN NOT EXISTS (SELECT 1 FROM claims_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Claim lines may only be added through governed Draft save.'); END;
+
+            CREATE TRIGGER claim_lines_governed_update_v3
+            BEFORE UPDATE ON claim_lines
+            WHEN NOT EXISTS (SELECT 1 FROM claims_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Claim lines require a governed lifecycle command.'); END;
+
+            CREATE TRIGGER claim_lines_governed_delete_v3
+            BEFORE DELETE ON claim_lines
+            WHEN NOT EXISTS (SELECT 1 FROM claims_mutation_guard)
+            BEGIN SELECT RAISE(ABORT, 'Claim lines require a governed Draft replacement or lifecycle command.'); END;
+            "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
         .setup(|app| {
-            apply_staged_restore(app.handle()).map_err(|error| {
-                std::io::Error::new(std::io::ErrorKind::Other, error)
-            })?;
+            apply_staged_restore(app.handle())
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
             Ok(())
         })
         .plugin(
@@ -3334,7 +3592,8 @@ pub fn run() {
             settle_payment_certificate,
             reverse_commercial_posting,
             reverse_variation,
-            issue_report_version, approve_report_template,
+            issue_report_version,
+            approve_report_template,
             approve_cost_plan_version,
             approve_estimate_version,
             submit_labor_timesheet,
@@ -3345,6 +3604,9 @@ pub fn run() {
             approve_equipment_log,
             post_equipment_log,
             reverse_equipment_log,
+            save_claim_draft,
+            notify_claim,
+            start_claim_assessment,
             submit_claim,
             assess_claim,
             approve_claim,
@@ -3362,12 +3624,15 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-
 #[tauri::command]
 async fn approve_report_template(
     app: tauri::AppHandle,
     request: report_versioning::ApproveReportTemplateRequest,
 ) -> Result<report_versioning::ApproveReportTemplateResult, String> {
-    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("buildtrack.db");
     report_versioning::approve_report_template(&path, request).await
 }

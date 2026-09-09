@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   AlertTriangle,
@@ -25,19 +25,14 @@ import {
   Contract,
   BOQHeader,
   BOQItem,
-  Variation,
-  VariationLine,
 } from '@/types';
 import {
   calculateClaimTotals,
   evaluateContractNoticePeriod,
   validateClaim,
   canTransitionClaimStatus,
-  convertClaimToVariationPayload,
-  reverseClaimConversion,
+  getClaimFieldPermissions,
   CLAIM_LINE_CHANGE_TYPES,
-  CLAIM_LIFECYCLE_STATUSES,
-  money,
 } from '@/data/claims';
 
 interface ClaimAssessmentModalProps {
@@ -53,15 +48,16 @@ interface ClaimAssessmentModalProps {
   documents?: any[];
   schedules?: any[];
   currentUser?: string;
-  onSave?: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
-  onSaveDraft?: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
-  onSubmitClaim?: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
-  onAssessClaim?: (claim: Claim, lines: ClaimLine[], notes?: string) => Promise<void>;
-  onApproveClaim?: (claim: Claim, lines: ClaimLine[], notes?: string) => Promise<void>;
-  onRejectClaim?: (claim: Claim, reason: string) => Promise<void>;
-  onReopenClaim?: (claim: Claim, targetStatus: 'Draft' | 'Under Assessment', reason: string) => Promise<void>;
-  onConvertToVariation?: (variationPayload: Variation, linesPayload: VariationLine[], updatedClaim: Claim) => Promise<void>;
-  onReverseConversion?: (claim: Claim, reason: string) => Promise<void>;
+  onSaveDraft: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
+  onNotifyClaim: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
+  onSubmitClaim: (claim: Claim, lines: ClaimLine[]) => Promise<void>;
+  onStartAssessment: (claim: Claim) => Promise<void>;
+  onAssessClaim: (claim: Claim, lines: ClaimLine[], notes?: string) => Promise<void>;
+  onApproveClaim: (claim: Claim, lines: ClaimLine[], notes?: string) => Promise<void>;
+  onRejectClaim: (claim: Claim, reason: string) => Promise<void>;
+  onReopenClaim: (claim: Claim, targetStatus: 'Draft' | 'Under Assessment', reason: string) => Promise<void>;
+  onConvertToVariation: (claim: Claim) => Promise<void>;
+  onReverseConversion: (claim: Claim, reason: string) => Promise<void>;
 }
 
 export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
@@ -77,9 +73,10 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
   documents = [],
   schedules = [],
   currentUser = 'Commercial Manager',
-  onSave,
   onSaveDraft,
+  onNotifyClaim,
   onSubmitClaim,
+  onStartAssessment,
   onAssessClaim,
   onApproveClaim,
   onRejectClaim,
@@ -97,9 +94,18 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
   const [reasonDialogOpen, setReasonDialogOpen] = useState<false | 'reject' | 'reopen' | 'reverse'>(false);
   const [reasonText, setReasonText] = useState('');
   const [reopenTargetStatus, setReopenTargetStatus] = useState<'Draft' | 'Under Assessment'>('Draft');
+  const initializationKeyRef = useRef<string | null>(null);
 
   // Initialize or reset form state when claim changes or modal opens
   useEffect(() => {
+    if (!isOpen) {
+      initializationKeyRef.current = null;
+      return;
+    }
+    const initializationKey = claim?.id || '__new_claim__';
+    if (initializationKeyRef.current === initializationKey) return;
+    initializationKeyRef.current = initializationKey;
+
     if (claim) {
       setFormData({
         ...claim,
@@ -112,29 +118,9 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         approved_time_impact_days: Number(claim.approved_time_impact_days) || 0,
       });
 
-      // Load lines from claim if passed or embedded in payload
+      // App supplies the persisted claim_lines rows for this exact claim.
       const initialLines: ClaimLine[] = (claim as any).lines || [];
-      if (initialLines.length > 0) {
-        setLines(initialLines);
-      } else {
-        // Fallback default line if brand new
-        setLines([
-          {
-            id: `line-${Date.now()}-1`,
-            claim_id: claim.id,
-            contract_id: claim.contract_id,
-            item_code: 'CLM-01',
-            description: claim.title || 'Direct cost & schedule impact',
-            change_type: 'New Item',
-            claimed_value: Number(claim.claimed_cost_impact) || 0,
-            assessed_value: Number(claim.assessed_cost_impact) || 0,
-            approved_value: Number(claim.approved_cost_impact) || 0,
-            claimed_days: Number(claim.claimed_time_impact_days) || 0,
-            assessed_days: Number(claim.assessed_time_impact_days) || 0,
-            approved_days: Number(claim.approved_time_impact_days) || 0,
-          },
-        ]);
-      }
+      setLines(initialLines.filter((line) => line.claim_id === claim.id));
     } else {
       const defaultProjectId = projects[0]?.id || '';
       const matchingContracts = contracts.filter((c) => !defaultProjectId || c.project_id === defaultProjectId);
@@ -145,11 +131,11 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         id: `clm-${Date.now()}`,
         project_id: defaultProjectId,
         contract_id: defaultContractId,
-        claim_number: `CLM-${String(Math.floor(Math.random() * 900) + 100)}`,
+        claim_number: '',
         title: '',
-        notice_date: now,
-        event_date: now,
-        entitlement_basis: 'Unforeseen physical conditions / Employer instruction',
+        notice_date: '',
+        event_date: '',
+        entitlement_basis: '',
         status: 'Draft',
         owner: currentUser,
         claimed_cost_impact: 0,
@@ -161,22 +147,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         created_at: now,
       });
 
-      setLines([
-        {
-          id: `line-${Date.now()}-1`,
-          claim_id: `clm-${Date.now()}`,
-          contract_id: defaultContractId,
-          item_code: 'ITEM-01',
-          description: 'Primary cost & time impact breakdown',
-          change_type: 'New Item',
-          claimed_value: 0,
-          assessed_value: 0,
-          approved_value: 0,
-          claimed_days: 0,
-          assessed_days: 0,
-          approved_days: 0,
-        },
-      ]);
+      setLines([]);
     }
     setFeedback(null);
     setReasonDialogOpen(false);
@@ -191,14 +162,17 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
 
   // Derived filtered BOQ headers and items based on selected contract
   const filteredBoqHeaders = useMemo(() => {
-    if (!formData.contract_id) return boqHeaders;
-    return boqHeaders.filter((h) => h.contract_id === formData.contract_id || !h.contract_id);
+    if (!formData.contract_id) return [];
+    return boqHeaders.filter((h) => h.contract_id === formData.contract_id);
   }, [boqHeaders, formData.contract_id]);
 
   const filteredBoqItems = useMemo(() => {
-    if (!formData.project_id) return boqItems;
-    return boqItems.filter((i) => i.project_id === formData.project_id);
-  }, [boqItems, formData.project_id]);
+    if (!formData.contract_id) return [];
+    const scopedHeaderIds = new Set(
+      boqHeaders.filter((header) => header.contract_id === formData.contract_id).map((header) => header.id)
+    );
+    return boqItems.filter((item) => !!item.boq_header_id && scopedHeaderIds.has(item.boq_header_id));
+  }, [boqHeaders, boqItems, formData.contract_id]);
 
   // Derived filtered RFIs, Delays, Schedules
   const filteredRfis = useMemo(() => {
@@ -212,6 +186,31 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
   const filteredActivities = useMemo(() => {
     return schedules.filter((s) => (!formData.contract_id || s.contract_id === formData.contract_id));
   }, [schedules, formData.contract_id]);
+
+  const handleProjectScopeChange = (projectId: string) => {
+    const matchingContracts = contracts.filter((contract) => contract.project_id === projectId);
+    setFormData((previous) => ({
+      ...previous,
+      project_id: projectId,
+      contract_id: matchingContracts[0]?.id || '',
+      linked_rfi_id: null,
+      linked_delay_id: null,
+      linked_document_id: null,
+      linked_activity_id: null,
+      linked_boq_item_id: null,
+    }));
+    setLines([]);
+  };
+
+  const handleContractScopeChange = (contractId: string) => {
+    setFormData((previous) => ({
+      ...previous,
+      contract_id: contractId,
+      linked_activity_id: null,
+      linked_boq_item_id: null,
+    }));
+    setLines([]);
+  };
 
   // Notice evaluation
   const selectedContract = useMemo(() => {
@@ -240,7 +239,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
       id: `line-${Date.now()}-${lines.length + 1}`,
       claim_id: formData.id || '',
       contract_id: formData.contract_id || '',
-      item_code: `ITEM-0${lines.length + 1}`,
+      item_code: '',
       description: '',
       change_type: 'New Item',
       claimed_value: 0,
@@ -256,10 +255,6 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
   };
 
   const handleRemoveLine = (id: string) => {
-    if (lines.length <= 1) {
-      setFeedback({ type: 'warning', message: 'At least one claim breakdown line is required.' });
-      return;
-    }
     setLines(lines.filter((l) => l.id !== id));
   };
 
@@ -303,6 +298,19 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
     return result;
   };
 
+  const assertLifecycleValidation = (targetStatus: ClaimStatus) => {
+    const result = runValidation(targetStatus);
+    if (!result.valid) throw new Error(result.errors.join(' | '));
+    if (noticeEvaluation.requiresSetup) {
+      throw new Error('Contract notice terms require setup before this claim can advance.');
+    }
+    const unresolvedWarnings = result.warnings.filter((warning) => {
+      const justifiedLateNotice = /time-bar|late-notice/i.test(warning) && !!formData.evidence_notes?.trim();
+      return !justifiedLateNotice;
+    });
+    if (unresolvedWarnings.length > 0) throw new Error(unresolvedWarnings.join(' | '));
+  };
+
   // 1. Save Draft
   const handleSaveDraft = async () => {
     setIsSubmitting(true);
@@ -315,15 +323,26 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         setIsSubmitting(false);
         return;
       }
-      if (onSaveDraft) {
-        await onSaveDraft(claimObj, lines);
-      } else if (onSave) {
-        await onSave(claimObj, lines);
-      }
+      await onSaveDraft(claimObj, lines);
       setFeedback({ type: 'success', message: 'Claim draft saved successfully.' });
       onClose();
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Failed to save draft.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleNotifyClaim = async () => {
+    setIsSubmitting(true);
+    setFeedback(null);
+    try {
+      const claimObj = buildCurrentClaimObject('Draft');
+      assertLifecycleValidation('Notified');
+      await onNotifyClaim(claimObj, lines);
+      onClose();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Failed to record contractual notice.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -345,22 +364,26 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
       claimObj.submitted_by = currentUser;
       claimObj.submitted_at = new Date().toISOString().slice(0, 10);
 
-      const val = runValidation('Submitted');
-      if (!val.valid) {
-        setFeedback({ type: 'error', message: val.errors.join(' | ') });
-        setIsSubmitting(false);
-        return;
-      }
+      assertLifecycleValidation('Submitted');
 
-      if (onSubmitClaim) {
-        await onSubmitClaim(claimObj, lines);
-      } else if (onSave) {
-        await onSave(claimObj, lines);
-      }
+      await onSubmitClaim(claimObj, lines);
       setFeedback({ type: 'success', message: 'Claim formally submitted for assessment.' });
       onClose();
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Failed to submit claim.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStartAssessment = async () => {
+    setIsSubmitting(true);
+    setFeedback(null);
+    try {
+      await onStartAssessment(buildCurrentClaimObject('Submitted'));
+      onClose();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Failed to start claim assessment.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -382,18 +405,9 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
       claimObj.assessed_by = currentUser;
       claimObj.assessed_at = new Date().toISOString().slice(0, 10);
 
-      const val = runValidation('Assessed');
-      if (!val.valid) {
-        setFeedback({ type: 'error', message: val.errors.join(' | ') });
-        setIsSubmitting(false);
-        return;
-      }
+      assertLifecycleValidation('Assessed');
 
-      if (onAssessClaim) {
-        await onAssessClaim(claimObj, lines, formData.evidence_notes || undefined);
-      } else if (onSave) {
-        await onSave(claimObj, lines);
-      }
+      await onAssessClaim(claimObj, lines, formData.evidence_notes || undefined);
       setFeedback({ type: 'success', message: 'Claim assessment recorded successfully.' });
       onClose();
     } catch (err: any) {
@@ -419,25 +433,12 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
       claimObj.approved_by = currentUser;
       claimObj.approved_at = new Date().toISOString().slice(0, 10);
 
-      // Default approved values from assessed if approved value is 0
-      const updatedLines = lines.map((l) => ({
-        ...l,
-        approved_value: Number(l.approved_value) > 0 ? Number(l.approved_value) : (Number(l.assessed_value) > 0 ? Number(l.assessed_value) : Number(l.claimed_value)),
-        approved_days: Number(l.approved_days) > 0 ? Number(l.approved_days) : (Number(l.assessed_days) > 0 ? Number(l.assessed_days) : Number(l.claimed_days)),
-      }));
+      // An explicit zero is a valid approval decision and must remain zero.
+      const updatedLines = lines.map((line) => ({ ...line }));
 
-      const val = validateClaim(claimObj, updatedLines, { projects, contracts, boqHeaders, boqItems });
-      if (!val.valid) {
-        setFeedback({ type: 'error', message: val.errors.join(' | ') });
-        setIsSubmitting(false);
-        return;
-      }
+      assertLifecycleValidation('Approved');
 
-      if (onApproveClaim) {
-        await onApproveClaim(claimObj, updatedLines, formData.evidence_notes || undefined);
-      } else if (onSave) {
-        await onSave(claimObj, updatedLines);
-      }
+      await onApproveClaim(claimObj, updatedLines, formData.evidence_notes || undefined);
       setFeedback({ type: 'success', message: 'Claim approved successfully.' });
       onClose();
     } catch (err: any) {
@@ -457,18 +458,8 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
     setIsSubmitting(true);
     setFeedback(null);
     try {
-      const claimObj = buildCurrentClaimObject('Approved');
-      const conversion = convertClaimToVariationPayload(claimObj, lines, {
-        actor: currentUser,
-        convertedAt: new Date().toISOString().slice(0, 10),
-      });
-
-      if (onConvertToVariation) {
-        await onConvertToVariation(conversion.variation, conversion.variationLines, conversion.updatedClaim);
-      } else if (onSave) {
-        await onSave(conversion.updatedClaim, lines);
-      }
-      setFeedback({ type: 'success', message: `Converted to Draft Variation Package: ${conversion.variation.variation_number}` });
+      await onConvertToVariation(buildCurrentClaimObject('Approved'));
+      setFeedback({ type: 'success', message: 'Claim converted atomically to one Draft Variation package.' });
       onClose();
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Failed to convert claim to variation.' });
@@ -495,11 +486,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         claimObj.rejected_at = new Date().toISOString().slice(0, 10);
         claimObj.rejection_reason = reasonText.trim();
 
-        if (onRejectClaim) {
-          await onRejectClaim(claimObj, reasonText.trim());
-        } else if (onSave) {
-          await onSave(claimObj, lines);
-        }
+        await onRejectClaim(claimObj, reasonText.trim());
         setFeedback({ type: 'success', message: 'Claim rejected.' });
       } else if (reasonDialogOpen === 'reopen') {
         claimObj.status = reopenTargetStatus;
@@ -507,22 +494,10 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
         claimObj.reopened_at = new Date().toISOString().slice(0, 10);
         claimObj.reopened_reason = reasonText.trim();
 
-        if (onReopenClaim) {
-          await onReopenClaim(claimObj, reopenTargetStatus, reasonText.trim());
-        } else if (onSave) {
-          await onSave(claimObj, lines);
-        }
+        await onReopenClaim(claimObj, reopenTargetStatus, reasonText.trim());
         setFeedback({ type: 'success', message: `Claim reopened to ${reopenTargetStatus}.` });
       } else if (reasonDialogOpen === 'reverse') {
-        const rev = reverseClaimConversion(claimObj, null, reasonText.trim(), currentUser);
-        if (rev.reasonError) {
-          throw new Error(rev.reasonError);
-        }
-        if (onReverseConversion) {
-          await onReverseConversion(rev.updatedClaim, reasonText.trim());
-        } else if (onSave) {
-          await onSave(rev.updatedClaim, lines);
-        }
+        await onReverseConversion(claimObj, reasonText.trim());
         setFeedback({ type: 'success', message: 'Claim conversion reversed. Reverted to Approved status.' });
       }
 
@@ -538,7 +513,8 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
   if (!isOpen) return null;
 
   const currentStatus = (formData.status as ClaimStatus) || 'Draft';
-  const isReadOnly = currentStatus === 'Approved' || currentStatus === 'Converted' || currentStatus === 'Rejected';
+  const fieldPermissions = getClaimFieldPermissions(currentStatus);
+  const isReadOnly = !fieldPermissions.canEditDefinition;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
@@ -609,12 +585,17 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
               <span>
-                <strong>Contractual Time-Bar Warning:</strong> Notice served {noticeEvaluation.diffDays} days after event (Contract window: {noticeEvaluation.noticeDaysAllowed || 28} days, deadline: {noticeEvaluation.noticeDeadline}).
+                <strong>Contractual Time-Bar Warning:</strong> Notice served {noticeEvaluation.diffDays} days after event (Contract window: {noticeEvaluation.noticeDaysAllowed} days, deadline: {noticeEvaluation.noticeDeadline}).
               </span>
             </div>
             <span className="px-2 py-0.5 bg-amber-200 dark:bg-amber-900/60 rounded text-[10px] font-bold uppercase">
               Late Notice Flagged
             </span>
+          </div>
+        )}
+        {noticeEvaluation.requiresSetup && formData.event_date && formData.notice_date && (
+          <div className="mx-6 mt-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 text-xs text-blue-900">
+            <strong>Requires setup:</strong> Configure the claim notice period on the selected contract before treating this notice as on-time or late.
           </div>
         )}
 
@@ -721,15 +702,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                   <select
                     disabled={isReadOnly}
                     value={formData.project_id || ''}
-                    onChange={(e) => {
-                      const pId = e.target.value;
-                      const matched = contracts.filter((c) => c.project_id === pId);
-                      setFormData({
-                        ...formData,
-                        project_id: pId,
-                        contract_id: matched[0]?.id || '',
-                      });
-                    }}
+                    onChange={(e) => handleProjectScopeChange(e.target.value)}
                     className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                   >
                     <option value="">Select Project</option>
@@ -748,7 +721,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                   <select
                     disabled={isReadOnly}
                     value={formData.contract_id || ''}
-                    onChange={(e) => setFormData({ ...formData, contract_id: e.target.value })}
+                    onChange={(e) => handleContractScopeChange(e.target.value)}
                     className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                   >
                     <option value="">Select Contract</option>
@@ -955,6 +928,8 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                       <th className="p-2.5 text-right min-w-[90px]">Assessed ($)</th>
                       <th className="p-2.5 text-right min-w-[80px]">Assessed (Days)</th>
                       <th className="p-2.5 text-right min-w-[90px]">Approved ($)</th>
+                      <th className="p-2.5 text-right min-w-[80px]">Approved (Days)</th>
+                      <th className="p-2.5 min-w-[180px]">Variance Justification</th>
                       {!isReadOnly && <th className="p-2.5 text-center w-12">Action</th>}
                     </tr>
                   </thead>
@@ -1046,7 +1021,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                         <td className="p-2 text-right">
                           <input
                             type="number"
-                            disabled={currentStatus === 'Approved' || currentStatus === 'Converted' || currentStatus === 'Rejected'}
+                            disabled={!fieldPermissions.canEditAssessment}
                             value={line.assessed_value || 0}
                             onChange={(e) => handleLineChange(line.id, 'assessed_value', Number(e.target.value))}
                             className="w-20 px-2 py-1 text-right border rounded bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-semibold"
@@ -1055,7 +1030,7 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                         <td className="p-2 text-right">
                           <input
                             type="number"
-                            disabled={currentStatus === 'Approved' || currentStatus === 'Converted' || currentStatus === 'Rejected'}
+                            disabled={!fieldPermissions.canEditAssessment}
                             value={line.assessed_days || 0}
                             onChange={(e) => handleLineChange(line.id, 'assessed_days', Number(e.target.value))}
                             className="w-16 px-2 py-1 text-right border rounded bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
@@ -1064,10 +1039,29 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                         <td className="p-2 text-right">
                           <input
                             type="number"
-                            disabled={currentStatus === 'Approved' || currentStatus === 'Converted' || currentStatus === 'Rejected'}
+                            disabled={!fieldPermissions.canEditApproval}
                             value={line.approved_value || 0}
                             onChange={(e) => handleLineChange(line.id, 'approved_value', Number(e.target.value))}
                             className="w-20 px-2 py-1 text-right border rounded bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 font-bold"
+                          />
+                        </td>
+                        <td className="p-2 text-right">
+                          <input
+                            type="number"
+                            disabled={!fieldPermissions.canEditApproval}
+                            value={line.approved_days ?? 0}
+                            onChange={(e) => handleLineChange(line.id, 'approved_days', Number(e.target.value))}
+                            className="w-16 px-2 py-1 text-right border rounded bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="text"
+                            disabled={!fieldPermissions.canEditAssessment && !fieldPermissions.canEditApproval}
+                            value={line.justification || ''}
+                            placeholder="Required when increasing value"
+                            onChange={(e) => handleLineChange(line.id, 'justification', e.target.value)}
+                            className="w-full px-2 py-1 border rounded bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700"
                           />
                         </td>
                         {!isReadOnly && (
@@ -1100,6 +1094,10 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
                       <td className="p-2.5 text-right text-emerald-600 dark:text-emerald-400">
                         ${totals.approvedTotal.toLocaleString()}
                       </td>
+                      <td className="p-2.5 text-right text-emerald-600 dark:text-emerald-400">
+                        {totals.approvedDaysTotal} d
+                      </td>
+                      <td></td>
                       {!isReadOnly && <td></td>}
                     </tr>
                   </tfoot>
@@ -1336,26 +1334,51 @@ export const ClaimAssessmentModal: React.FC<ClaimAssessmentModalProps> = ({
 
             {(currentStatus === 'Draft' || currentStatus === 'Notified') && (
               <>
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-semibold transition-colors"
-                >
-                  Save Draft
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSubmitClaim}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" /> Submit Claim
-                </button>
+                {currentStatus === 'Draft' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      disabled={isSubmitting}
+                      className="px-4 py-2 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-semibold transition-colors"
+                    >
+                      Save Draft
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNotifyClaim}
+                      disabled={isSubmitting}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    >
+                      Record Notice
+                    </button>
+                  </>
+                )}
+                {currentStatus === 'Notified' && (
+                  <button
+                    type="button"
+                    onClick={handleSubmitClaim}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Submit Claim
+                  </button>
+                )}
               </>
             )}
 
-            {(currentStatus === 'Submitted' || currentStatus === 'Under Assessment') && (
+            {currentStatus === 'Submitted' && (
+              <button
+                type="button"
+                onClick={handleStartAssessment}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+              >
+                Start Assessment
+              </button>
+            )}
+
+            {currentStatus === 'Under Assessment' && (
               <button
                 type="button"
                 onClick={handleAssessClaim}
