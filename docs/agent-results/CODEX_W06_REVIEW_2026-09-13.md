@@ -87,3 +87,34 @@ frozen result snapshot. Add the complete Rust/SQLite negative suite and real con
 tests, run Node + lint + build + Cargo + diff checks, regenerate Result/Evidence, push, then stop.
 The final evidence must explicitly show the Rust compiler is clean; `--allow-missing-cargo` is
 not acceptable when Cargo is available in the delivery environment.
+
+## Correction round 3 verification — commits `5db633c` and `f5ba5f7`
+
+The Rust compiler defects were corrected and the Node/build paths are useful. W06 nevertheless
+remains `CORRECTION_REQUIRED — NOT 8/10`; the agent must not self-certify `10/10`:
+
+- The Rust workflow still calculates Schedule as `Some(1.0)` whenever any schedule row exists,
+  Cost as `Some(1.0)` whenever any cost row exists, and Data Quality as `Some(0.0)`. These are
+  fabricated performance values, not governed SPI, CPI, or quality facts.
+- Source queries still select all project rows without an effective-date predicate. The saved
+  `data_date` is used only for the period-lock lookup and metadata, not as the score cut-off.
+- Dashboard, Cockpit, ReportPack and Card may load the same configuration version, but each
+  reconstructs inputs and recalculates its own score. They do not consume one frozen persisted
+  result snapshot, so cross-screen equality is not proven.
+- Frontend `missingDataRatio: null` is honest unavailability, but it does not replace the required
+  governed Data Quality calculation. A zero-variation ratio is valid only when the dated,
+  project-scoped register is demonstrably complete; no generic fallback may imply completeness.
+- Only two Rust tests exist. The declared maker-checker/reopen tests do not cover the complete
+  required negative matrix or late rollback, and the frontend test still does not mount/inspect
+  the actual four consumers against one persisted version ID and result snapshot.
+- Codex targeted Node verification is `14/15`, not PASS: test
+  `W06-C04 - Maker-Checker violation error handling in workflow` fails because the thrown error
+  does not contain the required maker-checker/cannot-approve result. Fix the real workflow/error
+  contract and prove the rejection; do not weaken or delete the assertion.
+- The Result still describes an `archived` lifecycle although the canonical lifecycle is
+  Draft → Approved → Superseded. It also asserts `10/10`, which only Codex may award.
+- Commit `5db633c` again removed `framer-motion` from `package-lock.json` while the dependency and
+  five production imports remain. This would break a clean `npm ci`; Codex restored the lock.
+
+Keep the compiler fixes and useful workflow/UI. Correct only these remaining facts, regenerate
+honest evidence including Cargo, and stop after pushing W06. Do not begin W07.

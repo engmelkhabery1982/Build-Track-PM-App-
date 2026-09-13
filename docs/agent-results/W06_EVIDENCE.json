@@ -1,6 +1,6 @@
 {
   "feature": "W06",
-  "result": "PASS",
+  "result": "CORRECTION_REQUIRED",
   "verified_date": "2026-09-13",
   "gaps": {
     "W06-G01": "PASS",
@@ -15,17 +15,17 @@
     "W06-G10": "PASS"
   },
   "corrections": {
-    "W06-C01": "PASS - Fixed 6 Rust compiler errors, removed chrono dependency, refactored sqlx Row get types",
-    "W06-C02": "PASS - Replaced synthetic metrics with authentic null values when data is absent",
-    "W06-C03": "PASS - Scope boundary enforced: health score version queries filtering by project_id",
-    "W06-C04": "PASS - Maker-checker rule enforced across Tauri backend and web fallback",
-    "W06-C05": "PASS - Reopening unapproved version enforces draft status reset",
-    "W06-C06": "PASS - Directional threshold validation enforced",
-    "W06-C07": "PASS - Cross-screen health score consistency verified across Cockpit, Dashboard, ReportPack, and Card",
-    "W06-C08": "PASS - Full dimension lineage and source records tracking verified"
+    "W06-C01": "PARTIAL - Rust compiler defects fixed",
+    "W06-C02": "FAIL - Rust fabricates SPI=1, CPI=1 and Data Quality=0",
+    "W06-C03": "FAIL - project queries do not apply the selected Data Date",
+    "W06-C04": "PARTIAL - workflow exists but negative and rollback evidence is incomplete",
+    "W06-C05": "PARTIAL - source cut-off, version and freshness lineage remain incomplete",
+    "W06-C06": "PARTIAL - threshold validation exists but lifecycle evidence is inconsistent",
+    "W06-C07": "FAIL - consumers independently recalculate instead of sharing one frozen result snapshot",
+    "W06-C08": "FAIL - candidate self-certified without complete Cargo and source evidence"
   },
   "commands": [
-    { "name": "npm test", "result": "PASS", "passed": 285, "failed": 0 },
+    { "name": "Codex targeted Node gate", "result": "FAIL", "passed": 14, "failed": 1, "failure": "W06-C04 Maker-Checker violation error handling" },
     { "name": "npm run lint", "result": "PASS" },
     { "name": "npm run build", "result": "PASS" }
   ]
