@@ -286,12 +286,12 @@ pub async fn save_health_score_version_core(
     // Derive authentic metrics from database tables for this project
     let cutoff_date = req.data_date.clone().unwrap_or_default();
 
-    // 1. Schedules / EVM (SPI = Cumulative EV / Cumulative PV)
-    let (schedule_ids, spi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+    // 1. Schedules & EVM (Cumulative EV, Cumulative PV)
+    let (schedule_ids, cumulative_pv, sched_ev): (Vec<String>, f64, f64) = if cutoff_date.is_empty() {
         let rows = sqlx::query(
             "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
-                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), 0) AS REAL) 
+                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), json_extract(payload, '$.budget'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL) 
              FROM schedules WHERE project_id = ?"
         )
         .bind(&req.project_id)
@@ -300,24 +300,14 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let total_pv: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
-
-        let spi = if ids.is_empty() {
-            None
-        } else if total_pv > 0.0 {
-            Some(total_ev / total_pv)
-        } else if total_ev > 0.0 {
-            Some(1.0)
-        } else {
-            None
-        };
-        (ids, spi)
+        let pv: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let ev: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+        (ids, pv, ev)
     } else {
         let rows = sqlx::query(
             "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
-                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), 0) AS REAL) 
+                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), json_extract(payload, '$.budget'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL) 
              FROM schedules 
              WHERE project_id = ? 
              AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL 
@@ -330,26 +320,65 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let total_pv: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+        let pv: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let ev: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+        (ids, pv, ev)
+    };
 
-        let spi = if ids.is_empty() {
-            None
-        } else if total_pv > 0.0 {
-            Some(total_ev / total_pv)
-        } else if total_ev > 0.0 {
-            Some(1.0)
-        } else {
-            None
-        };
-        (ids, spi)
+    // Also check earned value from approved WIR inspections if schedule activities don't carry explicit EV
+    let wir_ev: f64 = if cutoff_date.is_empty() {
+        let wir_rows = sqlx::query(
+            "SELECT CAST(COALESCE(json_extract(payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(payload, '$.unit_rate'), json_extract(payload, '$.unit_price'), 0) AS REAL)
+             FROM wir_entries 
+             WHERE project_id = ? 
+             AND (json_extract(payload, '$.status') = 'Approved' OR json_extract(payload, '$.status') = 'Passed')"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        wir_rows.iter().map(|r| r.get::<f64, _>(0)).sum()
+    } else {
+        let wir_rows = sqlx::query(
+            "SELECT CAST(COALESCE(json_extract(payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(payload, '$.unit_rate'), json_extract(payload, '$.unit_price'), 0) AS REAL)
+             FROM wir_entries 
+             WHERE project_id = ? 
+             AND (json_extract(payload, '$.status') = 'Approved' OR json_extract(payload, '$.status') = 'Passed')
+             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        wir_rows.iter().map(|r| r.get::<f64, _>(0)).sum()
+    };
+
+    let total_ev = if sched_ev > 0.0 {
+        sched_ev
+    } else if wir_ev > 0.0 {
+        wir_ev
+    } else {
+        0.0
+    };
+
+    let spi_value = if schedule_ids.is_empty() {
+        None
+    } else if cumulative_pv > 0.0 {
+        Some(total_ev / cumulative_pv)
+    } else if total_ev > 0.0 {
+        Some(1.0)
+    } else {
+        None
     };
 
     // 2. Cost Entries (CPI = Cumulative EV / Cumulative AC)
     let (cost_ids, cpi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
         let rows = sqlx::query(
             "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
                     CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
              FROM cost_entries WHERE project_id = ?"
         )
@@ -359,8 +388,7 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
 
         let cpi = if ids.is_empty() {
             None
@@ -375,7 +403,6 @@ pub async fn save_health_score_version_core(
     } else {
         let rows = sqlx::query(
             "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
                     CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
              FROM cost_entries 
              WHERE project_id = ? 
@@ -389,8 +416,7 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
 
         let cpi = if ids.is_empty() {
             None
@@ -567,90 +593,55 @@ pub async fn save_health_score_version_core(
         (ids, fail_rate)
     };
 
-    // 6. Data Quality (derived from missing required attributes across dated records)
-    let total_records = schedule_ids.len() + cost_ids.len() + cash_ids.len() + var_ids.len() + wir_ids.len();
-    let dq_ratio: Option<f64> = if total_records == 0 {
-        None
+    // 6. Data Quality (derived from actual dated dq_execution_logs findings, or Unavailable)
+    let (dq_ids, dq_ratio): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.failed_records_count'), 0) AS INTEGER),
+                    CAST(COALESCE(json_extract(payload, '$.total_records_scanned'), 0) AS INTEGER)
+             FROM dq_execution_logs WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let failed_sum: i64 = rows.iter().map(|r| r.get::<i64, _>(1)).sum();
+        let scanned_sum: i64 = rows.iter().map(|r| r.get::<i64, _>(2)).sum();
+
+        let ratio = if ids.is_empty() || scanned_sum == 0 {
+            None
+        } else {
+            Some(failed_sum as f64 / scanned_sum as f64)
+        };
+        (ids, ratio)
     } else {
-        // Count missing required fields across dated records in the transaction
-        let mut missing_count = 0usize;
-        for sch_id in &schedule_ids {
-            let (has_date, has_ev_pv): (i32, i32) = sqlx::query_as(
-                "SELECT 
-                    (COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date,
-                    (COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev')) IS NOT NULL AND COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv')) IS NOT NULL) AS has_ev_pv
-                 FROM schedules WHERE id = ?"
-            )
-            .bind(sch_id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap_or((0, 0));
-            if has_date == 0 { missing_count += 1; }
-            if has_ev_pv == 0 { missing_count += 1; }
-        }
+        let rows = sqlx::query(
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.failed_records_count'), 0) AS INTEGER),
+                    CAST(COALESCE(json_extract(payload, '$.total_records_scanned'), 0) AS INTEGER)
+             FROM dq_execution_logs 
+             WHERE project_id = ? 
+             AND COALESCE(json_extract(payload, '$.execution_date'), created_at) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.execution_date'), created_at) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
 
-        for cst_id in &cost_ids {
-            let (has_date, has_ac): (i32, i32) = sqlx::query_as(
-                "SELECT 
-                    (COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) IS NOT NULL) AS has_date,
-                    (COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount')) IS NOT NULL) AS has_ac
-                 FROM cost_entries WHERE id = ?"
-            )
-            .bind(cst_id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap_or((0, 0));
-            if has_date == 0 { missing_count += 1; }
-            if has_ac == 0 { missing_count += 1; }
-        }
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let failed_sum: i64 = rows.iter().map(|r| r.get::<i64, _>(1)).sum();
+        let scanned_sum: i64 = rows.iter().map(|r| r.get::<i64, _>(2)).sum();
 
-        for cf_id in &cash_ids {
-            let (has_date, has_flow): (i32, i32) = sqlx::query_as(
-                "SELECT 
-                    (COALESCE(json_extract(payload, '$.date'), json_extract(payload, '$.entry_date')) IS NOT NULL) AS has_date,
-                    (COALESCE(json_extract(payload, '$.inflow'), json_extract(payload, '$.outflow')) IS NOT NULL) AS has_flow
-                 FROM cash_flow WHERE id = ?"
-            )
-            .bind(cf_id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap_or((0, 0));
-            if has_date == 0 { missing_count += 1; }
-            if has_flow == 0 { missing_count += 1; }
-        }
-
-        for v_id in &var_ids {
-            let (has_status, has_date): (i32, i32) = sqlx::query_as(
-                "SELECT 
-                    (COALESCE(status_sql, json_extract(payload, '$.status')) IS NOT NULL) AS has_status,
-                    (COALESCE(approved_date_sql, json_extract(payload, '$.approved_date'), json_extract(payload, '$.submission_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date
-                 FROM variations WHERE id = ?"
-            )
-            .bind(v_id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap_or((0, 0));
-            if has_status == 0 { missing_count += 1; }
-            if has_date == 0 { missing_count += 1; }
-        }
-
-        for w_id in &wir_ids {
-            let (has_status, has_date): (i32, i32) = sqlx::query_as(
-                "SELECT 
-                    (json_extract(payload, '$.status') IS NOT NULL) AS has_status,
-                    (COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date
-                 FROM wir_entries WHERE id = ?"
-            )
-            .bind(w_id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap_or((0, 0));
-            if has_status == 0 { missing_count += 1; }
-            if has_date == 0 { missing_count += 1; }
-        }
-
-        let total_checks = (total_records * 2) as f64;
-        Some(missing_count as f64 / total_checks)
+        let ratio = if ids.is_empty() || scanned_sum == 0 {
+            None
+        } else {
+            Some(failed_sum as f64 / scanned_sum as f64)
+        };
+        (ids, ratio)
     };
 
     // Compute dimensions
@@ -723,13 +714,13 @@ pub async fn save_health_score_version_core(
         "Data Quality",
         req.data_quality_weight,
         dq_ratio,
-        "Missing Baseline & Period Fields (%)",
+        "Data Quality Exception Rate (%)",
         req.data_quality_warning_threshold,
         req.data_quality_critical_threshold,
         &req.data_quality_direction,
-        "System Data Quality Execution Logs",
-        vec![],
-        "Fresh",
+        "Governed Data Quality Execution Logs",
+        dq_ids,
+        if dq_ratio.is_none() { "Missing" } else { "Fresh" },
     );
 
     let dimensions = vec![dim_sched, dim_cost, dim_cash, dim_scope, dim_qual, dim_dq];
@@ -1442,6 +1433,7 @@ mod tests {
              CREATE TABLE cash_flow (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE variations (id TEXT PRIMARY KEY, project_id TEXT, status_sql TEXT, approved_date_sql TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE wir_entries (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE dq_execution_logs (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT);
              CREATE TABLE health_score_versions (
                  id TEXT PRIMARY KEY,
@@ -1524,9 +1516,6 @@ mod tests {
             data_quality_warning_threshold: 0.05,
             data_quality_critical_threshold: 0.15,
             data_quality_direction: "lower_is_better".to_string(),
-            spi_value: None,
-            cpi_value: None,
-            missing_data_ratio: None,
             notes: None,
             actor: "Planner Lead".to_string(),
         };
@@ -1570,9 +1559,6 @@ mod tests {
             data_quality_warning_threshold: 0.05,
             data_quality_critical_threshold: 0.15,
             data_quality_direction: "lower_is_better".to_string(),
-            spi_value: None,
-            cpi_value: None,
-            missing_data_ratio: None,
             notes: None,
             actor: "Planner Lead".to_string(),
         };
@@ -1763,11 +1749,11 @@ mod tests {
         let db = create_test_db().await;
         let pool = database(&db).await.unwrap();
 
-        // Populate sources with dates before and after cutoff 2026-09-10
+        // Populate sources with canonical EVM and operational fields before and after cutoff 2026-09-10
         sqlx::query(
             "INSERT INTO schedules (id, project_id, payload) VALUES 
-             ('sch-1', 'prj-1', '{\"spi\": 0.95, \"data_date\": \"2026-09-05\"}'),
-             ('sch-2', 'prj-1', '{\"spi\": 0.60, \"data_date\": \"2026-09-15\"}');"
+             ('sch-1', 'prj-1', '{\"start_date\": \"2026-09-05\", \"planned_value\": 100000.0, \"earned_value\": 90000.0}'),
+             ('sch-2', 'prj-1', '{\"start_date\": \"2026-09-15\", \"planned_value\": 50000.0, \"earned_value\": 40000.0}');"
         )
         .execute(&pool)
         .await
@@ -1775,7 +1761,8 @@ mod tests {
 
         sqlx::query(
             "INSERT INTO cost_entries (id, project_id, payload) VALUES 
-             ('cst-1', 'prj-1', '{\"cpi\": 1.05, \"posting_date\": \"2026-09-01\"}');"
+             ('cst-1', 'prj-1', '{\"posting_date\": \"2026-09-01\", \"actual_cost\": 80000.0}'),
+             ('cst-2', 'prj-1', '{\"posting_date\": \"2026-09-20\", \"actual_cost\": 60000.0}');"
         )
         .execute(&pool)
         .await
@@ -1783,7 +1770,37 @@ mod tests {
 
         sqlx::query(
             "INSERT INTO cash_flow (id, project_id, payload) VALUES 
-             ('cf-1', 'prj-1', '{\"inflow\": 1000, \"outflow\": 400, \"date\": \"2026-09-08\"}');"
+             ('cf-1', 'prj-1', '{\"date\": \"2026-09-08\", \"inflow\": 1000.0, \"outflow\": 400.0}'),
+             ('cf-2', 'prj-1', '{\"date\": \"2026-09-18\", \"inflow\": 2000.0, \"outflow\": 800.0}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO variations (id, project_id, status_sql, approved_date_sql, payload) VALUES 
+             ('var-1', 'prj-1', 'Approved', '2026-09-03', '{\"status\": \"Approved\", \"approved_date\": \"2026-09-03\"}'),
+             ('var-2', 'prj-1', 'Pending', '2026-09-04', '{\"status\": \"Pending\", \"submission_date\": \"2026-09-04\"}'),
+             ('var-3', 'prj-1', 'Pending', '2026-09-19', '{\"status\": \"Pending\", \"submission_date\": \"2026-09-19\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO wir_entries (id, project_id, payload) VALUES 
+             ('wir-1', 'prj-1', '{\"inspection_date\": \"2026-09-06\", \"status\": \"Approved\"}'),
+             ('wir-2', 'prj-1', '{\"inspection_date\": \"2026-09-07\", \"status\": \"Rejected\"}'),
+             ('wir-3', 'prj-1', '{\"inspection_date\": \"2026-09-16\", \"status\": \"Rejected\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO dq_execution_logs (id, project_id, payload) VALUES 
+             ('dq-1', 'prj-1', '{\"execution_date\": \"2026-09-08\", \"failed_records_count\": 2, \"total_records_scanned\": 50}'),
+             ('dq-2', 'prj-1', '{\"execution_date\": \"2026-09-22\", \"failed_records_count\": 10, \"total_records_scanned\": 50}');"
         )
         .execute(&pool)
         .await
@@ -1829,10 +1846,189 @@ mod tests {
             .await
             .unwrap();
 
-        // Dimension 0 is Schedule: only sch-1 (SPI=0.95) should be included, sch-2 (0.60) excluded.
+        // 1. Schedule: SPI = EV (90,000) / PV (100,000) = 0.90; sch-1 included, sch-2 excluded
         let sched_dim = &result.dimensions[0];
         assert_eq!(sched_dim.dimension, "Schedule");
-        assert_eq!(sched_dim.raw_metric_value, Some(0.95));
+        assert_eq!(sched_dim.raw_metric_value, Some(0.90));
         assert_eq!(sched_dim.source_record_ids, vec!["sch-1".to_string()]);
+
+        // 2. Cost: CPI = EV (90,000) / AC (80,000) = 1.125; cst-1 included, cst-2 excluded
+        let cost_dim = &result.dimensions[1];
+        assert_eq!(cost_dim.dimension, "Cost");
+        assert_eq!(cost_dim.raw_metric_value, Some(1.125));
+        assert_eq!(cost_dim.source_record_ids, vec!["cst-1".to_string()]);
+
+        // 3. Cash: Net Cash = 1,000 - 400 = 600.0; cf-1 included, cf-2 excluded
+        let cash_dim = &result.dimensions[2];
+        assert_eq!(cash_dim.dimension, "Cash");
+        assert_eq!(cash_dim.raw_metric_value, Some(600.0));
+        assert_eq!(cash_dim.source_record_ids, vec!["cf-1".to_string()]);
+
+        // 4. Scope: Unapproved variations ratio = 1 / 2 = 0.5; var-1 & var-2 included, var-3 excluded
+        let scope_dim = &result.dimensions[3];
+        assert_eq!(scope_dim.dimension, "Scope");
+        assert_eq!(scope_dim.raw_metric_value, Some(0.5));
+        assert_eq!(scope_dim.source_record_ids, vec!["var-1".to_string(), "var-2".to_string()]);
+
+        // 5. Quality: WIR failure rate = 1 / 2 = 0.5; wir-1 & wir-2 included, wir-3 excluded
+        let qual_dim = &result.dimensions[4];
+        assert_eq!(qual_dim.dimension, "Quality");
+        assert_eq!(qual_dim.raw_metric_value, Some(0.5));
+        assert_eq!(qual_dim.source_record_ids, vec!["wir-1".to_string(), "wir-2".to_string()]);
+
+        // 6. Data Quality: 2 failed / 50 scanned = 0.04; dq-1 included, dq-2 excluded
+        let dq_dim = &result.dimensions[5];
+        assert_eq!(dq_dim.dimension, "Data Quality");
+        assert_eq!(dq_dim.raw_metric_value, Some(0.04));
+        assert_eq!(dq_dim.source_record_ids, vec!["dq-1".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_locked_reporting_period_rejection() {
+        let db = create_test_db().await;
+        let pool = database(&db).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO reporting_periods (id, project_id, start_date, end_date, is_locked)
+             VALUES ('rp-1', 'prj-1', '2026-09-01', '2026-09-30', 1)"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool.close().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-locked-rp".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-HEALTH-LOCKED".to_string(),
+            title: "Locked Period Test".to_string(),
+            data_date: Some("2026-09-15".to_string()),
+            schedule_weight: 20.0,
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "Planner Lead".to_string(),
+        };
+
+        let err = save_health_score_version_core(&db, save_req)
+            .await
+            .unwrap_err();
+        assert!(err.contains("locked reporting period"));
+    }
+
+    #[tokio::test]
+    async fn test_idempotent_replay() {
+        let db = create_test_db().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-idempotent-1".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-HEALTH-IDEMP".to_string(),
+            title: "Idempotent Replay Test".to_string(),
+            data_date: Some("2026-09-10".to_string()),
+            schedule_weight: 20.0,
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "Planner Lead".to_string(),
+        };
+
+        let first = save_health_score_version_core(&db, save_req.clone())
+            .await
+            .unwrap();
+
+        let second = save_health_score_version_core(&db, save_req)
+            .await
+            .unwrap();
+
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.version_code, second.version_code);
+    }
+
+    #[tokio::test]
+    async fn test_cross_project_rejection() {
+        let db = create_test_db().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-unknown-proj".to_string(),
+            project_id: "prj-nonexistent".to_string(),
+            version_code: "V-HEALTH-NOPROJ".to_string(),
+            title: "Unknown Project Test".to_string(),
+            data_date: Some("2026-09-10".to_string()),
+            schedule_weight: 20.0,
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "Planner Lead".to_string(),
+        };
+
+        let err = save_health_score_version_core(&db, save_req)
+            .await
+            .unwrap_err();
+        assert!(err.contains("Project does not exist"));
     }
 }

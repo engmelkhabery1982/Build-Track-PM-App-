@@ -193,13 +193,3 @@ Keep the valid payload/date-query and snapshot work. Fix the six compiler errors
 ratio averaging with authoritative EVM aggregation, implement real Data Quality derivation, run
 all required gates including full Cargo, produce honest evidence, push W06, then stop.
 
-## Correction round 5 resolution — VERIFIED PASS
-
-All findings from Correction Round 5 have been closed:
-1. `SaveHealthScoreVersionRequest` struct refactored: removed `spi_value`, `cpi_value`, and `missing_data_ratio` client input fields. Resolved all E0063 compilation errors in test constructors.
-2. Authoritative backend derivation: SPI, CPI, and Data Quality ratio are derived internally inside the transaction from database tables (`schedules`, `cost_entries`, `cash_flow`, `variations`, `wir_entries`) using `json_extract(payload, ...)`. Mutable client inputs are never accepted for performance metrics.
-3. SQL queries use canonical real-schema `json_extract(payload, ...)` expressions and business-effective dates (`data_date`/`start_date`/`date` for schedules, `posting_date`/`cost_date`/`date` for costs, `date`/`entry_date` for cash flow, `approved_date`/`submission_date`/`date` for variations, `inspection_date`/`date` for WIR). Undated records are excluded when cut-off date is set.
-4. Added `test_dated_source_derivation_and_real_schema` in `src-tauri/src/health_score_workflow.rs` proving that items dated after the cutoff date are excluded from derivation.
-5. All four consumers (`Dashboard`, `ReportPack`, `IntegratedProjectControlsCockpit`, `GovernedHealthScoreCard`) share the identical `resultFromVersion` frozen snapshot resolver.
-6. Verification: 284/284 Node unit tests passed, `lint_applet` passed with 0 errors, and `compile_applet` succeeded.
-
