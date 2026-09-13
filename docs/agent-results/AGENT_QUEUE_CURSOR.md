@@ -1,9 +1,9 @@
 # Agent Queue Cursor
 
 mode: OPEN_SEQUENTIAL_CANDIDATE_QUEUE
-last_completed_candidate: W06
-next_feature: W07
-last_commit: d77b8006fa1a5fba7a3abce07601c1e9cd9ebeb9
-status: W06_DELIVERED_READY_FOR_CODEX_REVIEW_W07_WAITING_FOR_USER_COMMAND
+last_completed_candidate: W05
+next_feature: W06
+last_commit: be12c9b4
+status: W06_CORRECTION_REQUIRED_WAITING_FOR_USER_COMMAND
 pending_local_verification: none
-instruction: W06 candidate was delivered and verified locally; next feature is W07. Stop after every feature. Start W07 only when the user explicitly says to start the next feature; Codex acceptance or an ACTIVE update is not required. Never modify authority files or restore rejected implementations.
+instruction: Preserve the useful W06 candidate and close W06-C01..C08 from CODEX_W06_REVIEW_2026-09-13.md. Do not start W07. After all W06 gates pass, set next_feature to W07, push, and stop. W07 starts only on the user's explicit next-feature command and does not require Codex acceptance. Never modify authority files.
