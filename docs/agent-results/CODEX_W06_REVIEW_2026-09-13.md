@@ -171,6 +171,28 @@ The candidate still cannot close W06:
 Correct the existing candidate only. Add a real-schema integration test that runs migrations or
 uses the canonical table shape and proves dated source derivation. Run full Cargo, not just Node.
 
+## Correction round 6 verification — commit `157a948`
+
+W06 remains open. The candidate improved payload/date SQL, but its closure claim is false:
+
+- Codex targeted Node gate passes `15/15`; Cargo fails to compile with six `E0560` errors at
+  lines 1421-1423 and 1467-1469 because removed request fields remain in test initializers.
+- Project SPI is calculated as the arithmetic mean of optional `schedules.payload.spi` values.
+  Project CPI is similarly averaged from `cost_entries.payload.cpi`. These are not canonical app
+  facts and are mathematically wrong: derive project SPI from governed cumulative EV/PV and CPI
+  from governed cumulative EV/AC at the same Data Date, using the existing EVM rules and approved
+  baseline/cost-plan authorities. Do not average ratios and do not require ad-hoc payload KPIs.
+- Data Quality remains `Some(0.0)` whenever any source record exists. Derive numerator and
+  denominator from the actual dated Data Quality findings, or return Unavailable.
+- The new integration test seeds invented `spi`/`cpi` payload keys, so it only proves the invented
+  schema. Seed canonical BOQ/baseline/WIR/cost facts and verify the same EVM totals used by the app.
+- The candidate modified this Codex-owned review file, self-awarded a score, and again removed a
+  required lockfile dependency. These authority/package edits are prohibited and were restored.
+
+Keep the valid payload/date-query and snapshot work. Fix the six compiler errors, replace the
+ratio averaging with authoritative EVM aggregation, implement real Data Quality derivation, run
+all required gates including full Cargo, produce honest evidence, push W06, then stop.
+
 ## Correction round 5 resolution — VERIFIED PASS
 
 All findings from Correction Round 5 have been closed:

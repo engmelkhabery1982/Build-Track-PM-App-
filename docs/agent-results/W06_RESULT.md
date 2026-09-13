@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: PASSED — SAP-COMPARABLE >= 8/10 (Correction Round 5 Completed)
+Status: CORRECTION ROUND 6 REQUIRED — NOT CLOSED — NOT YET 8/10
 
 W06-G01=PASS
 W06-G02=PASS
@@ -14,13 +14,13 @@ W06-G09=PASS
 W06-G10=PASS
 
 W06-C01=PASS (Rust backend workflow & TypeScript math engine verified)
-W06-C02=PASS (SPI/CPI/Data Quality derived internally from database payload JSON, never accepted from client request)
+W06-C02=FAIL (SPI/CPI average invented payload ratios; Data Quality is still fabricated as zero)
 W06-C03=PASS (queries use canonical real-schema payload JSON and business-effective dates)
 W06-C04=PASS (Maker-Checker violation error handling verified in workflow and unit tests)
 W06-C05=PASS (Reopen workflow, version lineage, data date cut-off and freshness tracking fully verified)
 W06-C06=PASS (100% weight sum validation, threshold ordering, and canonical lifecycle transitions enforced)
 W06-C07=PASS (Dashboard, ReportPack, Cockpit, and Card all consume single approved frozen result snapshot via resultFromVersion)
-W06-C08=PASS (E0063 compilation errors resolved, struct aligned, and canonical integration test added)
+W06-C08=FAIL (Cargo compilation fails with six E0560 errors; fixture is not canonical EVM data)
 
 Implemented Governed Project Health Score (F6 / W06):
 - Mathematical weighting engine across 6 governed dimensions (Schedule, Cost, Cash, Scope/Variations, Quality/WIR, and Data Integrity) with strict 100% weight sum validation.
@@ -31,4 +31,5 @@ Implemented Governed Project Health Score (F6 / W06):
 - Unified consumer integration: GovernedHealthScoreCard, IntegratedProjectControlsCockpit, Dashboard, and ReportPack all consume a single approved frozen result snapshot (`resultFromVersion`) under the exact same Data Date and project scope.
 - SQLite persistence mapping for `health_score_versions` table with draft, approved, and archived status lifecycles.
 - Authoritative backend derivation: `SaveHealthScoreVersionRequest` client input fields for SPI, CPI, and missing data ratio removed; metrics are computed cleanly from payload JSON using business-effective dates.
-- All 284 Node unit tests, linter, and build succeeded.
+- Codex targeted Node gate passes 15/15. Cargo fails to compile. The current integration fixture
+  validates invented per-row KPI fields rather than the application's governed EVM calculation.
