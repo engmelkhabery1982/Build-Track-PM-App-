@@ -286,10 +286,13 @@ pub async fn save_health_score_version_core(
     // Derive authentic metrics from database tables for this project
     let cutoff_date = req.data_date.clone().unwrap_or_default();
 
-    // 1. Schedules / EVM (SPI)
+    // 1. Schedules / EVM (SPI = Cumulative EV / Cumulative PV)
     let (schedule_ids, spi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
         let rows = sqlx::query(
-            "SELECT id, CAST(json_extract(payload, '$.spi') AS REAL) FROM schedules WHERE project_id = ?"
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), 0) AS REAL) 
+             FROM schedules WHERE project_id = ?"
         )
         .bind(&req.project_id)
         .fetch_all(&mut *tx)
@@ -297,18 +300,25 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let spi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let total_pv: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+
         let spi = if ids.is_empty() {
             None
-        } else if spi_vals.is_empty() {
-            None
+        } else if total_pv > 0.0 {
+            Some(total_ev / total_pv)
+        } else if total_ev > 0.0 {
+            Some(1.0)
         } else {
-            Some(spi_vals.iter().sum::<f64>() / spi_vals.len() as f64)
+            None
         };
         (ids, spi)
     } else {
         let rows = sqlx::query(
-            "SELECT id, CAST(json_extract(payload, '$.spi') AS REAL) FROM schedules 
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), 0) AS REAL) 
+             FROM schedules 
              WHERE project_id = ? 
              AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL 
              AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) <= ?"
@@ -320,21 +330,28 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let spi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let total_pv: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+
         let spi = if ids.is_empty() {
             None
-        } else if spi_vals.is_empty() {
-            None
+        } else if total_pv > 0.0 {
+            Some(total_ev / total_pv)
+        } else if total_ev > 0.0 {
+            Some(1.0)
         } else {
-            Some(spi_vals.iter().sum::<f64>() / spi_vals.len() as f64)
+            None
         };
         (ids, spi)
     };
 
-    // 2. Cost Entries (CPI)
+    // 2. Cost Entries (CPI = Cumulative EV / Cumulative AC)
     let (cost_ids, cpi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
         let rows = sqlx::query(
-            "SELECT id, CAST(json_extract(payload, '$.cpi') AS REAL) FROM cost_entries WHERE project_id = ?"
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
+             FROM cost_entries WHERE project_id = ?"
         )
         .bind(&req.project_id)
         .fetch_all(&mut *tx)
@@ -342,18 +359,25 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let cpi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+
         let cpi = if ids.is_empty() {
             None
-        } else if cpi_vals.is_empty() {
-            None
+        } else if total_ac > 0.0 {
+            Some(total_ev / total_ac)
+        } else if total_ev > 0.0 {
+            Some(1.0)
         } else {
-            Some(cpi_vals.iter().sum::<f64>() / cpi_vals.len() as f64)
+            None
         };
         (ids, cpi)
     } else {
         let rows = sqlx::query(
-            "SELECT id, CAST(json_extract(payload, '$.cpi') AS REAL) FROM cost_entries 
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
+             FROM cost_entries 
              WHERE project_id = ? 
              AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) IS NOT NULL 
              AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) <= ?"
@@ -365,13 +389,17 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
 
         let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let cpi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let total_ev: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
+        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
+
         let cpi = if ids.is_empty() {
             None
-        } else if cpi_vals.is_empty() {
-            None
+        } else if total_ac > 0.0 {
+            Some(total_ev / total_ac)
+        } else if total_ev > 0.0 {
+            Some(1.0)
         } else {
-            Some(cpi_vals.iter().sum::<f64>() / cpi_vals.len() as f64)
+            None
         };
         (ids, cpi)
     };
@@ -539,12 +567,90 @@ pub async fn save_health_score_version_core(
         (ids, fail_rate)
     };
 
-    // 6. Data Quality
+    // 6. Data Quality (derived from missing required attributes across dated records)
     let total_records = schedule_ids.len() + cost_ids.len() + cash_ids.len() + var_ids.len() + wir_ids.len();
     let dq_ratio: Option<f64> = if total_records == 0 {
         None
     } else {
-        Some(0.0)
+        // Count missing required fields across dated records in the transaction
+        let mut missing_count = 0usize;
+        for sch_id in &schedule_ids {
+            let (has_date, has_ev_pv): (i32, i32) = sqlx::query_as(
+                "SELECT 
+                    (COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date,
+                    (COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev')) IS NOT NULL AND COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv')) IS NOT NULL) AS has_ev_pv
+                 FROM schedules WHERE id = ?"
+            )
+            .bind(sch_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or((0, 0));
+            if has_date == 0 { missing_count += 1; }
+            if has_ev_pv == 0 { missing_count += 1; }
+        }
+
+        for cst_id in &cost_ids {
+            let (has_date, has_ac): (i32, i32) = sqlx::query_as(
+                "SELECT 
+                    (COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) IS NOT NULL) AS has_date,
+                    (COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount')) IS NOT NULL) AS has_ac
+                 FROM cost_entries WHERE id = ?"
+            )
+            .bind(cst_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or((0, 0));
+            if has_date == 0 { missing_count += 1; }
+            if has_ac == 0 { missing_count += 1; }
+        }
+
+        for cf_id in &cash_ids {
+            let (has_date, has_flow): (i32, i32) = sqlx::query_as(
+                "SELECT 
+                    (COALESCE(json_extract(payload, '$.date'), json_extract(payload, '$.entry_date')) IS NOT NULL) AS has_date,
+                    (COALESCE(json_extract(payload, '$.inflow'), json_extract(payload, '$.outflow')) IS NOT NULL) AS has_flow
+                 FROM cash_flow WHERE id = ?"
+            )
+            .bind(cf_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or((0, 0));
+            if has_date == 0 { missing_count += 1; }
+            if has_flow == 0 { missing_count += 1; }
+        }
+
+        for v_id in &var_ids {
+            let (has_status, has_date): (i32, i32) = sqlx::query_as(
+                "SELECT 
+                    (COALESCE(status_sql, json_extract(payload, '$.status')) IS NOT NULL) AS has_status,
+                    (COALESCE(approved_date_sql, json_extract(payload, '$.approved_date'), json_extract(payload, '$.submission_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date
+                 FROM variations WHERE id = ?"
+            )
+            .bind(v_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or((0, 0));
+            if has_status == 0 { missing_count += 1; }
+            if has_date == 0 { missing_count += 1; }
+        }
+
+        for w_id in &wir_ids {
+            let (has_status, has_date): (i32, i32) = sqlx::query_as(
+                "SELECT 
+                    (json_extract(payload, '$.status') IS NOT NULL) AS has_status,
+                    (COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) IS NOT NULL) AS has_date
+                 FROM wir_entries WHERE id = ?"
+            )
+            .bind(w_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or((0, 0));
+            if has_status == 0 { missing_count += 1; }
+            if has_date == 0 { missing_count += 1; }
+        }
+
+        let total_checks = (total_records * 2) as f64;
+        Some(missing_count as f64 / total_checks)
     };
 
     // Compute dimensions
