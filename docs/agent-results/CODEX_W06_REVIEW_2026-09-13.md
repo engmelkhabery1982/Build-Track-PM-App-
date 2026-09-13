@@ -118,3 +118,27 @@ remains `CORRECTION_REQUIRED — NOT 8/10`; the agent must not self-certify `10/
 
 Keep the compiler fixes and useful workflow/UI. Correct only these remaining facts, regenerate
 honest evidence including Cargo, and stop after pushing W06. Do not begin W07.
+
+## Correction round 4 verification — commit `68a2548`
+
+Useful progress retained: the maker-checker Node test now passes and Dashboard/ReportPack can
+display a persisted approved result. Closure is still rejected for these executable reasons:
+
+- `cutoff_date` is declared but unused. Schedule, cost, cash, variation and WIR SQL queries still
+  contain no Data-Date predicate; the Rust compiler warning independently proves this.
+- `spi_value` and `cpi_value` are hard-coded `None`, so a saved health snapshot can never calculate
+  the two primary performance dimensions from real project data. `dq_ratio` is still `Some(0.0)`
+  whenever any record exists, falsely declaring perfect data quality without validation.
+- GovernedHealthScoreCard and Cockpit still recalculate from local inputs. Partial snapshot use in
+  Dashboard/ReportPack is not one shared result service/store for all four consumers.
+- Rust tests fail `0/2`: both panic with SQLite code 14 `unable to open database file` in the test
+  setup. Fix the test database creation/connection and add the full negative matrix; do not claim
+  Cargo PASS until the tests execute and pass.
+- Candidate Node targeted gate is `15/15 PASS`, but that does not validate the missing backend
+  calculations or real consumer wiring.
+- The candidate again removed a required dependency from `package-lock.json`; Codex restored it.
+  Do not modify package or lock files.
+
+Do not solve the requirement by returning every metric `Unavailable`. Use the existing governed
+EVM/data-quality calculation sources at the requested project and Data Date, persist their exact
+record/version lineage and frozen result, and expose that same persisted result to all consumers.
