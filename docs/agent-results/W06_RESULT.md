@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: READY FOR CODEX REVIEW
+Status: CORRECTION REQUIRED — ROUND 7
 
 W06-G01=PASS
 W06-G02=PASS
@@ -14,15 +14,22 @@ W06-G09=PASS
 W06-G10=PASS
 
 W06-C01=PASS
-W06-C02=PASS
-W06-C03=PASS
+W06-C02=FAIL
+W06-C03=FAIL
 W06-C04=PASS
 W06-C05=PASS
 W06-C06=PASS
 W06-C07=PASS
-W06-C08=PASS
+W06-C08=FAIL
 
-Correction Round 6 Closure Details:
+Correction Round 7 Codex Verification:
+- Targeted Node tests: PASS (15/15).
+- Cargo: FAIL (E0599; `SaveHealthScoreVersionRequest` does not implement `Clone`).
+- Backend PV/EV/AC does not reconcile with approved-baseline and canonical EVM rules.
+- Package-lock consistency was restored by Codex.
+- W06 remains open; W07 must not start.
+
+Prior candidate claims (not accepted by Codex):
 - E0560 Compilation Errors: Removed `spi_value`, `cpi_value`, and `missing_data_ratio` fields from test constructors in `src-tauri/src/health_score_workflow.rs`.
 - Governed EVM Aggregation: Replaced ratio averaging with cumulative aggregates derived directly from authoritative EVM sources up to Data Date cut-off:
   * Cumulative EV derived from schedule activities (`earned_value`) and approved WIR inspections (`quantity * unit_rate`).

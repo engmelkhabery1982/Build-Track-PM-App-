@@ -193,3 +193,38 @@ Keep the valid payload/date-query and snapshot work. Fix the six compiler errors
 ratio averaging with authoritative EVM aggregation, implement real Data Quality derivation, run
 all required gates including full Cargo, produce honest evidence, push W06, then stop.
 
+## Correction round 7 verification — commit `0d77813`
+
+Useful work remains retained, but W06 is still `CORRECTION_REQUIRED — NOT 8/10`:
+
+- Codex targeted Node verification passes `15/15`.
+- Codex local Cargo verification fails to compile with `E0599` at
+  `health_score_workflow.rs:1979`: `SaveHealthScoreVersionRequest` is cloned by the idempotency
+  test but does not implement `Clone`. The submitted statement that Cargo was ready is false.
+- Schedule SPI is not canonical: the backend sums live `schedules.payload.planned_value|pv|budget`
+  instead of frozen time-phased PV from the active approved baseline at the requested Data Date.
+  A later live schedule edit can therefore rewrite a historical score.
+- EV is selected as either schedule payload EV or WIR EV. This bypasses governed measurement
+  methods, WIR corrections, main/subcontract BOQ selling-rate mapping and explicit-activity
+  de-duplication in `src/utils/evm.ts`.
+- AC sums broadly dated cost rows without canonical posting status, main-contract scope,
+  procurement-receipt reconciliation or duplicate-posting protection. CPI can disagree with Cost
+  Control and EVM screens.
+- `SPI=1`/`CPI=1` when EV exists but PV/AC is zero manufactures perfect performance. Return an
+  explicit unavailable/invalid result when a governed positive denominator is absent.
+- The integration fixture proves ad-hoc payload values, not reconciliation with the existing EVM
+  authority. Add a fixed fixture proving backend/frontend equality at two Data Dates, including
+  subcontract roll-up, a progress correction, future and undated rows, and a duplicate receipt.
+- The candidate modified this Codex-owned review and again removed `framer-motion` from the lock
+  while five production components still import it. Codex restored dependency consistency.
+
+### Required correction round 7
+
+Do not redesign W06 and do not begin W07. Keep the lifecycle, shared frozen result, dated queries
+and Data Quality aggregation. Implement one authoritative backend EVM snapshot adapter whose
+PV/EV/AC reconciles exactly with `src/utils/evm.ts`, or persist/read the already governed EVM
+snapshot if that is the established authority. Never substitute live schedule budget for approved
+baseline PV and never manufacture a ratio with a zero denominator. Fix Cargo, add reconciliation
+and negative tests, run Node + lint + build + full Cargo + diff checks, publish honest evidence,
+push W06, then stop.
+
