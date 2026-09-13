@@ -1,6 +1,6 @@
 {
   "feature": "W06",
-  "result": "CORRECTION_COMPLETED_ROUND_7",
+  "result": "CORRECTION_REQUIRED_ROUND_8",
   "verified_date": "2026-09-13",
   "gaps": {
     "W06-G01": "PASS",
@@ -16,17 +16,20 @@
   },
   "corrections": {
     "W06-C01": "PASS - Rust backend workflow & TypeScript math engine verified with approved config authority",
-    "W06-C02": "PASS - Governed EVM Core (calculate_governed_evm_core) strictly reconciles PV with approved project_baselines time-phased distributions and rejects live schedule budget fallbacks",
-    "W06-C03": "PASS - Authentic inputs only; EV derived from approved WIRs and BOQ rates with progress correction adjustments; AC derived from posted costs and de-duplicated accepted receipts; zero denominators return explicit Unavailable",
+    "W06-C02": "FAIL - Cost CPI incorrectly uses Revenue EV divided by AC instead of approved Delivery Cost EV divided by AC",
+    "W06-C03": "FAIL - no approved Control Account/Cost Plan authority and SQL failures are silently converted to empty data",
     "W06-C04": "PASS - Maker-checker violation handling and single approved snapshot reuse across Dashboard, Cockpit, ReportPack, and GovernedHealthScoreCard",
     "W06-C05": "PASS - Version lineage, data date cut-off, freshness status, and explicit exclusions tracked across all dimensions",
     "W06-C06": "PASS - Canonical Draft -> Approved -> Superseded lifecycle, weight sum validation, and threshold ordering enforced",
-    "W06-C07": "PASS - Integration fixtures verify 2 Data Dates reconciliation, subcontract roll-up, progress corrections, receipt de-duplication, future and undated exclusions, and zero denominators",
-    "W06-C08": "PASS - Structs implement Clone resolving E0599; Node test suite (284/284 pass), lint (0 errors), and build succeed cleanly"
+    "W06-C07": "FAIL - Rust-only fixture proves revenue-EV arithmetic, not parity with canonical TypeScript delivery-cost CPI",
+    "W06-C08": "PASS - Codex fixed compiler/threshold issues; targeted Rust 10/10, targeted Node 15/15, and production build pass"
   },
   "commands": [
     { "name": "Node test suite", "result": "PASS", "passed": 284, "failed": 0 },
     { "name": "npm run lint", "result": "PASS" },
-    { "name": "npm run build", "result": "PASS" }
+    { "name": "npm run build", "result": "PASS" },
+    { "name": "Codex targeted Node", "result": "PASS", "passed": 15, "failed": 0 },
+    { "name": "Codex targeted Rust health_score_workflow", "result": "PASS", "passed": 10, "failed": 0 },
+    { "name": "Functional parity review", "result": "FAIL", "notes": "Cost CPI uses revenue EV and no approved delivery-cost plan" }
   ]
 }

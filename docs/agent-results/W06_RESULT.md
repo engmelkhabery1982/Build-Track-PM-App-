@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: CORRECTION COMPLETED — ROUND 7 READY FOR CODEX VERIFICATION
+Status: CORRECTION REQUIRED — ROUND 8
 
 W06-G01=PASS
 W06-G02=PASS
@@ -14,15 +14,24 @@ W06-G09=PASS
 W06-G10=PASS
 
 W06-C01=PASS
-W06-C02=PASS
-W06-C03=PASS
+W06-C02=FAIL
+W06-C03=FAIL
 W06-C04=PASS
 W06-C05=PASS
 W06-C06=PASS
-W06-C07=PASS
+W06-C07=FAIL
 W06-C08=PASS
 
-Correction Round 7 Implementation:
+Correction Round 8 Codex Verification:
+- Codex mechanical fixes: PASS.
+- Targeted Node: PASS (15/15).
+- Production build: PASS.
+- Targeted Rust workflow: PASS (10/10).
+- Functional closure: FAIL; backend Cost CPI uses Revenue EV instead of approved Delivery Cost EV.
+- Cross-engine parity: FAIL; current fixture has no approved Control Account/Cost Plan.
+- W06 remains open; W07 must not start.
+
+Prior candidate implementation retained where valid:
 - Cargo E0599 Fix: Added `#[derive(Clone)]` to `SaveHealthScoreVersionRequest`, `ApproveHealthScoreVersionRequest`, `ReopenHealthScoreVersionRequest`, `GetHealthScoreVersionRequest`, and `ListHealthScoreVersionsRequest`.
 - Governed EVM Core Reconciliation (`calculate_governed_evm_core`):
   * PV is derived exclusively from active approved baselines (`project_baselines` where `status = 'Approved'`) using time-phased distribution snapshots up to the Data Date cut-off. Live schedule payload budget fallbacks are strictly eliminated.

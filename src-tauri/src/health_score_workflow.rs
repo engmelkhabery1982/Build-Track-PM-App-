@@ -186,6 +186,24 @@ fn round_two(val: f64) -> f64 {
     (val * 100.0).round() / 100.0
 }
 
+fn validate_thresholds(
+    dimension: &str,
+    warning: f64,
+    critical: f64,
+    direction: &str,
+) -> Result<(), String> {
+    match direction {
+        "higher_is_better" if warning <= critical => Err(format!(
+            "Warning threshold must be strictly greater than critical threshold for {dimension}"
+        )),
+        "lower_is_better" if warning >= critical => Err(format!(
+            "Warning threshold must be strictly less than critical threshold for {dimension}"
+        )),
+        "higher_is_better" | "lower_is_better" => Ok(()),
+        _ => Err(format!("Unsupported threshold direction for {dimension}: {direction}")),
+    }
+}
+
 fn calculate_dimension_score(
     dimension: &str,
     weight: f64,
@@ -499,7 +517,7 @@ async fn calculate_governed_evm_core(
                         let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
                         let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
                         let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
-                        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date.as_str());
+                        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date);
                         if is_approved && date_ok {
                             handled_wir_ids.insert(w_id.clone());
                             let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -515,7 +533,7 @@ async fn calculate_governed_evm_core(
                 }
             },
             "0/100" => {
-                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date.as_str());
+                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date);
                 if status == "Completed" && finish_ok {
                     explicit_ev += budget;
                     if !schedule_record_ids.contains(act_id) {
@@ -524,8 +542,8 @@ async fn calculate_governed_evm_core(
                 }
             },
             "50/50" => {
-                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date.as_str());
-                let start_ok = !actual_start.is_empty() && (cutoff_date.is_empty() || actual_start <= cutoff_date.as_str());
+                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date);
+                let start_ok = !actual_start.is_empty() && (cutoff_date.is_empty() || actual_start <= cutoff_date);
                 if status == "Completed" && finish_ok {
                     explicit_ev += budget;
                     if !schedule_record_ids.contains(act_id) {
@@ -570,7 +588,7 @@ async fn calculate_governed_evm_core(
         let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
         let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
         let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
-        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date.as_str());
+        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date);
 
         if is_approved && date_ok {
             let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -616,7 +634,7 @@ async fn calculate_governed_evm_core(
             continue;
         }
         let eff_date = c_p.get("effective_date").and_then(|v| v.as_str()).unwrap_or("");
-        if eff_date.is_empty() || (!cutoff_date.is_empty() && eff_date > cutoff_date.as_str()) {
+        if eff_date.is_empty() || (!cutoff_date.is_empty() && eff_date > cutoff_date) {
             continue;
         }
 
@@ -677,7 +695,7 @@ async fn calculate_governed_evm_core(
             .or_else(|| p.get("cost_date"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if date.is_empty() || (!cutoff_date.is_empty() && date > cutoff_date.as_str()) {
+        if date.is_empty() || (!cutoff_date.is_empty() && date > cutoff_date) {
             continue;
         }
 
@@ -729,7 +747,7 @@ async fn calculate_governed_evm_core(
         }
 
         let r_date = p.get("receipt_date").or_else(|| p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
-        if r_date.is_empty() || (!cutoff_date.is_empty() && r_date > cutoff_date.as_str()) {
+        if r_date.is_empty() || (!cutoff_date.is_empty() && r_date > cutoff_date) {
             continue;
         }
 
@@ -792,10 +810,16 @@ pub async fn save_health_score_version_core(
         + req.data_quality_weight;
     if (total_weight - 100.0).abs() > 0.01 {
         return Err(format!(
-            "Total dimension weights must equal 100%, got {}%",
+            "Total dimension weights must sum to 100%, got {}%",
             total_weight
         ));
     }
+    validate_thresholds("Schedule", req.schedule_warning_threshold, req.schedule_critical_threshold, &req.schedule_direction)?;
+    validate_thresholds("Cost", req.cost_warning_threshold, req.cost_critical_threshold, &req.cost_direction)?;
+    validate_thresholds("Cash", req.cash_warning_threshold, req.cash_critical_threshold, &req.cash_direction)?;
+    validate_thresholds("Scope", req.scope_warning_threshold, req.scope_critical_threshold, &req.scope_direction)?;
+    validate_thresholds("Quality", req.quality_warning_threshold, req.quality_critical_threshold, &req.quality_direction)?;
+    validate_thresholds("Data Quality", req.data_quality_warning_threshold, req.data_quality_critical_threshold, &req.data_quality_direction)?;
 
     let pool = database(db_path).await?;
 

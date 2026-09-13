@@ -228,3 +228,41 @@ baseline PV and never manufacture a ratio with a zero denominator. Fix Cargo, ad
 and negative tests, run Node + lint + build + full Cargo + diff checks, publish honest evidence,
 push W06, then stop.
 
+## Correction round 8 verification — commit `dda62c1`
+
+Codex retained the useful governed-baseline, WIR roll-up, correction and receipt-deduplication
+work. Codex also applied the narrowly mechanical fixes required to execute the candidate:
+
+- replaced eight unstable `str::as_str` calls;
+- restored the required `framer-motion` lock entries;
+- restored backend threshold validation and aligned the weight-validation contract.
+
+After those small corrections, the targeted Node gate is `15/15 PASS`, production build is PASS,
+and the targeted Rust workflow gate is `10/10 PASS`. W06 nevertheless remains
+`CORRECTION_REQUIRED — NOT 8/10` because the principal Cost dimension is still materially wrong:
+
+- `calculate_governed_evm_core` calculates `cpi = revenue EV / AC`. The canonical application
+  engine in `src/utils/evm.ts` calculates Cost CPI from **Delivery Cost EV / AC**, where Delivery
+  Cost EV comes from the approved time-phased Cost Plan/Control Account basis. Revenue/selling EV
+  must remain separate.
+- The new Rust reconciliation test contains no Control Account, SOV or approved Cost Plan. It
+  asserts `CPI=55,000/55,000`, while the same canonical frontend input would return Cost CPI
+  `Unavailable` without an approved delivery-cost plan. The test therefore proves the wrong rule;
+  it is not cross-engine reconciliation.
+- Approved baseline accumulation must be restricted to the selected main-contract scope. The
+  current backend iterates the latest approved baseline for every contract in the project and may
+  add a subcontract baseline to the main-contract revenue PV.
+- Source-query failures inside the EVM authority use `unwrap_or_default()`, silently converting a
+  schema/query failure into missing/zero performance. Authoritative health calculation must return
+  an explicit error; it must not make database failure indistinguishable from valid no-data.
+
+### Required correction round 8
+
+Keep all passing lifecycle, Data Date, Data Quality, consumer snapshot and negative tests. Add the
+approved Control Account + approved Cost Plan inputs used by `src/utils/evm.ts`; calculate Schedule
+SPI from Revenue EV/PV and Cost CPI from Delivery Cost EV/AC. If there is no approved cost plan,
+Cost must be `Unavailable/Requires setup`, even when AC exists. Restrict baseline PV to the main
+contract(s), propagate SQL errors, and replace the current same-engine arithmetic test with a
+shared fixed fixture or explicit parity assertions covering both canonical TypeScript outputs and
+Rust persisted dimensions at two Data Dates. Run all gates, push W06, then stop. Do not start W07.
+
