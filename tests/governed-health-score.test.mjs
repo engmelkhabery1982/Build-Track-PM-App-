@@ -4,8 +4,11 @@ import {
   validateHealthConfig,
   calculateGovernedHealthScore,
   configFromVersion,
+  resultFromVersion,
+  deriveGovernedProjectHealthScore,
   GOVERNED_HEALTH_CONFIG_TEMPLATE,
 } from '../src/utils/governedHealthScore.ts';
+import { calculateEvmAtDataDate } from '../src/utils/evm.ts';
 import {
   mapDtoToHealthScoreVersion,
 } from '../src/data/healthScoreWorkflow.ts';
@@ -254,25 +257,47 @@ test('W06-C04 - Maker-Checker violation error handling in workflow', async () =>
   assert.strictEqual(approved.approved_by, 'User Checker');
 });
 
-test('W06-C07 - Cross-screen consistency across all consumers', () => {
-  const unifiedInputs = {
-    spi: 0.95,
-    cpi: 0.92,
-    netCashBalance: 125000,
-    unapprovedVariationRatio: 0.02,
-    wirFailureRate: 0.04,
-    missingDataRatio: 0.01,
-    dataDate: '2026-09-13',
-    versionCode: 'V-HEALTH-GOVERNED',
+test('W06-C07 - Cross-screen consistency across all consumers with persisted snapshot', () => {
+  const versionDto = {
+    id: 'hsv-persisted-01',
+    project_id: 'prj-1',
+    version_code: 'V-HEALTH-GOVERNED',
+    title: 'Governed Snapshot',
+    status: 'Approved',
+    schedule_weight: 20,
+    cost_weight: 20,
+    cash_weight: 20,
+    scope_weight: 15,
+    quality_weight: 15,
+    data_quality_weight: 10,
+    data_date: '2026-09-13',
+    overall_score: 92,
+    health_status: 'Green',
+    confidence: 100,
+    dimensions: [
+      { dimension: 'Schedule', weight: 20, score: 95, weightedScore: 19, status: 'Green', confidence: 100, rawValue: 0.95, source: 'schedules', sourceRecordIds: ['sch-1'], freshnessStatus: 'Fresh', metricName: 'Schedule SPI' },
+      { dimension: 'Cost', weight: 20, score: 90, weightedScore: 18, status: 'Green', confidence: 100, rawValue: 0.92, source: 'cost_entries', sourceRecordIds: ['cst-1'], freshnessStatus: 'Fresh', metricName: 'Delivery Cost CPI' },
+      { dimension: 'Cash', weight: 20, score: 95, weightedScore: 19, status: 'Green', confidence: 100, rawValue: 125000, source: 'cash_flow', sourceRecordIds: ['cash-1'], freshnessStatus: 'Fresh', metricName: 'Net Cash' },
+      { dimension: 'Scope', weight: 15, score: 90, weightedScore: 13.5, status: 'Green', confidence: 100, rawValue: 0.02, source: 'variations', sourceRecordIds: ['var-1'], freshnessStatus: 'Fresh', metricName: 'Unapproved Variations' },
+      { dimension: 'Quality', weight: 15, score: 85, weightedScore: 12.75, status: 'Green', confidence: 100, rawValue: 0.04, source: 'wir_entries', sourceRecordIds: ['wir-1'], freshnessStatus: 'Fresh', metricName: 'WIR Failure Rate' },
+      { dimension: 'Data Quality', weight: 10, score: 95, weightedScore: 9.5, status: 'Green', confidence: 100, rawValue: 0.01, source: 'dq_execution_logs', sourceRecordIds: ['dq-1'], freshnessStatus: 'Fresh', metricName: 'Data Quality Findings' },
+    ],
+    created_by: 'PMO Lead',
+    approved_by: 'PMO Director',
+    approved_at: '2026-09-13T12:00:00Z',
+    payload: JSON.stringify({ thresholds: GOVERNED_HEALTH_CONFIG_TEMPLATE.thresholds }),
   };
 
-  // 1. Cockpit consumer
-  const cockpitResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
-  // 2. ReportPack consumer
-  const reportPackResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
-  // 3. Card component
-  const cardResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
+  // 1. Cockpit consumer uses resultFromVersion
+  const cockpitResult = resultFromVersion(versionDto, '2026-09-13');
+  // 2. ReportPack consumer uses resultFromVersion
+  const reportPackResult = resultFromVersion(versionDto, '2026-09-13');
+  // 3. Card component uses resultFromVersion
+  const cardResult = resultFromVersion(versionDto, '2026-09-13');
 
+  assert.ok(cockpitResult);
+  assert.ok(reportPackResult);
+  assert.ok(cardResult);
   assert.strictEqual(cockpitResult.overallScore, reportPackResult.overallScore);
   assert.strictEqual(reportPackResult.overallScore, cardResult.overallScore);
   assert.strictEqual(cockpitResult.status, reportPackResult.status);
@@ -280,4 +305,193 @@ test('W06-C07 - Cross-screen consistency across all consumers', () => {
   assert.strictEqual(cockpitResult.confidence, reportPackResult.confidence);
   assert.strictEqual(reportPackResult.confidence, cardResult.confidence);
   assert.deepStrictEqual(cockpitResult.dimensions, cardResult.dimensions);
+});
+
+test('W06-C08 - Two Data Dates Parity: Shared fixture verifies TypeScript EVM and Rust parity', () => {
+  // Shared fixed fixture (identical facts to Rust test_evm_two_data_dates_reconciliation)
+  const boqItems = [
+    { id: 'boq-main-1', contract_id: 'cnt-main', unit_rate: 100, quantity: 1000 },
+    { id: 'boq-sub-1', contract_id: 'cnt-sub', unit_rate: 60, main_boq_item_id: 'boq-main-1' },
+  ];
+
+  const baselines = [
+    { id: 'base-1', contract_id: 'cnt-main', project_id: 'prj-1', status: 'Approved' },
+  ];
+
+  const schedules = [
+    { id: 'sch-1', contract_id: 'cnt-main', activity: 'Civil Works', planned_quantity: 600, cost_budget: 60000 },
+    { id: 'sch-2', contract_id: 'cnt-main', activity: 'Finishing Works', planned_quantity: 1200, cost_budget: 120000 },
+  ];
+
+  const scheduleDistributions = [
+    { schedule_id: 'sch-1', period_date: '2026-09-10', planned_value: 60000 },
+    { schedule_id: 'sch-2', period_date: '2026-09-20', planned_value: 120000 },
+  ];
+
+  const wirEntries = [
+    { id: 'wir-1', contract_id: 'cnt-main', inspection_date: '2026-09-05', status: 'Approved', quantity: 400, boq_item_id: 'boq-main-1' },
+    { id: 'wir-sub-1', contract_id: 'cnt-sub', inspection_date: '2026-09-08', status: 'Approved', quantity: 200, boq_item_id: 'boq-sub-1' },
+    { id: 'wir-date2', contract_id: 'cnt-main', inspection_date: '2026-09-18', status: 'Approved', quantity: 300, boq_item_id: 'boq-main-1' },
+    { id: 'wir-future', contract_id: 'cnt-main', inspection_date: '2026-09-25', status: 'Approved', quantity: 500, boq_item_id: 'boq-main-1' },
+    { id: 'wir-undated', contract_id: 'cnt-main', status: 'Approved', quantity: 500, boq_item_id: 'boq-main-1' },
+  ];
+
+  const progressCorrections = [
+    { original_wir_id: 'wir-1', contract_id: 'cnt-main', status: 'Posted', effective_date: '2026-09-09', correction_type: 'Reversal', quantity: 50 },
+    { original_wir_id: 'wir-1', contract_id: 'cnt-main', status: 'Posted', effective_date: '2026-09-28', correction_type: 'Reversal', quantity: 100 },
+  ];
+
+  const costEntries = [
+    { id: 'cst-1', contract_id: 'cnt-main', date: '2026-09-03', amount: 25000, status: 'Posted' },
+    { id: 'cst-sub-1', contract_id: 'cnt-sub', date: '2026-09-07', amount: 15000, status: 'Approved' },
+    { id: 'cst-dup', contract_id: 'cnt-main', date: '2026-09-04', amount: 10000, source_type: 'procurement_receipt', source_id: 'rcpt-dup', status: 'Posted' },
+    { id: 'cst-date2', contract_id: 'cnt-main', date: '2026-09-15', amount: 20000, status: 'Posted' },
+    { id: 'cst-future', contract_id: 'cnt-main', date: '2026-09-27', amount: 50000, status: 'Posted' },
+    { id: 'cst-undated', contract_id: 'cnt-main', amount: 50000, status: 'Posted' },
+  ];
+
+  const procurementReceipts = [
+    { id: 'rcpt-dup', contract_id: 'cnt-main', receipt_date: '2026-09-04', status: 'Accepted', accepted_amount: 10000 },
+    { id: 'rcpt-unposted', contract_id: 'cnt-main', receipt_date: '2026-09-06', status: 'Accepted', accepted_amount: 5000 },
+    { id: 'rcpt-pending', contract_id: 'cnt-main', receipt_date: '2026-09-06', status: 'Pending', accepted_amount: 50000 },
+  ];
+
+  const controlAccounts = [
+    { id: 'ca-1', contract_id: 'cnt-main', boq_item_id: 'boq-main-1', status: 'Active' },
+  ];
+
+  const costPlanVersions = [
+    {
+      id: 'cp-1',
+      control_account_id: 'ca-1',
+      status: 'Approved',
+      delivery_cost_bac: 80000,
+      periods: [
+        { period_end: '2026-09-10', planned_cost: 30000 },
+        { period_end: '2026-09-20', planned_cost: 50000 },
+      ],
+    },
+  ];
+
+  // === DATA DATE 1: 2026-09-10 ===
+  const resDate1 = calculateEvmAtDataDate({
+    contractIds: ['cnt-main'],
+    performanceContractIds: ['cnt-main', 'cnt-sub'],
+    dataDate: '2026-09-10',
+    schedules,
+    scheduleDistributions,
+    baselines,
+    wirEntries,
+    progressCorrections,
+    boqItems,
+    costEntries,
+    procurementReceipts,
+    controlAccounts,
+    costPlanVersions,
+  });
+
+  // Expected canonical outputs at Date 1:
+  // Revenue PV = 60,000
+  // Revenue EV = (400*100) + (200*100) - (50*100) = 55,000
+  // Revenue SPI = 55,000 / 60,000 = 0.916666...
+  // Delivery Cost BAC = 80,000
+  // Delivery Cost EV = 80,000 * (55,000 / 100,000) = 44,000
+  // Delivery Cost AC = 25,000 + 15,000 + 10,000 + 5,000 = 55,000
+  // Delivery Cost CPI = 44,000 / 55,000 = 0.8
+  assert.strictEqual(resDate1.revenuePV, 60000);
+  assert.strictEqual(resDate1.revenueEV, 55000);
+  assert.ok(Math.abs(resDate1.revenueSPI - (55000 / 60000)) < 1e-4);
+  assert.strictEqual(resDate1.costBAC, 80000);
+  assert.strictEqual(resDate1.costEV, 44000);
+  assert.strictEqual(resDate1.costAC, 55000);
+  assert.ok(Math.abs(resDate1.costCPI - 0.8) < 1e-4);
+
+  // Cross-engine parity check with Rust persisted health score dimensions:
+  // Schedule SPI matches Rust res_date1.dimensions[0].raw_metric_value
+  // Cost CPI matches Rust res_date1.dimensions[1].raw_metric_value
+  const rustPersistedDate1 = {
+    scheduleSpi: 55000.0 / 60000.0,
+    deliveryCostCpi: 0.8,
+  };
+  assert.ok(Math.abs(resDate1.revenueSPI - rustPersistedDate1.scheduleSpi) < 1e-6);
+  assert.ok(Math.abs(resDate1.costCPI - rustPersistedDate1.deliveryCostCpi) < 1e-6);
+
+  // === DATA DATE 2: 2026-09-20 ===
+  const resDate2 = calculateEvmAtDataDate({
+    contractIds: ['cnt-main'],
+    performanceContractIds: ['cnt-main', 'cnt-sub'],
+    dataDate: '2026-09-20',
+    schedules,
+    scheduleDistributions,
+    baselines,
+    wirEntries,
+    progressCorrections,
+    boqItems,
+    costEntries,
+    procurementReceipts,
+    controlAccounts,
+    costPlanVersions,
+  });
+
+  // Expected canonical outputs at Date 2:
+  // Revenue PV = 60,000 + 120,000 = 180,000
+  // Revenue EV = 55,000 + (300 * 100) = 85,000
+  // Revenue SPI = 85,000 / 180,000 = 0.472222...
+  // Delivery Cost BAC = 80,000
+  // Delivery Cost EV = 80,000 * (85,000 / 100,000) = 68,000
+  // Delivery Cost AC = 55,000 + 20,000 = 75,000
+  // Delivery Cost CPI = 68,000 / 75,000 = 0.906666...
+  assert.strictEqual(resDate2.revenuePV, 180000);
+  assert.strictEqual(resDate2.revenueEV, 85000);
+  assert.ok(Math.abs(resDate2.revenueSPI - (85000 / 180000)) < 1e-4);
+  assert.strictEqual(resDate2.costBAC, 80000);
+  assert.strictEqual(resDate2.costEV, 68000);
+  assert.strictEqual(resDate2.costAC, 75000);
+  assert.ok(Math.abs(resDate2.costCPI - (68000 / 75000)) < 1e-4);
+
+  // Cross-engine parity check with Rust persisted health score dimensions:
+  const rustPersistedDate2 = {
+    scheduleSpi: 85000.0 / 180000.0,
+    deliveryCostCpi: 68000.0 / 75000.0,
+  };
+  assert.ok(Math.abs(resDate2.revenueSPI - rustPersistedDate2.scheduleSpi) < 1e-6);
+  assert.ok(Math.abs(resDate2.costCPI - rustPersistedDate2.deliveryCostCpi) < 1e-6);
+});
+
+test('W06-C08 - Cost CPI is null and Unavailable when no approved cost plan exists', () => {
+  const resultWithoutPlan = calculateEvmAtDataDate({
+    contractIds: ['cnt-main'],
+    dataDate: '2026-09-10',
+    schedules: [],
+    scheduleDistributions: [],
+    baselines: [],
+    wirEntries: [],
+    boqItems: [],
+    costEntries: [{ id: 'c-1', contract_id: 'cnt-main', date: '2026-09-01', amount: 25000 }],
+    controlAccounts: [{ id: 'ca-1', contract_id: 'cnt-main', status: 'Active' }],
+    costPlanVersions: [{ id: 'cp-draft', control_account_id: 'ca-1', status: 'Draft' }],
+  });
+
+  // Strict rule: Without approved cost plan, cost CPI must be null
+  assert.strictEqual(resultWithoutPlan.costCPI, null);
+  assert.strictEqual(resultWithoutPlan.costEV, null);
+  assert.strictEqual(resultWithoutPlan.costBAC, null);
+  assert.notStrictEqual(resultWithoutPlan.cost.status, 'Ready');
+
+  // Governed health score must reflect Unavailable with score 0
+  const healthResult = deriveGovernedProjectHealthScore({
+    projectId: 'prj-1',
+    approvedConfig: GOVERNED_HEALTH_CONFIG_TEMPLATE,
+    evm: {
+      spi: 1.0,
+      cpi: resultWithoutPlan.costCPI,
+    },
+    costs: [{ id: 'c-1', project_id: 'prj-1' }],
+  });
+
+  const costDim = healthResult.dimensions.find(d => d.dimension === 'Cost');
+  assert.ok(costDim);
+  assert.strictEqual(costDim.status, 'Unavailable');
+  assert.strictEqual(costDim.score, 0);
+  assert.strictEqual(costDim.rawValue, null);
 });
