@@ -266,3 +266,34 @@ contract(s), propagate SQL errors, and replace the current same-engine arithmeti
 shared fixed fixture or explicit parity assertions covering both canonical TypeScript outputs and
 Rust persisted dimensions at two Data Dates. Run all gates, push W06, then stop. Do not start W07.
 
+## Correction round 9 verification — commit `83ad627`
+
+The Revenue SPI / Delivery Cost CPI separation is valid and retained. Codex corrected three
+mechanical candidate defects: one extra Rust delimiter, one moved-vector borrow, and an outdated
+pre-Cost-Plan assertion; Codex also restored the required `framer-motion` lock entries. After
+these corrections, targeted Node is `17/17 PASS`, production build is PASS, and targeted Rust is
+`11/11 PASS`.
+
+W06 remains `CORRECTION_REQUIRED — NOT 8/10` because two canonical paths can materially understate
+Delivery Cost EV and CPI:
+
+- Backend account progress is derived from WIR quantities only. Canonical `src/utils/evm.ts` uses
+  linked activities when an explicit method exists: `0/100`, `50/50`, `Weighted Milestone`, or
+  `Quantity`. Milestone/status-based projects therefore get valid Cost EV in the frontend but zero
+  Cost EV in the persisted health score.
+- A Control Account may resolve BOQ through `contract_sov_line_id`. Backend reads that ID into
+  `_contract_sov_line_id` but never uses it. With multiple accounts and no direct BOQ ID, WIRs
+  match no account. Canonical TypeScript resolves `account.boq_item_id || SOV.boq_item_id`.
+- Without direct BOQ quantity, the denominator must be the linked activities' Revenue BAC. Backend
+  uses whole-project `cumulative_pv`, a Data-Date value, as every account's denominator.
+- Current parity fixtures cover one directly BOQ-linked account and Quantity/WIR only; they do not
+  exercise these divergent paths, and the Node test repeats Rust expected numbers manually.
+
+### Required correction round 9
+
+Preserve all passing work. Mirror canonical account resolution and `activityRevenueEarned`: load
+SOV lines, resolve each account BOQ, select linked schedules, apply the configured measurement
+method at Data Date, use linked activity Revenue BAC as fallback denominator, and use WIR fallback
+only when no explicit method exists. Add two-account SOV-only and `0/100`/`50/50` parity fixtures.
+Run all gates, push W06, then stop. Do not start W07 or modify package/authority files.
+

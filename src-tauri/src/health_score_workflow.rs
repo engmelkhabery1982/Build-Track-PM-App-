@@ -641,7 +641,7 @@ async fn calculate_governed_evm_core(
         })
         .collect();
 
-    for c_row in cor_rows {
+    for c_row in &cor_rows {
         let cor_id: String = c_row.get(0);
         let orig_wir_id: String = c_row.get(1);
         let p_str: String = c_row.get(2);
@@ -2548,10 +2548,11 @@ mod tests {
         assert!(sched_dim.source_record_ids.contains(&"wir-1".to_string()));
         assert!(!sched_dim.source_record_ids.contains(&"sch-2".to_string()));
 
-        // 2. Cost: CPI = EV (90,000) / AC (80,000) = 1.125; cst-1 included, cst-2 excluded
+        // 2. Cost: without an approved delivery-cost plan CPI is unavailable;
+        // dated AC lineage still includes cst-1 and excludes future cst-2.
         let cost_dim = &result.dimensions[1];
         assert_eq!(cost_dim.dimension, "Cost");
-        assert_eq!(cost_dim.raw_metric_value, Some(1.125));
+        assert_eq!(cost_dim.raw_metric_value, None);
         assert_eq!(cost_dim.source_record_ids, vec!["cst-1".to_string()]);
 
         // 3. Cash: Net Cash = 1,000 - 400 = 600.0; cf-1 included, cf-2 excluded
@@ -3053,7 +3054,6 @@ mod tests {
         assert_eq!(cost_dim.status, "Unavailable");
         assert_eq!(cost_dim.score, 0.0);
         assert_eq!(cost_dim.freshness_status, "Missing");
-    }
     }
 
     #[tokio::test]

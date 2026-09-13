@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: CORRECTION REQUIRED — ROUND 8
+Status: CORRECTION REQUIRED — ROUND 9
 
 W06-G01=PASS
 W06-G02=PASS
@@ -20,9 +20,18 @@ W06-C04=PASS
 W06-C05=PASS
 W06-C06=PASS
 W06-C07=FAIL
-W06-C08=PASS
+W06-C08=FAIL
 
-Correction Round 8 Codex Verification:
+Correction Round 9 Codex Verification:
+- Targeted Node: PASS (17/17).
+- Production build: PASS.
+- Targeted Rust workflow: PASS (11/11) after Codex mechanical fixes.
+- Revenue SPI / Delivery Cost CPI separation: PASS for Quantity/WIR with direct BOQ account.
+- Explicit activity measurement methods: FAIL in backend Cost EV.
+- SOV-only Control Account mapping and account BAC denominator: FAIL.
+- W06 remains open; W07 must not start.
+
+Previous round evidence:
 - Codex mechanical fixes: PASS.
 - Targeted Node: PASS (15/15).
 - Production build: PASS.
