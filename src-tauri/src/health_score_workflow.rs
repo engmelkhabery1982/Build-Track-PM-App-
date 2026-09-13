@@ -848,133 +848,333 @@ async fn calculate_governed_evm_core(
         }
     }
 
+    // 5.5 Load contract SOV lines
+    let sov_rows = sqlx::query(
+        "SELECT id, boq_item_id, payload FROM contract_sov_lines WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| format!("Failed to query contract_sov_lines: {e}"))?;
+
+    struct SovEntry {
+        boq_item_id: Option<String>,
+        revised_budget: f64,
+        original_budget: f64,
+        status: String,
+    }
+
+    let mut sov_map: std::collections::HashMap<String, SovEntry> = std::collections::HashMap::new();
+    for r in &sov_rows {
+        let s_id: String = r.get(0);
+        let b_id: Option<String> = r.get(1);
+        let p_str: String = r.get(2);
+        let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+        let rev = p.get("revised_budget").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let orig = p.get("original_budget").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("Active").to_string();
+        sov_map.insert(s_id, SovEntry {
+            boq_item_id: b_id,
+            revised_budget: rev,
+            original_budget: orig,
+            status,
+        });
+    }
+
+    struct SchedEntry {
+        id: String,
+        contract_id: String,
+        payload: serde_json::Value,
+    }
+    let mut all_schedules: Vec<SchedEntry> = Vec::new();
+    for s_row in &sched_rows {
+        let s_id: String = s_row.get(0);
+        let s_contract: Option<String> = s_row.get(1);
+        let s_contract_str = s_contract.unwrap_or_default();
+        let p_str: String = s_row.get(2);
+        let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+        all_schedules.push(SchedEntry {
+            id: s_id,
+            contract_id: s_contract_str,
+            payload: p,
+        });
+    }
+
     let mut total_delivery_cost_ev = 0.0;
     let mut total_delivery_cost_bac = 0.0;
     let mut has_approved_cost_plan = false;
 
     for account in &scoped_control_accounts {
-        if let Some((budget, cp_id, _cp_p)) = approved_cost_plan_by_account.get(&account.id) {
-            if *budget <= 0.0 {
+        let sov = account._contract_sov_line_id.as_str();
+        let approved_cost_plan = approved_cost_plan_by_account.get(&account.id);
+        
+        let sov_entry = if !sov.is_empty() { sov_map.get(sov) } else { None };
+        
+        if approved_cost_plan.is_none() {
+            if let Some(se) = sov_entry {
+                if se.status != "Active" && se.status != "Closed" {
+                    continue;
+                }
+            } else {
                 continue;
             }
-            has_approved_cost_plan = true;
+        }
+        
+        let budget = if let Some((bac, cp_id, _)) = approved_cost_plan {
             if !cost_record_ids.contains(cp_id) {
                 cost_record_ids.push(cp_id.clone());
             }
+            *bac
+        } else if let Some(se) = sov_entry {
+            if se.revised_budget > 0.0 {
+                se.revised_budget
+            } else {
+                se.original_budget
+            }
+        } else {
+            0.0
+        };
+        
+        if budget <= 0.0 {
+            continue;
+        }
 
-            let account_id = &account.id;
-            let account_boq_id = if !account.boq_item_id.is_empty() {
-                get_main_boq_id(&account.boq_item_id)
+        has_approved_cost_plan = true;
+
+        let account_id = &account.id;
+        let account_boq_id = if !account.boq_item_id.is_empty() {
+            get_main_boq_id(&account.boq_item_id)
+        } else if let Some(se) = sov_entry {
+            if let Some(ref sb) = se.boq_item_id {
+                get_main_boq_id(sb)
             } else {
                 String::new()
-            };
+            }
+        } else {
+            String::new()
+        };
 
-            // 1. Account revenue from WIRs
-            let mut account_wir_revenue = 0.0;
-            for w in &wir_rows {
-                let w_contract: Option<String> = w.get(1);
-                let w_contract_str = w_contract.unwrap_or_default();
+        // 1. Find linked schedules (activities)
+        let mut linked_schedules: Vec<&SchedEntry> = Vec::new();
+        for s in &all_schedules {
+            let act_ca_id = s.payload.get("control_account_id").and_then(|v| v.as_str()).unwrap_or("");
+            let act_boq = s.payload.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+            let main_act_boq = if !act_boq.is_empty() { get_main_boq_id(act_boq) } else { String::new() };
+
+            let matches_ca = !act_ca_id.is_empty() && act_ca_id == account.id;
+            let matches_boq = act_ca_id.is_empty() && !account_boq_id.is_empty() && !main_act_boq.is_empty() && main_act_boq == account_boq_id;
+            let fallback_single = scoped_control_accounts.len() == 1 && act_ca_id.is_empty() && act_boq.is_empty();
+
+            if matches_ca || matches_boq || fallback_single {
+                linked_schedules.push(s);
+            }
+        }
+
+        let get_schedule_budget = |act_p: &serde_json::Value| -> f64 {
+            if let Some(b) = act_p.get("cost_budget").or_else(|| act_p.get("budget")).and_then(|v| v.as_f64()) {
+                b
+            } else {
+                let pq = act_p.get("planned_quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let ur = act_p.get("unit_rate").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                pq * ur
+            }
+        };
+
+        let mut planned_revenue_bac = 0.0;
+        for s in &linked_schedules {
+            planned_revenue_bac += get_schedule_budget(&s.payload);
+        }
+
+        // 2. Earned from activities using explicit methods
+        let mut earned_from_activities = 0.0;
+        let mut has_explicit_measurement = false;
+
+        for s in &linked_schedules {
+            let act_p = &s.payload;
+            let method = act_p.get("measurement_method").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if !method.is_empty() {
+                has_explicit_measurement = true;
+            }
+
+            let act_budget = get_schedule_budget(act_p);
+            let status = act_p.get("activity_status").and_then(|v| v.as_str()).unwrap_or("");
+            let actual_start = act_p.get("actual_start_date")
+                .or_else(|| act_p.get("status_data_date"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let actual_finish = act_p.get("actual_finish_date")
+                .or_else(|| act_p.get("status_data_date"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            match method {
+                "0/100" => {
+                    let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date);
+                    if status == "Completed" && finish_ok {
+                        earned_from_activities += act_budget;
+                    }
+                },
+                "50/50" => {
+                    let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date);
+                    let start_ok = !actual_start.is_empty() && (cutoff_date.is_empty() || actual_start <= cutoff_date);
+                    if status == "Completed" && finish_ok {
+                        earned_from_activities += act_budget;
+                    } else if start_ok {
+                        earned_from_activities += act_budget * 0.5;
+                    }
+                },
+                "Weighted Milestone" => {
+                    let weight_pct = act_p.get("measurement_weight_pct").and_then(|v| v.as_f64()).unwrap_or(0.0).clamp(0.0, 100.0);
+                    earned_from_activities += act_budget * (weight_pct / 100.0);
+                },
+                "Quantity" => {
+                    let mut act_quantity_ev = 0.0;
+                    for w in &wir_rows {
+                        let w_contract: Option<String> = w.get(1);
+                        let w_contract_str = w_contract.unwrap_or_default();
+                        if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
+                            continue;
+                        }
+                        let w_payload_str: String = w.get(2);
+                        let w_p: serde_json::Value = serde_json::from_str(&w_payload_str).unwrap_or(serde_json::Value::Null);
+                        let w_status = w_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                        let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                        let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
+                        let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
+                        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date);
+
+                        if is_approved && date_ok {
+                            let w_sch = w_p.get("schedule_id").and_then(|v| v.as_str()).unwrap_or("");
+                            if w_sch == s.id {
+                                let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let boq_id = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+                                let def_rate = w_p.get("unit_rate").or_else(|| w_p.get("unit_price")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let rate = get_selling_rate(boq_id, def_rate);
+                                act_quantity_ev += qty * rate;
+                            }
+                        }
+                    }
+                    earned_from_activities += act_quantity_ev;
+                },
+                _ => {}
+            }
+        }
+
+        // 3. Earned from account WIRs (Fallback when no explicit method exists)
+        let mut earned_from_account_wirs = 0.0;
+        for w in &wir_rows {
+            let w_contract: Option<String> = w.get(1);
+            let w_contract_str = w_contract.unwrap_or_default();
+            if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
+                continue;
+            }
+            let w_payload_str: String = w.get(2);
+            let w_p: serde_json::Value = serde_json::from_str(&w_payload_str).unwrap_or(serde_json::Value::Null);
+            let w_status = w_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
+            let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
+            let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
+            let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date);
+
+            if is_approved && date_ok {
+                let wir_ca_id = w_p.get("control_account_id").and_then(|v| v.as_str()).unwrap_or("");
+                let w_boq = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+                let main_w_boq = get_main_boq_id(w_boq);
+
+                let matches_account = if !wir_ca_id.is_empty() {
+                    wir_ca_id == account.id
+                } else if !account_boq_id.is_empty() {
+                    main_w_boq == account_boq_id
+                } else if scoped_control_accounts.len() == 1 {
+                    true
+                } else {
+                    false
+                };
+
+                if matches_account {
+                    let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let default_price = w_p.get("unit_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let selling_rate = get_selling_rate(w_boq, default_price);
+                    earned_from_account_wirs += qty * selling_rate;
+                }
+            }
+        }
+
+        // 4. Progress corrections
+        let mut account_corr_revenue = 0.0;
+        for c in &cor_rows {
+            let c_payload_str: String = c.get(2);
+            let c_p: serde_json::Value = serde_json::from_str(&c_payload_str).unwrap_or(serde_json::Value::Null);
+            let c_status = c_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if c_status != "Posted" {
+                continue;
+            }
+            let eff_date = c_p.get("effective_date").and_then(|v| v.as_str()).unwrap_or("");
+            if eff_date.is_empty() || (!cutoff_date.is_empty() && eff_date > cutoff_date) {
+                continue;
+            }
+            let orig_wir_id: String = c.get(1);
+            if let Some((w_contract, orig_p)) = wir_map.get(&orig_wir_id) {
+                let w_contract_str = w_contract.clone().unwrap_or_default();
                 if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
                     continue;
                 }
-                let w_payload_str: String = w.get(2);
-                let w_p: serde_json::Value = serde_json::from_str(&w_payload_str).unwrap_or(serde_json::Value::Null);
-                let w_status = w_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
-                let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
-                let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
-                let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
-                let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date);
+                let orig_ca_id = orig_p.get("control_account_id").and_then(|v| v.as_str()).unwrap_or("");
+                let orig_boq = orig_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+                let main_orig_boq = get_main_boq_id(orig_boq);
 
-                if is_approved && date_ok {
-                    let wir_ca_id = w_p.get("control_account_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let w_boq = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let main_w_boq = get_main_boq_id(w_boq);
-
-                    let matches_account = if !wir_ca_id.is_empty() {
-                        wir_ca_id == account_id
-                    } else if !account_boq_id.is_empty() {
-                        main_w_boq == account_boq_id
-                    } else if scoped_control_accounts.len() == 1 {
-                        true
-                    } else {
-                        false
-                    };
-
-                    if matches_account {
-                        let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let default_price = w_p.get("unit_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let selling_rate = get_selling_rate(w_boq, default_price);
-                        account_wir_revenue += qty * selling_rate;
-                    }
-                }
-            }
-
-            // 2. Account revenue from progress corrections
-            let mut account_corr_revenue = 0.0;
-            for c in &cor_rows {
-                let c_payload_str: String = c.get(2);
-                let c_p: serde_json::Value = serde_json::from_str(&c_payload_str).unwrap_or(serde_json::Value::Null);
-                let c_status = c_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
-                if c_status != "Posted" {
-                    continue;
-                }
-                let eff_date = c_p.get("effective_date").and_then(|v| v.as_str()).unwrap_or("");
-                if eff_date.is_empty() || (!cutoff_date.is_empty() && eff_date > cutoff_date) {
-                    continue;
-                }
-                let orig_wir_id: String = c.get(1);
-                if let Some((w_contract, orig_p)) = wir_map.get(&orig_wir_id) {
-                    let w_contract_str = w_contract.clone().unwrap_or_default();
-                    if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
-                        continue;
-                    }
-                    let orig_ca_id = orig_p.get("control_account_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let orig_boq = orig_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let main_orig_boq = get_main_boq_id(orig_boq);
-
-                    let matches_account = if !orig_ca_id.is_empty() {
-                        orig_ca_id == account_id
-                    } else if !account_boq_id.is_empty() {
-                        main_orig_boq == account_boq_id
-                    } else if scoped_control_accounts.len() == 1 {
-                        true
-                    } else {
-                        false
-                    };
-
-                    if matches_account {
-                        let c_qty = c_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let default_price = orig_p.get("unit_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let selling_rate = get_selling_rate(orig_boq, default_price);
-                        let c_type = c_p.get("correction_type").and_then(|v| v.as_str()).unwrap_or("Reversal");
-                        let val = c_qty * selling_rate;
-                        if c_type == "Reinstatement" {
-                            account_corr_revenue += val;
-                        } else {
-                            account_corr_revenue -= val;
-                        }
-                    }
-                }
-            }
-
-            let earned_revenue = (account_wir_revenue + account_corr_revenue).max(0.0);
-
-            let boq_revenue_bac = if !account_boq_id.is_empty() {
-                if let Some(boq_entry) = boq_map.get(&account_boq_id) {
-                    boq_entry.quantity * boq_entry.unit_rate
+                let matches_account = if !orig_ca_id.is_empty() {
+                    orig_ca_id == account.id
+                } else if !account_boq_id.is_empty() {
+                    main_orig_boq == account_boq_id
+                } else if scoped_control_accounts.len() == 1 {
+                    true
                 } else {
-                    0.0
+                    false
+                };
+
+                if matches_account {
+                    let c_qty = c_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let default_price = orig_p.get("unit_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let selling_rate = get_selling_rate(orig_boq, default_price);
+                    let c_type = c_p.get("correction_type").and_then(|v| v.as_str()).unwrap_or("Reversal");
+                    let val = c_qty * selling_rate;
+                    if c_type == "Reinstatement" {
+                        account_corr_revenue += val;
+                    } else {
+                        account_corr_revenue -= val;
+                    }
                 }
+            }
+        }
+
+        let earned_revenue = (if has_explicit_measurement { earned_from_activities } else { earned_from_account_wirs } + account_corr_revenue).max(0.0);
+
+        let boq_revenue_bac = if !account_boq_id.is_empty() {
+            if let Some(boq_entry) = boq_map.get(&account_boq_id) {
+                boq_entry.quantity * boq_entry.unit_rate
             } else {
                 0.0
-            };
-            let progress_basis = if boq_revenue_bac > 0.0 { boq_revenue_bac } else { cumulative_pv };
-            let earned_fraction = if progress_basis > 0.0 { (earned_revenue / progress_basis).min(1.0).max(0.0) } else { 0.0 };
+            }
+        } else {
+            0.0
+        };
 
-            let account_cost_ev = budget * earned_fraction;
-            total_delivery_cost_ev += account_cost_ev;
-            total_delivery_cost_bac += budget;
-        }
+        let progress_basis = if boq_revenue_bac > 0.0 {
+            boq_revenue_bac
+        } else {
+            planned_revenue_bac
+        };
+
+        let earned_fraction = if progress_basis > 0.0 {
+            (earned_revenue / progress_basis).min(1.0).max(0.0)
+        } else {
+            0.0
+        };
+
+        let account_cost_ev = budget * earned_fraction;
+        total_delivery_cost_ev += account_cost_ev;
+        total_delivery_cost_bac += budget;
     }
 
     // 7. SPI and CPI
