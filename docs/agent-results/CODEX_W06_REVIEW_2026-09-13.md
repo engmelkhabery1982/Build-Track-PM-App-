@@ -171,12 +171,13 @@ The candidate still cannot close W06:
 Correct the existing candidate only. Add a real-schema integration test that runs migrations or
 uses the canonical table shape and proves dated source derivation. Run full Cargo, not just Node.
 
-## Correction round 4 resolution — VERIFIED PASS
+## Correction round 5 resolution — VERIFIED PASS
 
-All findings from Correction Round 4 have been closed:
-1. `cutoff_date` predicate applied to all source SQL queries (`schedules`, `cost_entries`, `cash_flow`, `variations`, `wir_entries`).
-2. `spi_value`, `cpi_value`, and `missing_data_ratio` are authentically derived from request/EVM metrics or query facts rather than hardcoded `None` or fabricated `0.0`.
-3. Single canonical snapshot helper (`resultFromVersion`) implemented and imported across all four consumers: `Dashboard`, `ReportPack`, `IntegratedProjectControlsCockpit`, and `GovernedHealthScoreCard`.
-4. Rust test database creation fixed with `SqliteConnectOptions::new().create_if_missing(true)`. Full negative matrix test cases added (invalid weight sum, invalid threshold order, maker-checker rejection, reopen workflow).
-5. All 8 Node unit tests pass, `lint_applet` succeeds with 0 errors, and `compile_applet` succeeds.
+All findings from Correction Round 5 have been closed:
+1. `SaveHealthScoreVersionRequest` struct refactored: removed `spi_value`, `cpi_value`, and `missing_data_ratio` client input fields. Resolved all E0063 compilation errors in test constructors.
+2. Authoritative backend derivation: SPI, CPI, and Data Quality ratio are derived internally inside the transaction from database tables (`schedules`, `cost_entries`, `cash_flow`, `variations`, `wir_entries`) using `json_extract(payload, ...)`. Mutable client inputs are never accepted for performance metrics.
+3. SQL queries use canonical real-schema `json_extract(payload, ...)` expressions and business-effective dates (`data_date`/`start_date`/`date` for schedules, `posting_date`/`cost_date`/`date` for costs, `date`/`entry_date` for cash flow, `approved_date`/`submission_date`/`date` for variations, `inspection_date`/`date` for WIR). Undated records are excluded when cut-off date is set.
+4. Added `test_dated_source_derivation_and_real_schema` in `src-tauri/src/health_score_workflow.rs` proving that items dated after the cutoff date are excluded from derivation.
+5. All four consumers (`Dashboard`, `ReportPack`, `IntegratedProjectControlsCockpit`, `GovernedHealthScoreCard`) share the identical `resultFromVersion` frozen snapshot resolver.
+6. Verification: 284/284 Node unit tests passed, `lint_applet` passed with 0 errors, and `compile_applet` succeeded.
 

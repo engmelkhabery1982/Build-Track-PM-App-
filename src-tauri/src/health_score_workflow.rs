@@ -58,12 +58,6 @@ pub struct SaveHealthScoreVersionRequest {
     pub data_quality_warning_threshold: f64,
     pub data_quality_critical_threshold: f64,
     pub data_quality_direction: String,
-    #[serde(default)]
-    pub spi_value: Option<f64>,
-    #[serde(default)]
-    pub cpi_value: Option<f64>,
-    #[serde(default)]
-    pub missing_data_ratio: Option<f64>,
     pub notes: Option<String>,
     pub actor: String,
 }
@@ -293,126 +287,256 @@ pub async fn save_health_score_version_core(
     let cutoff_date = req.data_date.clone().unwrap_or_default();
 
     // 1. Schedules / EVM (SPI)
-    let schedule_rows = if cutoff_date.is_empty() {
-        sqlx::query("SELECT id FROM schedules WHERE project_id = ?")
-            .bind(&req.project_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+    let (schedule_ids, spi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, CAST(json_extract(payload, '$.spi') AS REAL) FROM schedules WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let spi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let spi = if ids.is_empty() {
+            None
+        } else if spi_vals.is_empty() {
+            None
+        } else {
+            Some(spi_vals.iter().sum::<f64>() / spi_vals.len() as f64)
+        };
+        (ids, spi)
     } else {
-        sqlx::query("SELECT id FROM schedules WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
-            .bind(&req.project_id)
-            .bind(&cutoff_date)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+        let rows = sqlx::query(
+            "SELECT id, CAST(json_extract(payload, '$.spi') AS REAL) FROM schedules 
+             WHERE project_id = ? 
+             AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let spi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let spi = if ids.is_empty() {
+            None
+        } else if spi_vals.is_empty() {
+            None
+        } else {
+            Some(spi_vals.iter().sum::<f64>() / spi_vals.len() as f64)
+        };
+        (ids, spi)
     };
-    let schedule_ids: Vec<String> = schedule_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let spi_value: Option<f64> = req.spi_value;
 
     // 2. Cost Entries (CPI)
-    let cost_rows = if cutoff_date.is_empty() {
-        sqlx::query("SELECT id FROM cost_entries WHERE project_id = ?")
-            .bind(&req.project_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+    let (cost_ids, cpi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, CAST(json_extract(payload, '$.cpi') AS REAL) FROM cost_entries WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let cpi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let cpi = if ids.is_empty() {
+            None
+        } else if cpi_vals.is_empty() {
+            None
+        } else {
+            Some(cpi_vals.iter().sum::<f64>() / cpi_vals.len() as f64)
+        };
+        (ids, cpi)
     } else {
-        sqlx::query("SELECT id FROM cost_entries WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
-            .bind(&req.project_id)
-            .bind(&cutoff_date)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+        let rows = sqlx::query(
+            "SELECT id, CAST(json_extract(payload, '$.cpi') AS REAL) FROM cost_entries 
+             WHERE project_id = ? 
+             AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let cpi_vals: Vec<f64> = rows.iter().filter_map(|r| r.get::<Option<f64>, _>(1)).collect();
+        let cpi = if ids.is_empty() {
+            None
+        } else if cpi_vals.is_empty() {
+            None
+        } else {
+            Some(cpi_vals.iter().sum::<f64>() / cpi_vals.len() as f64)
+        };
+        (ids, cpi)
     };
-    let cost_ids: Vec<String> = cost_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let cpi_value: Option<f64> = req.cpi_value;
 
     // 3. Cash Flow
-    let cash_rows = if cutoff_date.is_empty() {
-        sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ?")
-            .bind(&req.project_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+    let (cash_ids, net_cash): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.inflow'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.outflow'), 0) AS REAL) 
+             FROM cash_flow WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let net = if ids.is_empty() {
+            None
+        } else {
+            let mut sum = 0.0;
+            for r in &rows {
+                let inf: f64 = r.get(1);
+                let outf: f64 = r.get(2);
+                sum += inf - outf;
+            }
+            Some(sum)
+        };
+        (ids, net)
     } else {
-        sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ? AND (created_at <= ? OR entry_date <= ? OR created_at IS NULL OR created_at = '')")
-            .bind(&req.project_id)
-            .bind(&cutoff_date)
-            .bind(&cutoff_date)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
-    };
-    let cash_ids: Vec<String> = cash_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let net_cash: Option<f64> = if cash_ids.is_empty() {
-        None
-    } else {
-        let mut sum = 0.0;
-        for r in &cash_rows {
-            let inf: f64 = r.get(1);
-            let outf: f64 = r.get(2);
-            sum += inf - outf;
-        }
-        Some(sum)
+        let rows = sqlx::query(
+            "SELECT id, 
+                    CAST(COALESCE(json_extract(payload, '$.inflow'), 0) AS REAL), 
+                    CAST(COALESCE(json_extract(payload, '$.outflow'), 0) AS REAL) 
+             FROM cash_flow 
+             WHERE project_id = ? 
+             AND COALESCE(json_extract(payload, '$.date'), json_extract(payload, '$.entry_date')) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.date'), json_extract(payload, '$.entry_date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let net = if ids.is_empty() {
+            None
+        } else {
+            let mut sum = 0.0;
+            for r in &rows {
+                let inf: f64 = r.get(1);
+                let outf: f64 = r.get(2);
+                sum += inf - outf;
+            }
+            Some(sum)
+        };
+        (ids, net)
     };
 
     // 4. Variations
-    let var_rows = if cutoff_date.is_empty() {
-        sqlx::query("SELECT id, status FROM variations WHERE project_id = ?")
-            .bind(&req.project_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+    let (var_ids, unapproved_var_ratio): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, COALESCE(status_sql, json_extract(payload, '$.status')) FROM variations WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let ratio = if ids.is_empty() {
+            None
+        } else {
+            let unapproved_cnt = rows.iter().filter(|r| {
+                let st: Option<String> = r.get(1);
+                match st.as_deref() {
+                    Some("Approved") => false,
+                    _ => true,
+                }
+            }).count();
+            Some(unapproved_cnt as f64 / ids.len() as f64)
+        };
+        (ids, ratio)
     } else {
-        sqlx::query("SELECT id, status FROM variations WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
-            .bind(&req.project_id)
-            .bind(&cutoff_date)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
-    };
-    let var_ids: Vec<String> = var_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let unapproved_var_ratio: Option<f64> = if var_ids.is_empty() {
-        None
-    } else {
-        let pending = var_rows
-            .iter()
-            .filter(|r| {
-                let st: String = r.get(1);
-                st == "Pending" || st == "Submitted"
-            })
-            .count();
-        Some(pending as f64 / var_ids.len() as f64)
+        let rows = sqlx::query(
+            "SELECT id, COALESCE(status_sql, json_extract(payload, '$.status')) FROM variations 
+             WHERE project_id = ? 
+             AND COALESCE(approved_date_sql, json_extract(payload, '$.approved_date'), json_extract(payload, '$.submission_date'), json_extract(payload, '$.date')) IS NOT NULL 
+             AND COALESCE(approved_date_sql, json_extract(payload, '$.approved_date'), json_extract(payload, '$.submission_date'), json_extract(payload, '$.date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let ratio = if ids.is_empty() {
+            None
+        } else {
+            let unapproved_cnt = rows.iter().filter(|r| {
+                let st: Option<String> = r.get(1);
+                match st.as_deref() {
+                    Some("Approved") => false,
+                    _ => true,
+                }
+            }).count();
+            Some(unapproved_cnt as f64 / ids.len() as f64)
+        };
+        (ids, ratio)
     };
 
     // 5. WIR inspection entries
-    let wir_rows = if cutoff_date.is_empty() {
-        sqlx::query("SELECT id, status FROM wir_entries WHERE project_id = ?")
-            .bind(&req.project_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
+    let (wir_ids, wir_fail_rate): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
+        let rows = sqlx::query(
+            "SELECT id, json_extract(payload, '$.status') FROM wir_entries WHERE project_id = ?"
+        )
+        .bind(&req.project_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let fail_rate = if ids.is_empty() {
+            None
+        } else {
+            let failed_cnt = rows.iter().filter(|r| {
+                let st: Option<String> = r.get(1);
+                match st.as_deref() {
+                    Some("Rejected") | Some("Failed") | Some("Non-Compliant") => true,
+                    _ => false,
+                }
+            }).count();
+            Some(failed_cnt as f64 / ids.len() as f64)
+        };
+        (ids, fail_rate)
     } else {
-        sqlx::query("SELECT id, status FROM wir_entries WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
-            .bind(&req.project_id)
-            .bind(&cutoff_date)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
-    };
-    let wir_ids: Vec<String> = wir_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let wir_fail_rate: Option<f64> = if wir_ids.is_empty() {
-        None
-    } else {
-        let failed = wir_rows
-            .iter()
-            .filter(|r| {
-                let st: String = r.get(1);
-                st == "Rejected" || st == "Failed"
-            })
-            .count();
-        Some(failed as f64 / wir_ids.len() as f64)
+        let rows = sqlx::query(
+            "SELECT id, json_extract(payload, '$.status') FROM wir_entries 
+             WHERE project_id = ? 
+             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) IS NOT NULL 
+             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) <= ?"
+        )
+        .bind(&req.project_id)
+        .bind(&cutoff_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
+        let fail_rate = if ids.is_empty() {
+            None
+        } else {
+            let failed_cnt = rows.iter().filter(|r| {
+                let st: Option<String> = r.get(1);
+                match st.as_deref() {
+                    Some("Rejected") | Some("Failed") | Some("Non-Compliant") => true,
+                    _ => false,
+                }
+            }).count();
+            Some(failed_cnt as f64 / ids.len() as f64)
+        };
+        (ids, fail_rate)
     };
 
     // 6. Data Quality
@@ -420,7 +544,7 @@ pub async fn save_health_score_version_core(
     let dq_ratio: Option<f64> = if total_records == 0 {
         None
     } else {
-        req.missing_data_ratio.or(Some(0.0))
+        Some(0.0)
     };
 
     // Compute dimensions
@@ -1207,11 +1331,11 @@ mod tests {
         sqlx::query(
             "CREATE TABLE projects (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT);
              CREATE TABLE reporting_periods (id TEXT PRIMARY KEY, project_id TEXT, start_date TEXT, end_date TEXT, is_locked INTEGER DEFAULT 0);
-             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT);
-             CREATE TABLE cost_entries (id TEXT PRIMARY KEY, project_id TEXT);
-             CREATE TABLE cash_flow (id TEXT PRIMARY KEY, project_id TEXT, inflow REAL, outflow REAL);
-             CREATE TABLE variations (id TEXT PRIMARY KEY, project_id TEXT, status TEXT);
-             CREATE TABLE wir_entries (id TEXT PRIMARY KEY, project_id TEXT, status TEXT);
+             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE cost_entries (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE cash_flow (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE variations (id TEXT PRIMARY KEY, project_id TEXT, status_sql TEXT, approved_date_sql TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE wir_entries (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT);
              CREATE TABLE health_score_versions (
                  id TEXT PRIMARY KEY,
@@ -1526,5 +1650,83 @@ mod tests {
 
         assert_eq!(active_approved.id, approved_b.id);
         assert_eq!(active_approved.version_code, "V-HEALTH-A-REV1");
+    }
+
+    #[tokio::test]
+    async fn test_dated_source_derivation_and_real_schema() {
+        let db = create_test_db().await;
+        let pool = database(&db).await.unwrap();
+
+        // Populate sources with dates before and after cutoff 2026-09-10
+        sqlx::query(
+            "INSERT INTO schedules (id, project_id, payload) VALUES 
+             ('sch-1', 'prj-1', '{\"spi\": 0.95, \"data_date\": \"2026-09-05\"}'),
+             ('sch-2', 'prj-1', '{\"spi\": 0.60, \"data_date\": \"2026-09-15\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO cost_entries (id, project_id, payload) VALUES 
+             ('cst-1', 'prj-1', '{\"cpi\": 1.05, \"posting_date\": \"2026-09-01\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO cash_flow (id, project_id, payload) VALUES 
+             ('cf-1', 'prj-1', '{\"inflow\": 1000, \"outflow\": 400, \"date\": \"2026-09-08\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool.close().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-save-dated-1".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-HEALTH-DATED".to_string(),
+            title: "Dated Derivation Test".to_string(),
+            data_date: Some("2026-09-10".to_string()),
+            schedule_weight: 20.0,
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: Some("Verifying cutoff exclusion".to_string()),
+            actor: "System Audit".to_string(),
+        };
+
+        let result = save_health_score_version_core(&db, save_req)
+            .await
+            .unwrap();
+
+        // Dimension 0 is Schedule: only sch-1 (SPI=0.95) should be included, sch-2 (0.60) excluded.
+        let sched_dim = &result.dimensions[0];
+        assert_eq!(sched_dim.dimension, "Schedule");
+        assert_eq!(sched_dim.raw_metric_value, Some(0.95));
+        assert_eq!(sched_dim.source_record_ids, vec!["sch-1".to_string()]);
     }
 }
