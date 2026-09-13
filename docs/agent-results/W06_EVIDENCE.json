@@ -18,7 +18,7 @@
     { "name": "agent candidate npm test", "result": "PASS", "passed": 286, "failed": 0 },
     { "name": "agent candidate npm run lint", "result": "PASS" },
     { "name": "agent candidate npm run build", "result": "PASS" },
-    { "name": "cargo test", "result": "MISSING_FROM_AGENT_EVIDENCE" }
+    { "name": "cargo test", "result": "FAIL", "errors": 6, "reason": "unresolved chrono and invalid sqlx Row access in health_score_workflow.rs" }
   ],
   "codex_review": {
     "candidate_commit": "87ad7e0486b55d4722da29d2d9168e526baca97e",

@@ -72,6 +72,11 @@ it does **not** close C01-C08 and remains `CORRECTION_REQUIRED — NOT 8/10`:
   evidence contains no Cargo result and cannot support closure. The candidate again removed
   `framer-motion` from `package-lock.json` while it remains in `package.json`; Codex restored the
   lock consistency.
+- `W06-C08 BUILD BREAK`: Codex local verification of commit `87ad7e0` produced six Rust
+  compiler errors. `health_score_workflow.rs` calls `chrono::Utc` at lines 437 and 836 although
+  `chrono` is not a project dependency, and calls `sqlx::Row::get(r, 1)` on `&SqliteRow` at
+  lines 306 and 326. Use an already approved project timestamp mechanism (do not add a dependency)
+  and valid `Row` access. The candidate is not buildable until `cargo test` passes.
 
 ### Required next delivery
 
@@ -80,3 +85,5 @@ synthetic metric with a project-scoped, Data-Date-filtered governed calculation 
 `Unavailable/Requires setup`. All four consumers must load the same approved version ID and
 frozen result snapshot. Add the complete Rust/SQLite negative suite and real consumer-wiring
 tests, run Node + lint + build + Cargo + diff checks, regenerate Result/Evidence, push, then stop.
+The final evidence must explicitly show the Rust compiler is clean; `--allow-missing-cargo` is
+not acceptable when Cargo is available in the delivery environment.
