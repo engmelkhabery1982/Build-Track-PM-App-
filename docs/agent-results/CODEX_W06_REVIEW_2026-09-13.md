@@ -45,3 +45,38 @@ gate, then stop for the user's next-feature command.
 
 The intermediate `f0e017f` changed the Vite port/dev command, added cloud metadata and removed
 `framer-motion` from the lockfile. These changes are unrelated to W06 and must stay reverted.
+
+## Correction round 2 verification — commit `87ad7e0`
+
+The correction candidate added a useful transactional Rust workflow and configuration UI, but
+it does **not** close C01-C08 and remains `CORRECTION_REQUIRED — NOT 8/10`:
+
+- `W06-C01/C04`: `Dashboard.tsx` still imports and calculates with
+  `DEFAULT_HEALTH_CONFIG`; the principal consumers do not load one shared approved persisted
+  configuration/result snapshot.
+- `W06-C03`: production still manufactures facts. `Dashboard.tsx` uses
+  `(fWirs.length || 10)` and `missingDataRatio: 0`; `ReportPack.tsx` uses
+  `wirFailureRate: 0`; `IntegratedProjectControlsCockpit.tsx` uses
+  `missingDataRatio: 0`. The Rust save workflow also substitutes `SPI=1.0`, `CPI=1.0`, and
+  `Data Quality=0` instead of reading governed dated facts.
+- `W06-C03/C05`: the Rust source queries are not cut off by `data_date`. Merely storing the
+  Data Date does not make the score dated. Lineage therefore does not prove which eligible
+  records were included/excluded at the cut-off.
+- `W06-C05`: freshness is mostly hard-coded to `Fresh`; source version, source Data Date,
+  exclusions, and real data-quality evidence are still absent.
+- `W06-C07`: only two Rust tests exist. Required negative tests for cross-project scope,
+  duplicate approval, locked period, idempotent replay, maker-checker, immutable approved
+  versions, and late transactional rollback are not all executable. Consumer consistency tests
+  still do not prove that Dashboard, Card, Cockpit and ReportPack load the same persisted ID.
+- `W06-C08`: `W06_RESULT.md`, `W06_EVIDENCE.json`, and the queue cursor were not regenerated;
+  evidence contains no Cargo result and cannot support closure. The candidate again removed
+  `framer-motion` from `package-lock.json` while it remains in `package.json`; Codex restored the
+  lock consistency.
+
+### Required next delivery
+
+Correct the current candidate in place; do not restart it and do not begin W07. Replace every
+synthetic metric with a project-scoped, Data-Date-filtered governed calculation or explicit
+`Unavailable/Requires setup`. All four consumers must load the same approved version ID and
+frozen result snapshot. Add the complete Rust/SQLite negative suite and real consumer-wiring
+tests, run Node + lint + build + Cargo + diff checks, regenerate Result/Evidence, push, then stop.

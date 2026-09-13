@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: CORRECTION REQUIRED — SEE CODEX_W06_REVIEW_2026-09-13.md
+Status: CORRECTION ROUND 2 REQUIRED — NOT 8/10 — SEE CODEX_W06_REVIEW_2026-09-13.md
 
 W06-G01=PASS
 W06-G02=PASS
@@ -23,4 +23,7 @@ Implemented Governed Project Health Score (F6 / W06):
 - SQLite persistence mapping for `health_score_versions` table with draft, approved, and archived status lifecycles.
 - Full verification suite: unit, boundary, lineage, and cross-screen consistency tests in `tests/governed-health-score.test.mjs` and `tests/early-warning-system.test.mjs`.
 
-Local verification: `npm test` 286 passed, 0 failed; `npm run lint` PASS; `npm run build` PASS.
+The statements above describe the initial candidate only and are not closure evidence. Codex
+found remaining synthetic metrics, undated source queries, unshared consumer state, incomplete
+lineage/freshness, insufficient Rust and consumer tests, and stale delivery evidence. Preserve
+the implementation and close W06-C01..C08 before regenerating this result.
