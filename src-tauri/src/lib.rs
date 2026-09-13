@@ -9,6 +9,7 @@ mod commercial_workflow;
 mod cost_plan_versioning;
 mod equipment_log;
 mod estimate_versioning;
+mod health_score_workflow;
 mod import_batch;
 mod labor_timesheet;
 mod report_versioning;
@@ -290,6 +291,51 @@ async fn list_cash_forecast_versions(
 ) -> Result<Vec<cash_forecast_workflow::CashForecastVersionResult>, String> {
     let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
     cash_forecast_workflow::list_cash_forecast_versions(&path, request).await
+}
+
+#[tauri::command]
+async fn save_health_score_version(
+    app: tauri::AppHandle,
+    request: health_score_workflow::SaveHealthScoreVersionRequest,
+) -> Result<health_score_workflow::HealthScoreVersionResult, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    health_score_workflow::save_health_score_version_core(&path, request).await
+}
+
+#[tauri::command]
+async fn approve_health_score_version(
+    app: tauri::AppHandle,
+    request: health_score_workflow::ApproveHealthScoreVersionRequest,
+) -> Result<health_score_workflow::HealthScoreVersionResult, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    health_score_workflow::approve_health_score_version_core(&path, request).await
+}
+
+#[tauri::command]
+async fn reopen_health_score_version(
+    app: tauri::AppHandle,
+    request: health_score_workflow::ReopenHealthScoreVersionRequest,
+) -> Result<health_score_workflow::HealthScoreVersionResult, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    health_score_workflow::reopen_health_score_version_core(&path, request).await
+}
+
+#[tauri::command]
+async fn get_health_score_version(
+    app: tauri::AppHandle,
+    request: health_score_workflow::GetHealthScoreVersionRequest,
+) -> Result<Option<health_score_workflow::HealthScoreVersionResult>, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    health_score_workflow::get_health_score_version_core(&path, request).await
+}
+
+#[tauri::command]
+async fn list_health_score_versions(
+    app: tauri::AppHandle,
+    request: health_score_workflow::ListHealthScoreVersionsRequest,
+) -> Result<Vec<health_score_workflow::HealthScoreVersionResult>, String> {
+    let path = app.path().app_config_dir().map_err(|error| error.to_string())?.join("buildtrack.db");
+    health_score_workflow::list_health_score_versions_core(&path, request).await
 }
 
 #[tauri::command]
@@ -3749,6 +3795,60 @@ pub fn run() {
             "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
+        tauri_plugin_sql::Migration {
+            version: 78,
+            description: "govern_versioned_health_score_workflow_and_guards",
+            sql: r#"
+              ALTER TABLE health_score_versions ADD COLUMN schedule_weight REAL NOT NULL DEFAULT 20;
+              ALTER TABLE health_score_versions ADD COLUMN cost_weight REAL NOT NULL DEFAULT 20;
+              ALTER TABLE health_score_versions ADD COLUMN cash_weight REAL NOT NULL DEFAULT 20;
+              ALTER TABLE health_score_versions ADD COLUMN scope_weight REAL NOT NULL DEFAULT 15;
+              ALTER TABLE health_score_versions ADD COLUMN quality_weight REAL NOT NULL DEFAULT 15;
+              ALTER TABLE health_score_versions ADD COLUMN data_quality_weight REAL NOT NULL DEFAULT 10;
+              ALTER TABLE health_score_versions ADD COLUMN data_date TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN overall_score REAL;
+              ALTER TABLE health_score_versions ADD COLUMN health_status TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN confidence REAL;
+              ALTER TABLE health_score_versions ADD COLUMN created_by TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN approved_by TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN approved_at TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN reopened_from_id TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN reopened_by TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN reopened_at TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN reopened_reason TEXT;
+              ALTER TABLE health_score_versions ADD COLUMN notes TEXT;
+
+              CREATE TABLE IF NOT EXISTS health_score_mutation_guard (
+                operation_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+              );
+
+              CREATE TABLE IF NOT EXISTS health_score_operation_results (
+                operation_id TEXT PRIMARY KEY,
+                version_id TEXT NOT NULL,
+                command TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (version_id) REFERENCES health_score_versions(id) ON DELETE RESTRICT
+              );
+
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_health_score_single_approved_per_project
+                ON health_score_versions(project_id) WHERE status = 'Approved';
+
+              CREATE TRIGGER IF NOT EXISTS health_score_versions_governed_update_guard
+              BEFORE UPDATE ON health_score_versions
+              WHEN OLD.status IN ('Approved', 'Superseded')
+                AND NOT EXISTS (SELECT 1 FROM health_score_mutation_guard WHERE operation_id = ('internal:health_score:' || OLD.id))
+              BEGIN SELECT RAISE(ABORT, 'Governed health score version status changes require a lifecycle transaction.'); END;
+
+              CREATE TRIGGER IF NOT EXISTS health_score_versions_governed_delete_guard
+              BEFORE DELETE ON health_score_versions
+              WHEN OLD.status <> 'Draft'
+                AND NOT EXISTS (SELECT 1 FROM health_score_mutation_guard WHERE operation_id = ('internal:health_score:' || OLD.id))
+              BEGIN SELECT RAISE(ABORT, 'Only Draft health score versions may be deleted.'); END;
+            "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -3789,6 +3889,11 @@ pub fn run() {
             reopen_cash_forecast_version,
             get_cash_forecast_version,
             list_cash_forecast_versions,
+            save_health_score_version,
+            approve_health_score_version,
+            reopen_health_score_version,
+            get_health_score_version,
+            list_health_score_versions,
             issue_report_version,
             approve_report_template,
             approve_cost_plan_version,

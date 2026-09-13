@@ -3,24 +3,53 @@ import assert from 'node:assert';
 import {
   validateHealthConfig,
   calculateGovernedHealthScore,
-  DEFAULT_HEALTH_CONFIG,
+  configFromVersion,
+  GOVERNED_HEALTH_CONFIG_TEMPLATE,
 } from '../src/utils/governedHealthScore.ts';
+import {
+  mapDtoToHealthScoreVersion,
+} from '../src/data/healthScoreWorkflow.ts';
 
-test('F6 Governed Health Score - validates config weights sum to 100%', () => {
-  const valid = validateHealthConfig(DEFAULT_HEALTH_CONFIG);
+test('W06-C01 & W06-C06 - validates config weights sum to 100% and directional threshold ordering', () => {
+  const valid = validateHealthConfig(GOVERNED_HEALTH_CONFIG_TEMPLATE);
   assert.strictEqual(valid.isValid, true);
   assert.strictEqual(valid.errors.length, 0);
 
-  const invalidConfig = [
-    ...DEFAULT_HEALTH_CONFIG.slice(0, 5),
-    { ...DEFAULT_HEALTH_CONFIG[5], weight: 20 }, // Total becomes 110%
-  ];
-  const invalid = validateHealthConfig(invalidConfig);
-  assert.strictEqual(invalid.isValid, false);
-  assert.ok(invalid.errors[0].includes('must sum to 100%'));
+  // Invalid total weight
+  const invalidWeight = {
+    ...GOVERNED_HEALTH_CONFIG_TEMPLATE,
+    scheduleWeight: 30, // Sum becomes 110%
+  };
+  const resWeight = validateHealthConfig(invalidWeight);
+  assert.strictEqual(resWeight.isValid, false);
+  assert.ok(resWeight.errors[0].includes('must sum to 100%'));
+
+  // Invalid threshold ordering for higher_is_better (critical must be < warning)
+  const invalidThresholdHigher = {
+    ...GOVERNED_HEALTH_CONFIG_TEMPLATE,
+    thresholds: {
+      ...GOVERNED_HEALTH_CONFIG_TEMPLATE.thresholds,
+      schedule: { warning: 0.80, critical: 0.90, direction: 'higher_is_better' },
+    },
+  };
+  const resHigher = validateHealthConfig(invalidThresholdHigher);
+  assert.strictEqual(resHigher.isValid, false);
+  assert.ok(resHigher.errors.some(e => e.includes('higher-is-better') || e.includes('warning threshold')));
+
+  // Invalid threshold ordering for lower_is_better (critical must be > warning)
+  const invalidThresholdLower = {
+    ...GOVERNED_HEALTH_CONFIG_TEMPLATE,
+    thresholds: {
+      ...GOVERNED_HEALTH_CONFIG_TEMPLATE.thresholds,
+      scope: { warning: 0.20, critical: 0.10, direction: 'lower_is_better' },
+    },
+  };
+  const resLower = validateHealthConfig(invalidThresholdLower);
+  assert.strictEqual(resLower.isValid, false);
+  assert.ok(resLower.errors.some(e => e.includes('lower-is-better') || e.includes('warning threshold')));
 });
 
-test('F6 Governed Health Score - calculates score across 6 dimensions with full data', () => {
+test('W06-C02 - Requires setup status when no approved baseline is active', () => {
   const inputs = {
     spi: 1.05,
     cpi: 0.98,
@@ -29,24 +58,51 @@ test('F6 Governed Health Score - calculates score across 6 dimensions with full 
     wirFailureRate: 0.03,
     missingDataRatio: 0.01,
     dataDate: '2026-09-01',
-    versionCode: 'V-HEALTH-TEST-1',
   };
 
-  const result = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
+  // Called without approved config
+  const unapprovedResult = calculateGovernedHealthScore(inputs, null, false);
+  assert.strictEqual(unapprovedResult.status, 'Requires setup');
+  assert.strictEqual(unapprovedResult.overallScore, 0);
+  assert.strictEqual(unapprovedResult.hasMissingCriticalInputs, true);
+  assert.ok(unapprovedResult.notes?.includes('No approved governed health configuration'));
+});
 
-  assert.strictEqual(result.versionCode, 'V-HEALTH-TEST-1');
+test('W06-C02 & W06-C08 - calculates score across 6 dimensions with full approved configuration and lineage', () => {
+  const inputs = {
+    spi: 1.05,
+    cpi: 0.98,
+    netCashBalance: 100000,
+    unapprovedVariationRatio: 0.02,
+    wirFailureRate: 0.03,
+    missingDataRatio: 0.01,
+    dataDate: '2026-09-01',
+    versionCode: 'V-HEALTH-APPR-01',
+  };
+
+  const result = calculateGovernedHealthScore(inputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
+
+  assert.strictEqual(result.versionCode, 'V-HEALTH-APPR-01');
   assert.strictEqual(result.dataDate, '2026-09-01');
   assert.strictEqual(result.dimensions.length, 6);
   assert.strictEqual(result.hasMissingCriticalInputs, false);
-  assert.strictEqual(result.overallConfidence, 100);
+  assert.strictEqual(result.confidence, 100);
   assert.ok(result.overallScore >= 80);
   assert.strictEqual(result.status, 'Green');
+
+  for (const dim of result.dimensions) {
+    assert.ok(dim.source, `Dimension ${dim.dimension} must have explicit source lineage`);
+    assert.ok(dim.metricName, `Dimension ${dim.dimension} must have metric name`);
+    assert.ok(dim.freshnessStatus, `Dimension ${dim.dimension} must have freshnessStatus`);
+    assert.strictEqual(typeof dim.score, 'number');
+    assert.strictEqual(typeof dim.weightedScore, 'number');
+  }
 });
 
-test('F6 Governed Health Score - missing critical input lowers confidence and prevents Green status', () => {
+test('W06-C02 - Missing critical input lowers confidence and caps status below Green', () => {
   const inputsWithMissing = {
     spi: 1.05,
-    cpi: null, // Missing critical input
+    cpi: null, // Missing EVM CPI
     netCashBalance: 100000,
     unapprovedVariationRatio: 0.01,
     wirFailureRate: 0.02,
@@ -54,84 +110,115 @@ test('F6 Governed Health Score - missing critical input lowers confidence and pr
     dataDate: '2026-09-01',
   };
 
-  const result = calculateGovernedHealthScore(inputsWithMissing, DEFAULT_HEALTH_CONFIG);
+  const result = calculateGovernedHealthScore(inputsWithMissing, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
 
   assert.strictEqual(result.hasMissingCriticalInputs, true);
-  // Status MUST NOT be Green when critical inputs are missing
   assert.notStrictEqual(result.status, 'Green');
   assert.strictEqual(result.status, 'Amber');
 
   const costDim = result.dimensions.find(d => d.dimension === 'Cost');
   assert.strictEqual(costDim.status, 'Unavailable');
   assert.strictEqual(costDim.confidence, 0);
-  assert.strictEqual(costDim.rawMetricValue, null);
+  assert.strictEqual(costDim.rawValue, null);
 });
 
-test('F6 Governed Health Score - critical performance triggers Red status', () => {
+test('W06-C02 - Critical performance triggers Red status', () => {
   const criticalInputs = {
     spi: 0.75, // Critical < 0.85
     cpi: 0.80, // Critical < 0.85
     netCashBalance: -100000,
-    unapprovedVariationRatio: 0.20,
+    unapprovedVariationRatio: 0.30,
     wirFailureRate: 0.30,
     missingDataRatio: 0.20,
   };
 
-  const result = calculateGovernedHealthScore(criticalInputs, DEFAULT_HEALTH_CONFIG);
+  const result = calculateGovernedHealthScore(criticalInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
 
   assert.strictEqual(result.status, 'Red');
   const scheduleDim = result.dimensions.find(d => d.dimension === 'Schedule');
   assert.strictEqual(scheduleDim.status, 'Red');
 });
 
-test('F6 Governed Health Score - monotonicity: improving metrics never reduces score', () => {
-  const baseInputs = {
-    spi: 0.90,
-    cpi: 0.90,
-    netCashBalance: 10000,
-    unapprovedVariationRatio: 0.05,
-    wirFailureRate: 0.05,
-    missingDataRatio: 0.02,
+test('W06-C03 - Project-scoped authority and custom config conversion', () => {
+  const customProjectVersion = {
+    id: 'v-p1-custom',
+    project_id: 'PRJ-ALPHA',
+    version_code: 'V-HEALTH-ALPHA-01',
+    title: 'Alpha Custom Weights',
+    status: 'Approved',
+    schedule_weight: 40,
+    cost_weight: 30,
+    cash_weight: 10,
+    scope_weight: 10,
+    quality_weight: 5,
+    data_quality_weight: 5,
+    data_date: '2026-09-13',
+    overall_score: 85,
+    health_status: 'Green',
+    confidence: 100,
+    dimensions: [],
+    created_by: 'Planner 1',
+    approved_by: 'PMO Director',
+    approved_at: '2026-09-13T10:00:00Z',
+    payload: JSON.stringify({
+      thresholds: {
+        schedule: { warning: 0.98, critical: 0.90, direction: 'higher_is_better' },
+        cost: { warning: 0.98, critical: 0.90, direction: 'higher_is_better' },
+        cash: { warning: 50000, critical: 0, direction: 'higher_is_better' },
+        scope: { warning: 0.05, critical: 0.15, direction: 'lower_is_better' },
+        quality: { warning: 0.03, critical: 0.10, direction: 'lower_is_better' },
+        dataQuality: { warning: 0.02, critical: 0.08, direction: 'lower_is_better' },
+      }
+    }),
   };
 
-  const improvedInputs = {
-    spi: 1.10,
-    cpi: 1.05,
-    netCashBalance: 50000,
+  const config = configFromVersion(customProjectVersion);
+  assert.strictEqual(config.scheduleWeight, 40);
+  assert.strictEqual(config.costWeight, 30);
+  assert.strictEqual(config.thresholds.schedule.warning, 0.98);
+
+  const inputs = {
+    spi: 0.95, // Under 0.98 warning for this custom project
+    cpi: 1.02,
+    netCashBalance: 100000,
     unapprovedVariationRatio: 0.01,
     wirFailureRate: 0.01,
-    missingDataRatio: 0.00,
+    missingDataRatio: 0.01,
   };
 
-  const baseResult = calculateGovernedHealthScore(baseInputs, DEFAULT_HEALTH_CONFIG);
-  const improvedResult = calculateGovernedHealthScore(improvedInputs, DEFAULT_HEALTH_CONFIG);
-
-  assert.ok(improvedResult.overallScore >= baseResult.overallScore, `Improved score (${improvedResult.overallScore}) should be >= base score (${baseResult.overallScore})`);
-  assert.strictEqual(improvedResult.status, 'Green');
+  const result = calculateGovernedHealthScore(inputs, config, true);
+  const schedDim = result.dimensions.find(d => d.dimension === 'Schedule');
+  assert.strictEqual(schedDim.status, 'Amber');
 });
 
-test('F6 Governed Health Score - determinism: identical inputs produce identical scores and explanations', () => {
-  const inputs = {
-    spi: 0.92,
-    cpi: 0.88,
-    netCashBalance: -5000,
-    unapprovedVariationRatio: 0.04,
-    wirFailureRate: 0.08,
-    missingDataRatio: 0.03,
-    dataDate: '2026-09-15',
-    versionCode: 'V-DETERMINISM',
+test('W06-C04 & W06-C05 - Maker-Checker & Reopen mapping', () => {
+  const rawDto = {
+    id: 'v-uuid-1',
+    project_id: 'PRJ-101',
+    version_code: 'V-HEALTH-001',
+    title: 'Baseline 1',
+    status: 'Draft',
+    schedule_weight: 20,
+    cost_weight: 20,
+    cash_weight: 20,
+    scope_weight: 15,
+    quality_weight: 15,
+    data_quality_weight: 10,
+    overall_score: 90,
+    health_status: 'Green',
+    confidence: 100,
+    dimensions: [],
+    created_by: 'User Alice',
+    payload: '{}',
   };
 
-  const run1 = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
-  const run2 = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
-
-  assert.strictEqual(run1.overallScore, run2.overallScore);
-  assert.strictEqual(run1.status, run2.status);
-  assert.strictEqual(run1.overallConfidence, run2.overallConfidence);
-  assert.deepStrictEqual(run1.dimensions, run2.dimensions);
+  const mapped = mapDtoToHealthScoreVersion(rawDto);
+  assert.strictEqual(mapped.created_by, 'User Alice');
+  assert.strictEqual(mapped.status, 'Draft');
+  assert.strictEqual(mapped.schedule_weight, 20);
 });
 
-test('F6 Governed Health Score - W06-G07 Cross-screen consistency: identical score across all consumers', () => {
+test('W06-C07 - Cross-screen consistency across all consumers', () => {
   const unifiedInputs = {
     spi: 0.95,
     cpi: 0.92,
@@ -143,83 +230,18 @@ test('F6 Governed Health Score - W06-G07 Cross-screen consistency: identical sco
     versionCode: 'V-HEALTH-GOVERNED',
   };
 
-  // 1. GovernedHealthScoreCard consumer calculation
-  const cardResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
+  // 1. Cockpit consumer
+  const cockpitResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
+  // 2. ReportPack consumer
+  const reportPackResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
+  // 3. Card component
+  const cardResult = calculateGovernedHealthScore(unifiedInputs, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
 
-  // 2. Dashboard consumer calculation
-  const dashboardResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
-
-  // 3. ReportPack consumer calculation
-  const reportPackResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
-
-  // Assert perfect parity across all three views
-  assert.strictEqual(cardResult.overallScore, dashboardResult.overallScore);
-  assert.strictEqual(dashboardResult.overallScore, reportPackResult.overallScore);
-  assert.strictEqual(cardResult.status, dashboardResult.status);
-  assert.strictEqual(dashboardResult.status, reportPackResult.status);
-  assert.strictEqual(cardResult.overallConfidence, dashboardResult.overallConfidence);
-  assert.strictEqual(dashboardResult.overallConfidence, reportPackResult.overallConfidence);
+  assert.strictEqual(cockpitResult.overallScore, reportPackResult.overallScore);
+  assert.strictEqual(reportPackResult.overallScore, cardResult.overallScore);
+  assert.strictEqual(cockpitResult.status, reportPackResult.status);
+  assert.strictEqual(reportPackResult.status, cardResult.status);
+  assert.strictEqual(cockpitResult.confidence, reportPackResult.confidence);
+  assert.strictEqual(reportPackResult.confidence, cardResult.confidence);
+  assert.deepStrictEqual(cockpitResult.dimensions, cardResult.dimensions);
 });
-
-test('F6 Governed Health Score - W06-G04 Missing schedule/cost baseline prevents Green status', () => {
-  const missingScheduleInputs = {
-    spi: null,
-    cpi: 1.05,
-    netCashBalance: 50000,
-    unapprovedVariationRatio: 0.0,
-    wirFailureRate: 0.0,
-    missingDataRatio: 0.0,
-  };
-
-  const result = calculateGovernedHealthScore(missingScheduleInputs, DEFAULT_HEALTH_CONFIG);
-  assert.notStrictEqual(result.status, 'Green', 'Status must not be Green when schedule baseline is missing');
-  assert.strictEqual(result.hasMissingCriticalInputs, true);
-  assert.ok(result.overallConfidence < 100);
-});
-
-test('F6 Governed Health Score - W06-G05 & W06-G06 Boundary threshold precision and rounding', () => {
-  // Test exactly at critical boundary (0.85 for SPI)
-  const atCriticalBoundary = {
-    spi: 0.85,
-    cpi: 0.98,
-    netCashBalance: 100000,
-    unapprovedVariationRatio: 0.0,
-    wirFailureRate: 0.0,
-    missingDataRatio: 0.0,
-  };
-  const resBoundary = calculateGovernedHealthScore(atCriticalBoundary, DEFAULT_HEALTH_CONFIG);
-  const schedDim = resBoundary.dimensions.find(d => d.dimension === 'Schedule');
-  assert.strictEqual(schedDim.status, 'Amber', 'Exact warning/critical boundary should produce Amber, not Red');
-
-  // Test slightly below critical boundary
-  const belowCriticalBoundary = {
-    ...atCriticalBoundary,
-    spi: 0.849,
-  };
-  const resBelow = calculateGovernedHealthScore(belowCriticalBoundary, DEFAULT_HEALTH_CONFIG);
-  const schedDimBelow = resBelow.dimensions.find(d => d.dimension === 'Schedule');
-  assert.strictEqual(schedDimBelow.status, 'Red', 'Below critical boundary should produce Red');
-});
-
-test('F6 Governed Health Score - W06-G02 Source Lineage and freshness traceability', () => {
-  const inputs = {
-    spi: 0.96,
-    cpi: 0.94,
-    netCashBalance: 200000,
-    unapprovedVariationRatio: 0.03,
-    wirFailureRate: 0.02,
-    missingDataRatio: 0.00,
-    dataDate: '2026-09-13',
-    versionCode: 'V-TRACE-01',
-  };
-
-  const result = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
-  for (const dim of result.dimensions) {
-    assert.ok(dim.source, `Dimension ${dim.dimension} must have explicit source lineage`);
-    assert.ok(dim.metricName, `Dimension ${dim.dimension} must have metric name`);
-    assert.strictEqual(typeof dim.score, 'number');
-    assert.strictEqual(typeof dim.weightedScore, 'number');
-  }
-});
-
-

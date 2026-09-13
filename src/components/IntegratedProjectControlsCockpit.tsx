@@ -8,13 +8,14 @@ import {
 import type {
   Project, Cost, CostEntry, BOQItem, ControlAccount, Schedule, ReportingPeriod,
   Variation, QualityEntry, RFIEntry, SubmittalEntry, CashFlowEntry, VarianceActionItem,
-  Contract, WIREntry, ProgressCorrection, CostPlanVersion
+  Contract, WIREntry, ProgressCorrection, CostPlanVersion, HealthScoreVersion
 } from '@/types';
 import type { Warning } from '@/utils/varianceActionRegister';
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { GovernedHealthScoreCard } from './GovernedHealthScoreCard';
 import type { RawHealthInputs } from '@/utils/governedHealthScore';
+import { getHealthScoreVersion } from '@/data/healthScoreWorkflow';
 
 interface IntegratedProjectControlsCockpitProps {
   projects: Project[];
@@ -99,6 +100,7 @@ export function IntegratedProjectControlsCockpit({
   // Core Filter States
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
   const [selectedControlAccountId, setSelectedControlAccountId] = useState<string>('all');
+  const [approvedHealthScoreVersion, setApprovedHealthScoreVersion] = useState<HealthScoreVersion | null>(null);
   
   // Active Drill-down Dimension Details Drawer
   const [activeDrillDown, setActiveDrillDown] = useState<string | null>(null);
@@ -127,6 +129,13 @@ export function IntegratedProjectControlsCockpit({
 
   useEffect(() => {
     setProjectId(selectedProjectId || 'all');
+    if (selectedProjectId) {
+      getHealthScoreVersion({ project_id: selectedProjectId })
+        .then((ver) => setApprovedHealthScoreVersion(ver))
+        .catch(() => setApprovedHealthScoreVersion(null));
+    } else {
+      setApprovedHealthScoreVersion(null);
+    }
   }, [selectedProjectId, setProjectId]);
 
   useEffect(() => {
@@ -504,7 +513,18 @@ export function IntegratedProjectControlsCockpit({
       </div>
 
       {/* Governed Project Health Score Card */}
-      <GovernedHealthScoreCard inputs={healthInputs} dataDate={dataDate || undefined} />
+      <GovernedHealthScoreCard
+        inputs={healthInputs}
+        approvedVersion={approvedHealthScoreVersion}
+        projectId={selectedProjectId}
+        projectName={currentProject?.name || 'Selected Project'}
+        dataDate={dataDate || undefined}
+        onVersionUpdated={(ver) => {
+          if (ver.status === 'Approved') {
+            setApprovedHealthScoreVersion(ver);
+          }
+        }}
+      />
 
       {/* Grid of 8 Unified Dimensions of Control */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

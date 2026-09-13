@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Printer, Save, Lock, History, CheckCircle2, AlertTriangle, FileCheck, Shield, ChevronRight, Eye, RefreshCw, FileText, ArrowRight, Download } from 'lucide-react';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { calculateEvmAtDataDate } from '@/utils/evm';
-import { calculateGovernedHealthScore, DEFAULT_HEALTH_CONFIG } from '@/utils/governedHealthScore';
+import { calculateGovernedHealthScore, GOVERNED_HEALTH_CONFIG_TEMPLATE } from '@/utils/governedHealthScore';
 import type { ReportTemplate, ReportVersion } from '@/types';
 
 const money = (value: number | null | undefined) => {
@@ -168,7 +168,7 @@ export function ReportPack({
       missingDataRatio,
       dataDate: reportDate,
       versionCode: 'V-HEALTH-GOVERNED',
-    }, DEFAULT_HEALTH_CONFIG);
+    }, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
 
     return {
       metrics: {

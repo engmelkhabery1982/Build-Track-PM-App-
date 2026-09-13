@@ -989,13 +989,19 @@ export class SqliteRepository implements DataRepository {
         ],
       );
     } else if (tableName === "health_score_versions") {
+      if ((existing as any).status !== 'Draft') {
+        throw new Error('Approved or Superseded health score versions cannot be modified directly. Use the governed workflow.');
+      }
+      if (record.status !== 'Draft') {
+        throw new Error('Health score version status changes must use the governed lifecycle workflow.');
+      }
       await database.execute(
         `UPDATE health_score_versions
-         SET project_id = $1, version_code = $2, title = $3, status = $4, owner = $5, reason = $6, payload = $7
-         WHERE id = $8`,
+         SET project_id = $1, version_code = $2, title = $3, status = 'Draft', owner = $4, reason = $5, payload = $6
+         WHERE id = $7`,
         [
           record.project_id, record.version_code, record.title,
-          record.status, record.owner, record.reason, JSON.stringify(record), id,
+          record.owner, record.reason, JSON.stringify(record), id,
         ],
       );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {
@@ -1030,7 +1036,7 @@ export class SqliteRepository implements DataRepository {
   async delete(tableName: string, id: string): Promise<void> {
     assertKnownTable(tableName);
     const existing = this.unpack<Record<string, any>>(await this.findStored(id, tableName), tableName);
-    if (tableName === 'cost_plan_versions' || tableName === 'estimate_versions' || tableName === 'report_versions') {
+    if (tableName === 'cost_plan_versions' || tableName === 'estimate_versions' || tableName === 'report_versions' || tableName === 'health_score_versions') {
       if (['Approved', 'Superseded'].includes(existing.status)) {
         throw new Error(`Approved or Superseded ${tableName} cannot be deleted.`);
       }

@@ -2025,48 +2025,87 @@ export interface CashForecastVersion {
 }
 
 export type HealthDimensionKey = 'Schedule' | 'Cost' | 'Cash' | 'Scope' | 'Quality' | 'Data Quality';
+export type HealthScoreStatus = 'Green' | 'Amber' | 'Red' | 'Unavailable' | 'Requires setup';
 
 export interface HealthDimensionThreshold {
-  dimension: HealthDimensionKey;
-  weight: number; // e.g. 20 (percent, total must be 100)
-  warningThreshold: number;
-  criticalThreshold: number;
+  warning: number;
+  critical: number;
   direction: 'higher_is_better' | 'lower_is_better';
 }
 
-export interface HealthScoreVersion {
-  id: string;
-  created_at: string;
-  project_id: string;
-  version_code: string;
-  title: string;
-  status: 'Draft' | 'Approved' | 'Archived';
-  owner: string;
-  reason?: string | null;
-  payload?: string | null;
+export interface GovernedHealthScoreConfig {
+  scheduleWeight: number;
+  costWeight: number;
+  cashWeight: number;
+  scopeWeight: number;
+  qualityWeight: number;
+  dataQualityWeight: number;
+  thresholds: {
+    schedule: HealthDimensionThreshold;
+    cost: HealthDimensionThreshold;
+    cash: HealthDimensionThreshold;
+    scope: HealthDimensionThreshold;
+    quality: HealthDimensionThreshold;
+    dataQuality: HealthDimensionThreshold;
+  };
 }
 
 export interface HealthDimensionContribution {
-  dimension: HealthDimensionKey;
-  weight: number;
-  rawMetricValue: number | null;
+  dimension: HealthDimensionKey | string;
   metricName: string;
+  rawValue?: number | null;
+  rawMetricValue?: number | null;
   score: number;
+  weight: number;
   weightedScore: number;
   status: 'Green' | 'Amber' | 'Red' | 'Unavailable';
   confidence: number;
   source: string;
+  sourceRecordIds?: string[];
+  freshnessStatus?: 'Fresh' | 'Stale' | 'Missing';
   exclusions?: string[];
 }
 
 export interface HealthScoreResult {
   overallScore: number;
-  status: 'Green' | 'Amber' | 'Red' | 'Unavailable';
-  overallConfidence: number;
-  versionCode: string;
+  status: HealthScoreStatus;
+  confidence: number;
+  overallConfidence?: number;
+  versionCode?: string;
   dataDate?: string;
   dimensions: HealthDimensionContribution[];
-  hasMissingCriticalInputs: boolean;
+  hasMissingCriticalInputs?: boolean;
+  isGovernedApproved?: boolean;
+  notes?: string;
+}
+
+export interface HealthScoreVersion {
+  id: string;
+  project_id: string;
+  version_code: string;
+  title: string;
+  status: 'Draft' | 'Approved' | 'Superseded' | 'Archived' | string;
+  schedule_weight: number;
+  cost_weight: number;
+  cash_weight: number;
+  scope_weight: number;
+  quality_weight: number;
+  data_quality_weight: number;
+  data_date?: string | null;
+  overall_score?: number | null;
+  health_status?: string | null;
+  confidence?: number | null;
+  dimensions?: HealthDimensionContribution[];
+  created_by?: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  reopened_from_id?: string | null;
+  reopened_by?: string | null;
+  reopened_at?: string | null;
+  reopened_reason?: string | null;
+  notes?: string;
+  payload?: string | null;
+  created_at?: string;
 }
 
 
@@ -2240,3 +2279,4 @@ export interface PortalAuditLog {
   details?: string;
   success: boolean;
 }
+
