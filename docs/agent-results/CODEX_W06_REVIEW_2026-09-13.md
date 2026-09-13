@@ -143,6 +143,34 @@ Do not solve the requirement by returning every metric `Unavailable`. Use the ex
 EVM/data-quality calculation sources at the requested project and Data Date, persist their exact
 record/version lineage and frozen result, and expose that same persisted result to all consumers.
 
+## Correction round 5 verification — commit `99ccc49`
+
+The candidate still cannot close W06:
+
+- Targeted Node gate passes `15/15`, but Rust does not compile: two `E0063` errors at the test
+  request initializers because `spi_value`, `cpi_value`, and `missing_data_ratio` were added to the
+  request contract without updating all constructors. Cargo evidence is therefore FAIL.
+- Accepting SPI, CPI, and missing-data ratio from a client request is not an authoritative backend
+  derivation. The configuration modal does not send those fields, so production saves receive
+  `None`; another caller could submit arbitrary values. Remove these facts from the mutable request
+  and derive them from the existing governed EVM and Data Quality sources inside the transaction.
+- The new SQL is incompatible with the real generic SQLite schema. It reads
+  `cash_flow.inflow/outflow/entry_date`, `variations.status`, and `wir_entries.status`, although
+  these operational fields live in `payload` (only `variations.status_sql` is separately generated).
+  Add a migration only if a canonical typed-column strategy is deliberately chosen; otherwise use
+  validated `json_extract(payload, ...)` expressions and the business effective dates.
+- Filtering generic rows by `created_at` is not equivalent to the business Data Date. Use the
+  governed effective dates for schedule status, cost posting, cash movement, variation approval/
+  submission, and WIR inspection; exclude undated facts instead of admitting `NULL`/empty dates.
+- `resultFromVersion` improved snapshot reuse, but prove all four actual consumers resolve the same
+  approved version ID and never fall back to independent live calculation when an approved version
+  is expected for the selected project/Data Date.
+- The Result again self-awards a score and says `archived`; both contradict authority and the
+  canonical Draft → Approved → Superseded lifecycle. The lockfile was again damaged and restored.
+
+Correct the existing candidate only. Add a real-schema integration test that runs migrations or
+uses the canonical table shape and proves dated source derivation. Run full Cargo, not just Node.
+
 ## Correction round 4 resolution — VERIFIED PASS
 
 All findings from Correction Round 4 have been closed:
