@@ -22,6 +22,7 @@ import type {
 import {
   calculateGovernedHealthScore,
   configFromVersion,
+  resultFromVersion,
   RawHealthInputs,
 } from '../utils/governedHealthScore';
 import { HealthScoreConfigModal } from './HealthScoreConfigModal';
@@ -48,11 +49,12 @@ export const GovernedHealthScoreCard: React.FC<GovernedHealthScoreCardProps> = (
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [expandedDimension, setExpandedDimension] = useState<string | null>(null);
 
-  // Derive effective config
+  // Derive effective config and result snapshot
   const activeConfig = customConfig || (approvedVersion ? configFromVersion(approvedVersion) : null);
   const isApproved = Boolean(approvedVersion && approvedVersion.status === 'Approved') || Boolean(customConfig);
 
-  const result: HealthScoreResult = calculateGovernedHealthScore(
+  const snapshotResult = resultFromVersion(approvedVersion, dataDate);
+  const result: HealthScoreResult = snapshotResult || calculateGovernedHealthScore(
     { ...inputs, dataDate },
     activeConfig,
     isApproved

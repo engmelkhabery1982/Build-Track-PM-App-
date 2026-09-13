@@ -364,6 +364,41 @@ export function calculateGovernedHealthScore(
   };
 }
 
+export function resultFromVersion(
+  version: HealthScoreVersion | null | undefined,
+  defaultDataDate?: string
+): HealthScoreResult | null {
+  if (!version || version.status !== 'Approved' || !version.dimensions || !version.dimensions.length) {
+    return null;
+  }
+  return {
+    overallScore: version.overall_score ?? 0,
+    status: (version.health_status as any) || 'Unavailable',
+    confidence: version.confidence ?? 100,
+    overallConfidence: version.confidence ?? 100,
+    hasMissingCriticalInputs: (version.dimensions || []).some(
+      (d) => d.status === 'Unavailable' && (d.dimension === 'Schedule' || d.dimension === 'Cost')
+    ),
+    dimensions: version.dimensions.map((d) => ({
+      dimension: d.dimension,
+      metricName: d.metricName || d.dimension,
+      rawValue: d.rawValue ?? null,
+      score: d.score,
+      weight: d.weight,
+      weightedScore: d.weightedScore ?? 0,
+      status: d.status as any,
+      confidence: d.confidence ?? 100,
+      source: d.source || '',
+      sourceRecordIds: d.sourceRecordIds || [],
+      freshnessStatus: d.freshnessStatus || 'Fresh',
+    })),
+    dataDate: version.data_date || defaultDataDate,
+    versionCode: version.version_code,
+    isGovernedApproved: true,
+    notes: version.notes || undefined,
+  };
+}
+
 export interface ProjectHealthDerivationParams {
   projectId: string;
   approvedConfig?: GovernedHealthScoreConfig | null;

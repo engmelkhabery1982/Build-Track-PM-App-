@@ -19,7 +19,7 @@ import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/re
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import { buildBoqWasteLedger, buildOperationalScopeReport, calculateEarnedScheduleFromSeries } from '@/utils/projectControlAnalytics';
-import { calculateGovernedHealthScore, configFromVersion, type RawHealthInputs } from '@/utils/governedHealthScore';
+import { calculateGovernedHealthScore, configFromVersion, resultFromVersion, type RawHealthInputs } from '@/utils/governedHealthScore';
 import { GovernedHealthScoreCard } from './GovernedHealthScoreCard';
 import { getHealthScoreVersion } from '@/data/healthScoreWorkflow';
 import type {
@@ -424,32 +424,8 @@ export function Dashboard({
   }, [evm, stats, fWirs, reportDate, approvedHealthVersion]);
 
   const governedHealthResult = useMemo(() => {
-    if (approvedHealthVersion && approvedHealthVersion.status === 'Approved' && approvedHealthVersion.dimensions) {
-      return {
-        overallScore: approvedHealthVersion.overall_score,
-        status: approvedHealthVersion.health_status as any,
-        confidence: approvedHealthVersion.confidence,
-        overallConfidence: approvedHealthVersion.confidence,
-        hasMissingCriticalInputs: (approvedHealthVersion.dimensions || []).some(d => d.status === 'Unavailable' && (d.dimension === 'Schedule' || d.dimension === 'Cost')),
-        dimensions: approvedHealthVersion.dimensions.map(d => ({
-          dimension: d.dimension,
-          metricName: d.metricName || d.dimension,
-          rawValue: d.rawValue ?? null,
-          score: d.score,
-          weight: d.weight,
-          weightedScore: d.weightedScore ?? 0,
-          status: d.status as any,
-          confidence: d.confidence,
-          source: d.source,
-          sourceRecordIds: d.sourceRecordIds || [],
-          freshnessStatus: d.freshnessStatus || 'Fresh',
-        })),
-        dataDate: approvedHealthVersion.data_date || reportDate,
-        versionCode: approvedHealthVersion.version_code,
-        isGovernedApproved: true,
-        notes: approvedHealthVersion.notes || undefined,
-      };
-    }
+    const snapshot = resultFromVersion(approvedHealthVersion, reportDate);
+    if (snapshot) return snapshot;
     const activeConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
     const isApproved = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
     return calculateGovernedHealthScore(governedHealthInputs, activeConfig, isApproved);

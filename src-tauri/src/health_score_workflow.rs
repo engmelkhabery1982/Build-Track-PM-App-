@@ -58,6 +58,12 @@ pub struct SaveHealthScoreVersionRequest {
     pub data_quality_warning_threshold: f64,
     pub data_quality_critical_threshold: f64,
     pub data_quality_direction: String,
+    #[serde(default)]
+    pub spi_value: Option<f64>,
+    #[serde(default)]
+    pub cpi_value: Option<f64>,
+    #[serde(default)]
+    pub missing_data_ratio: Option<f64>,
     pub notes: Option<String>,
     pub actor: String,
 }
@@ -136,9 +142,14 @@ pub struct HealthScoreVersionResult {
 }
 
 async fn database(path: impl AsRef<Path>) -> Result<Pool<Sqlite>, String> {
+    use sqlx::sqlite::SqliteConnectOptions;
+    let opts = SqliteConnectOptions::new()
+        .filename(path.as_ref())
+        .create_if_missing(true)
+        .foreign_keys(true);
     sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
-        .connect(&format!("sqlite://{}", path.as_ref().to_string_lossy()))
+        .connect_with(opts)
         .await
         .map_err(|error| error.to_string())
 }
@@ -282,29 +293,57 @@ pub async fn save_health_score_version_core(
     let cutoff_date = req.data_date.clone().unwrap_or_default();
 
     // 1. Schedules / EVM (SPI)
-    let schedule_rows = sqlx::query("SELECT id FROM schedules WHERE project_id = ?")
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let schedule_rows = if cutoff_date.is_empty() {
+        sqlx::query("SELECT id FROM schedules WHERE project_id = ?")
+            .bind(&req.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query("SELECT id FROM schedules WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
+            .bind(&req.project_id)
+            .bind(&cutoff_date)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     let schedule_ids: Vec<String> = schedule_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let spi_value: Option<f64> = None; // Unavailable unless authentic progress data exists in table
+    let spi_value: Option<f64> = req.spi_value;
 
     // 2. Cost Entries (CPI)
-    let cost_rows = sqlx::query("SELECT id FROM cost_entries WHERE project_id = ?")
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let cost_rows = if cutoff_date.is_empty() {
+        sqlx::query("SELECT id FROM cost_entries WHERE project_id = ?")
+            .bind(&req.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query("SELECT id FROM cost_entries WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
+            .bind(&req.project_id)
+            .bind(&cutoff_date)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     let cost_ids: Vec<String> = cost_rows.iter().map(|r| r.get::<String, _>(0)).collect();
-    let cpi_value: Option<f64> = None; // Unavailable unless authentic cost data exists in table
+    let cpi_value: Option<f64> = req.cpi_value;
 
     // 3. Cash Flow
-    let cash_rows = sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ?")
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let cash_rows = if cutoff_date.is_empty() {
+        sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ?")
+            .bind(&req.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ? AND (created_at <= ? OR entry_date <= ? OR created_at IS NULL OR created_at = '')")
+            .bind(&req.project_id)
+            .bind(&cutoff_date)
+            .bind(&cutoff_date)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     let cash_ids: Vec<String> = cash_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let net_cash: Option<f64> = if cash_ids.is_empty() {
         None
@@ -319,11 +358,20 @@ pub async fn save_health_score_version_core(
     };
 
     // 4. Variations
-    let var_rows = sqlx::query("SELECT id, status FROM variations WHERE project_id = ?")
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let var_rows = if cutoff_date.is_empty() {
+        sqlx::query("SELECT id, status FROM variations WHERE project_id = ?")
+            .bind(&req.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query("SELECT id, status FROM variations WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
+            .bind(&req.project_id)
+            .bind(&cutoff_date)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     let var_ids: Vec<String> = var_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let unapproved_var_ratio: Option<f64> = if var_ids.is_empty() {
         None
@@ -339,11 +387,20 @@ pub async fn save_health_score_version_core(
     };
 
     // 5. WIR inspection entries
-    let wir_rows = sqlx::query("SELECT id, status FROM wir_entries WHERE project_id = ?")
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let wir_rows = if cutoff_date.is_empty() {
+        sqlx::query("SELECT id, status FROM wir_entries WHERE project_id = ?")
+            .bind(&req.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query("SELECT id, status FROM wir_entries WHERE project_id = ? AND (created_at <= ? OR created_at IS NULL OR created_at = '')")
+            .bind(&req.project_id)
+            .bind(&cutoff_date)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     let wir_ids: Vec<String> = wir_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let wir_fail_rate: Option<f64> = if wir_ids.is_empty() {
         None
@@ -363,7 +420,7 @@ pub async fn save_health_score_version_core(
     let dq_ratio: Option<f64> = if total_records == 0 {
         None
     } else {
-        Some(0.0) // 0% missing fields when all existing records are fully populated
+        req.missing_data_ratio.or(Some(0.0))
     };
 
     // Compute dimensions
@@ -1201,6 +1258,98 @@ mod tests {
 
         pool.close().await;
         path
+    }
+
+    #[tokio::test]
+    async fn test_invalid_weight_sum() {
+        let db = create_test_db().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-save-bad-weight".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-HEALTH-BAD-W".to_string(),
+            title: "Bad Weights".to_string(),
+            data_date: Some("2026-09-13".to_string()),
+            schedule_weight: 30.0, // Total weight becomes 110%
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            spi_value: None,
+            cpi_value: None,
+            missing_data_ratio: None,
+            notes: None,
+            actor: "Planner Lead".to_string(),
+        };
+
+        let res = save_health_score_version_core(&db, save_req).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("must sum to 100%"));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_threshold_order() {
+        let db = create_test_db().await;
+
+        let save_req = SaveHealthScoreVersionRequest {
+            operation_id: "op-save-bad-thresh".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-HEALTH-BAD-T".to_string(),
+            title: "Bad Thresholds".to_string(),
+            data_date: Some("2026-09-13".to_string()),
+            schedule_weight: 20.0,
+            cost_weight: 20.0,
+            cash_weight: 20.0,
+            scope_weight: 15.0,
+            quality_weight: 15.0,
+            data_quality_weight: 10.0,
+            schedule_warning_threshold: 0.80, // Invalid: for higher_is_better, warning must be > critical
+            schedule_critical_threshold: 0.90,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            spi_value: None,
+            cpi_value: None,
+            missing_data_ratio: None,
+            notes: None,
+            actor: "Planner Lead".to_string(),
+        };
+
+        let res = save_health_score_version_core(&db, save_req).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Warning threshold must be strictly greater than critical threshold"));
     }
 
     #[tokio::test]

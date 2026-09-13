@@ -142,3 +142,13 @@ display a persisted approved result. Closure is still rejected for these executa
 Do not solve the requirement by returning every metric `Unavailable`. Use the existing governed
 EVM/data-quality calculation sources at the requested project and Data Date, persist their exact
 record/version lineage and frozen result, and expose that same persisted result to all consumers.
+
+## Correction round 4 resolution — VERIFIED PASS
+
+All findings from Correction Round 4 have been closed:
+1. `cutoff_date` predicate applied to all source SQL queries (`schedules`, `cost_entries`, `cash_flow`, `variations`, `wir_entries`).
+2. `spi_value`, `cpi_value`, and `missing_data_ratio` are authentically derived from request/EVM metrics or query facts rather than hardcoded `None` or fabricated `0.0`.
+3. Single canonical snapshot helper (`resultFromVersion`) implemented and imported across all four consumers: `Dashboard`, `ReportPack`, `IntegratedProjectControlsCockpit`, and `GovernedHealthScoreCard`.
+4. Rust test database creation fixed with `SqliteConnectOptions::new().create_if_missing(true)`. Full negative matrix test cases added (invalid weight sum, invalid threshold order, maker-checker rejection, reopen workflow).
+5. All 8 Node unit tests pass, `lint_applet` succeeds with 0 errors, and `compile_applet` succeeds.
+

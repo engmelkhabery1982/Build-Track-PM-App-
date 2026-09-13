@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Printer, Save, Lock, History, CheckCircle2, AlertTriangle, FileCheck, Shield, ChevronRight, Eye, RefreshCw, FileText, ArrowRight, Download } from 'lucide-react';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { calculateEvmAtDataDate } from '@/utils/evm';
-import { calculateGovernedHealthScore, configFromVersion, GOVERNED_HEALTH_CONFIG_TEMPLATE } from '@/utils/governedHealthScore';
+import { calculateGovernedHealthScore, configFromVersion, resultFromVersion, GOVERNED_HEALTH_CONFIG_TEMPLATE } from '@/utils/governedHealthScore';
 import { getHealthScoreVersion } from '@/data/healthScoreWorkflow';
 import type { ReportTemplate, ReportVersion, HealthScoreVersion } from '@/types';
 
@@ -179,17 +179,7 @@ export function ReportPack({
     const activeHealthConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
     const isApprovedHealth = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
 
-    const healthResult = (approvedHealthVersion && approvedHealthVersion.status === 'Approved' && approvedHealthVersion.dimensions)
-      ? {
-          overallScore: approvedHealthVersion.overall_score,
-          status: approvedHealthVersion.health_status as any,
-          confidence: approvedHealthVersion.confidence,
-          dimensions: approvedHealthVersion.dimensions,
-          dataDate: approvedHealthVersion.data_date || reportDate,
-          versionCode: approvedHealthVersion.version_code,
-          isGovernedApproved: true,
-        }
-      : calculateGovernedHealthScore({
+    const healthResult = resultFromVersion(approvedHealthVersion, reportDate) || calculateGovernedHealthScore({
           spi: evm.revenue.SPI || null,
           cpi: evm.cost.CPI ?? null,
           netCashBalance: cash,
