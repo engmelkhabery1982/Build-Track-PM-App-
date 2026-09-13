@@ -27,7 +27,41 @@ fn current_timestamp() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hours, mins, s)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+fn parse_date_to_days(d: &str) -> Option<i64> {
+    let clean = d.trim();
+    let prefix = if clean.len() >= 10 { &clean[..10] } else { clean };
+    let parts: Vec<&str> = prefix.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let y: i64 = parts[0].parse().ok()?;
+    let m: i64 = parts[1].parse().ok()?;
+    let day: i64 = parts[2].parse().ok()?;
+    let m_adj = if m <= 2 { m + 12 } else { m };
+    let y_adj = if m <= 2 { y - 1 } else { y };
+    let days = 365 * y_adj + y_adj / 4 - y_adj / 100 + y_adj / 400 + (153 * (m_adj - 3) + 2) / 5 + day - 1;
+    Some(days)
+}
+
+fn date_diff_days(start: &str, end: &str) -> i64 {
+    match (parse_date_to_days(start), parse_date_to_days(end)) {
+        (Some(s), Some(e)) => e - s,
+        _ => 1,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EvmCalculationResult {
+    pub pv: f64,
+    pub ev: f64,
+    pub ac: f64,
+    pub spi: Option<f64>,
+    pub cpi: Option<f64>,
+    pub schedule_record_ids: Vec<String>,
+    pub cost_record_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveHealthScoreVersionRequest {
     pub operation_id: String,
     pub project_id: String,
@@ -62,7 +96,7 @@ pub struct SaveHealthScoreVersionRequest {
     pub actor: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApproveHealthScoreVersionRequest {
     pub operation_id: String,
     pub version_id: String,
@@ -70,7 +104,7 @@ pub struct ApproveHealthScoreVersionRequest {
     pub approved_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReopenHealthScoreVersionRequest {
     pub operation_id: String,
     pub version_id: String,
@@ -80,13 +114,13 @@ pub struct ReopenHealthScoreVersionRequest {
     pub reason: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetHealthScoreVersionRequest {
     pub version_id: Option<String>,
     pub project_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListHealthScoreVersionsRequest {
     pub project_id: String,
 }
@@ -211,6 +245,532 @@ fn calculate_dimension_score(
     }
 }
 
+async fn calculate_governed_evm_core(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    project_id: &str,
+    cutoff_date: &str,
+) -> Result<EvmCalculationResult, String> {
+    // 1. Fetch contracts for this project
+    let contract_rows = sqlx::query(
+        "SELECT id, parent_main_contract_id FROM contracts WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut main_contract_ids: Vec<String> = contract_rows
+        .iter()
+        .filter(|r| {
+            let parent: Option<String> = r.get(1);
+            parent.as_deref().unwrap_or("").trim().is_empty()
+        })
+        .map(|r| r.get(0))
+        .collect();
+
+    if main_contract_ids.is_empty() {
+        main_contract_ids = vec![project_id.to_string()];
+    }
+
+    let mut performance_contract_ids = main_contract_ids.clone();
+    for r in &contract_rows {
+        let id: String = r.get(0);
+        let parent: Option<String> = r.get(1);
+        if let Some(p) = parent {
+            let p_trim = p.trim();
+            if !p_trim.is_empty() && main_contract_ids.contains(&p_trim.to_string()) && !performance_contract_ids.contains(&id) {
+                performance_contract_ids.push(id);
+            }
+        }
+    }
+
+    // 2. Planned Value (PV) from Active Approved Baseline
+    let baseline_rows = sqlx::query(
+        "SELECT id, contract_id, payload FROM project_baselines 
+         WHERE project_id = ? AND json_extract(payload, '$.status') = 'Approved'
+         ORDER BY CAST(COALESCE(json_extract(payload, '$.revision_number'), '0') AS INTEGER) DESC, 
+                  COALESCE(json_extract(payload, '$.baseline_date'), '') DESC"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut cumulative_pv = 0.0;
+    let mut schedule_record_ids: Vec<String> = Vec::new();
+    let mut has_approved_baseline = false;
+
+    let mut processed_contracts = std::collections::HashSet::new();
+    for b_row in baseline_rows {
+        let _b_id: String = b_row.get(0);
+        let b_contract_id: Option<String> = b_row.get(1);
+        let contract_key = b_contract_id.clone().unwrap_or_default();
+        if processed_contracts.contains(&contract_key) {
+            continue;
+        }
+        processed_contracts.insert(contract_key);
+        has_approved_baseline = true;
+
+        let payload_str: String = b_row.get(2);
+        let payload: serde_json::Value = serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+
+        let dist_snapshot = payload.get("distribution_snapshot").and_then(|v| v.as_array());
+        if let Some(distributions) = dist_snapshot {
+            if !distributions.is_empty() {
+                for dist in distributions {
+                    let sch_id = dist.get("schedule_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let val = dist.get("planned_value")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or_else(|| {
+                            let q = dist.get("planned_quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let r = dist.get("unit_rate").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            q * r
+                        });
+                    let start = dist.get("period_start")
+                        .or_else(|| dist.get("period_date"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let end = dist.get("period_end")
+                        .or_else(|| dist.get("period_date"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(start);
+
+                    if cutoff_date.is_empty() {
+                        cumulative_pv += val;
+                        if !sch_id.is_empty() && !schedule_record_ids.contains(&sch_id.to_string()) {
+                            schedule_record_ids.push(sch_id.to_string());
+                        }
+                    } else if !start.is_empty() && cutoff_date < start {
+                        // Not started yet
+                    } else if end.is_empty() || cutoff_date >= end {
+                        cumulative_pv += val;
+                        if !sch_id.is_empty() && !schedule_record_ids.contains(&sch_id.to_string()) {
+                            schedule_record_ids.push(sch_id.to_string());
+                        }
+                    } else {
+                        let span = date_diff_days(start, end).max(1);
+                        let elapsed = date_diff_days(start, cutoff_date).max(0);
+                        let frac = (elapsed as f64 / span as f64).min(1.0);
+                        cumulative_pv += val * frac;
+                        if !sch_id.is_empty() && !schedule_record_ids.contains(&sch_id.to_string()) {
+                            schedule_record_ids.push(sch_id.to_string());
+                        }
+                    }
+                }
+                continue;
+            }
+        }
+
+        // Fallback to activity_snapshot
+        let act_snapshot = payload.get("activity_snapshot").and_then(|v| v.as_array());
+        if let Some(activities) = act_snapshot {
+            for act in activities {
+                let sch_id = act.get("schedule_id").or_else(|| act.get("id")).and_then(|v| v.as_str()).unwrap_or("");
+                let budget = act.get("budget")
+                    .or_else(|| act.get("planned_value"))
+                    .or_else(|| act.get("total_cost"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let start = act.get("start_date").or_else(|| act.get("planned_start")).and_then(|v| v.as_str()).unwrap_or("");
+                let end = act.get("end_date").or_else(|| act.get("planned_finish")).and_then(|v| v.as_str()).unwrap_or("");
+
+                if cutoff_date.is_empty() || (!end.is_empty() && cutoff_date >= end) {
+                    cumulative_pv += budget;
+                    if !sch_id.is_empty() && !schedule_record_ids.contains(&sch_id.to_string()) {
+                        schedule_record_ids.push(sch_id.to_string());
+                    }
+                } else if !start.is_empty() && cutoff_date < start {
+                    // 0
+                } else if !start.is_empty() && !end.is_empty() {
+                    let duration = date_diff_days(start, end).max(1);
+                    let elapsed = date_diff_days(start, cutoff_date).max(0);
+                    let frac = (elapsed as f64 / duration as f64).min(1.0);
+                    cumulative_pv += budget * frac;
+                    if !sch_id.is_empty() && !schedule_record_ids.contains(&sch_id.to_string()) {
+                        schedule_record_ids.push(sch_id.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. BOQ Items & Selling Rates
+    let boq_rows = sqlx::query(
+        "SELECT id, contract_id, 
+                CAST(COALESCE(json_extract(payload, '$.unit_rate'), 0) AS REAL),
+                json_extract(payload, '$.main_boq_item_id')
+         FROM boq_items WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    struct BoqEntry {
+        unit_rate: f64,
+        main_boq_item_id: Option<String>,
+    }
+    let mut boq_map: std::collections::HashMap<String, BoqEntry> = std::collections::HashMap::new();
+    for r in &boq_rows {
+        let b_id: String = r.get(0);
+        let rate: f64 = r.get(2);
+        let main_id: Option<String> = r.get(3);
+        boq_map.insert(b_id, BoqEntry { unit_rate: rate, main_boq_item_id: main_id });
+    }
+
+    let get_selling_rate = |boq_id: &str, default_rate: f64| -> f64 {
+        if let Some(item) = boq_map.get(boq_id) {
+            if let Some(ref m_id) = item.main_boq_item_id {
+                if let Some(main_item) = boq_map.get(m_id) {
+                    if main_item.unit_rate > 0.0 {
+                        return main_item.unit_rate;
+                    }
+                }
+            }
+            if item.unit_rate > 0.0 {
+                return item.unit_rate;
+            }
+        }
+        default_rate
+    };
+
+    // 4. Schedules and WIR entries for EV
+    let sched_rows = sqlx::query(
+        "SELECT id, contract_id, payload FROM schedules WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut explicit_activities: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    for s_row in &sched_rows {
+        let s_id: String = s_row.get(0);
+        let s_contract: Option<String> = s_row.get(1);
+        let s_contract_str = s_contract.unwrap_or_default();
+        if !main_contract_ids.is_empty() && !main_contract_ids.contains(&s_contract_str) && !s_contract_str.is_empty() {
+            continue;
+        }
+        let p_str: String = s_row.get(2);
+        let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+        let act_name = p.get("activity").and_then(|v| v.as_str()).unwrap_or("");
+        let measurement_method = p.get("measurement_method").and_then(|v| v.as_str()).unwrap_or("");
+        if !act_name.is_empty() && !measurement_method.is_empty() {
+            explicit_activities.insert(s_id, p);
+        }
+    }
+
+    let wir_rows = sqlx::query(
+        "SELECT id, contract_id, payload FROM wir_entries WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut explicit_ev = 0.0;
+    let mut handled_wir_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (act_id, act_payload) in &explicit_activities {
+        let method = act_payload.get("measurement_method").and_then(|v| v.as_str()).unwrap_or("");
+        let budget = act_payload.get("budget")
+            .or_else(|| act_payload.get("planned_value"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let status = act_payload.get("activity_status").and_then(|v| v.as_str()).unwrap_or("");
+        let actual_start = act_payload.get("actual_start_date")
+            .or_else(|| act_payload.get("status_data_date"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let actual_finish = act_payload.get("actual_finish_date")
+            .or_else(|| act_payload.get("status_data_date"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        match method {
+            "Quantity" => {
+                for w in &wir_rows {
+                    let w_id: String = w.get(0);
+                    let w_payload_str: String = w.get(2);
+                    let w_p: serde_json::Value = serde_json::from_str(&w_payload_str).unwrap_or(serde_json::Value::Null);
+                    let w_sch = w_p.get("schedule_id").and_then(|v| v.as_str()).unwrap_or("");
+                    if w_sch == act_id {
+                        let w_status = w_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                        let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                        let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
+                        let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
+                        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date.as_str());
+                        if is_approved && date_ok {
+                            handled_wir_ids.insert(w_id.clone());
+                            let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let boq_id = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let def_rate = w_p.get("unit_rate").or_else(|| w_p.get("unit_price")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let rate = get_selling_rate(boq_id, def_rate);
+                            explicit_ev += qty * rate;
+                            if !schedule_record_ids.contains(&w_id) {
+                                schedule_record_ids.push(w_id);
+                            }
+                        }
+                    }
+                }
+            },
+            "0/100" => {
+                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date.as_str());
+                if status == "Completed" && finish_ok {
+                    explicit_ev += budget;
+                    if !schedule_record_ids.contains(act_id) {
+                        schedule_record_ids.push(act_id.to_string());
+                    }
+                }
+            },
+            "50/50" => {
+                let finish_ok = !actual_finish.is_empty() && (cutoff_date.is_empty() || actual_finish <= cutoff_date.as_str());
+                let start_ok = !actual_start.is_empty() && (cutoff_date.is_empty() || actual_start <= cutoff_date.as_str());
+                if status == "Completed" && finish_ok {
+                    explicit_ev += budget;
+                    if !schedule_record_ids.contains(act_id) {
+                        schedule_record_ids.push(act_id.to_string());
+                    }
+                } else if start_ok {
+                    explicit_ev += budget * 0.5;
+                    if !schedule_record_ids.contains(act_id) {
+                        schedule_record_ids.push(act_id.to_string());
+                    }
+                }
+            },
+            "Weighted Milestone" => {
+                let weight_pct = act_payload.get("measurement_weight_pct").and_then(|v| v.as_f64()).unwrap_or(0.0).clamp(0.0, 100.0);
+                explicit_ev += budget * (weight_pct / 100.0);
+                if !schedule_record_ids.contains(act_id) {
+                    schedule_record_ids.push(act_id.to_string());
+                }
+            },
+            _ => {}
+        }
+    }
+
+    let mut legacy_ev = 0.0;
+    for w in &wir_rows {
+        let w_id: String = w.get(0);
+        if handled_wir_ids.contains(&w_id) {
+            continue;
+        }
+        let w_contract: Option<String> = w.get(1);
+        let w_contract_str = w_contract.unwrap_or_default();
+        if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
+            continue;
+        }
+        let w_payload_str: String = w.get(2);
+        let w_p: serde_json::Value = serde_json::from_str(&w_payload_str).unwrap_or(serde_json::Value::Null);
+        let w_sch = w_p.get("schedule_id").and_then(|v| v.as_str()).unwrap_or("");
+        if explicit_activities.contains_key(w_sch) {
+            continue;
+        }
+        let w_status = w_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        let w_res = w_p.get("result").and_then(|v| v.as_str()).unwrap_or("");
+        let is_approved = w_status == "Approved" || w_status == "Passed" || w_res == "Pass" || w_res == "Conditional Pass";
+        let w_date = w_p.get("inspection_date").or_else(|| w_p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
+        let date_ok = !w_date.is_empty() && (cutoff_date.is_empty() || w_date <= cutoff_date.as_str());
+
+        if is_approved && date_ok {
+            let qty = w_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let boq_id = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+            let def_rate = w_p.get("unit_rate").or_else(|| w_p.get("unit_price")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let rate = get_selling_rate(boq_id, def_rate);
+            legacy_ev += qty * rate;
+            if !schedule_record_ids.contains(&w_id) {
+                schedule_record_ids.push(w_id);
+            }
+        }
+    }
+
+    // Progress Corrections
+    let cor_rows = sqlx::query(
+        "SELECT id, original_wir_id, payload FROM progress_corrections WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut correction_ev = 0.0;
+    let wir_map: std::collections::HashMap<String, (Option<String>, serde_json::Value)> = wir_rows
+        .iter()
+        .map(|r| {
+            let id: String = r.get(0);
+            let c_id: Option<String> = r.get(1);
+            let p_str: String = r.get(2);
+            let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+            (id, (c_id, p))
+        })
+        .collect();
+
+    for c_row in cor_rows {
+        let cor_id: String = c_row.get(0);
+        let orig_wir_id: String = c_row.get(1);
+        let p_str: String = c_row.get(2);
+        let c_p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+
+        let status = c_p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if status != "Posted" {
+            continue;
+        }
+        let eff_date = c_p.get("effective_date").and_then(|v| v.as_str()).unwrap_or("");
+        if eff_date.is_empty() || (!cutoff_date.is_empty() && eff_date > cutoff_date.as_str()) {
+            continue;
+        }
+
+        if let Some((w_contract, w_p)) = wir_map.get(&orig_wir_id) {
+            let w_contract_str = w_contract.clone().unwrap_or_default();
+            if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&w_contract_str) && !w_contract_str.is_empty() {
+                continue;
+            }
+            let boq_id = w_p.get("boq_item_id").and_then(|v| v.as_str()).unwrap_or("");
+            let def_rate = w_p.get("unit_rate").or_else(|| w_p.get("unit_price")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let rate = get_selling_rate(boq_id, def_rate);
+            let qty = c_p.get("quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let c_type = c_p.get("correction_type").and_then(|v| v.as_str()).unwrap_or("");
+            let amt = qty * rate;
+            if c_type == "Reinstatement" {
+                correction_ev += amt;
+            } else {
+                correction_ev -= amt;
+            }
+            if !schedule_record_ids.contains(&cor_id) {
+                schedule_record_ids.push(cor_id);
+            }
+        }
+    }
+
+    let total_ev = (explicit_ev + legacy_ev + correction_ev).max(0.0);
+
+    // 5. Actual Cost (AC) from Cost Entries and Procurement Receipts
+    let cost_rows = sqlx::query(
+        "SELECT id, contract_id, payload FROM cost_entries WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut direct_ac = 0.0;
+    let mut cost_record_ids: Vec<String> = Vec::new();
+    let mut posted_receipt_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for c_row in cost_rows {
+        let c_id: String = c_row.get(0);
+        let c_contract: Option<String> = c_row.get(1);
+        let c_contract_str = c_contract.unwrap_or_default();
+        if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&c_contract_str) && !c_contract_str.is_empty() {
+            continue;
+        }
+        let p_str: String = c_row.get(2);
+        let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+
+        let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if status == "Draft" || status == "Reversed" || status == "Rejected" {
+            continue;
+        }
+
+        let date = p.get("posting_date")
+            .or_else(|| p.get("date"))
+            .or_else(|| p.get("cost_date"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if date.is_empty() || (!cutoff_date.is_empty() && date > cutoff_date.as_str()) {
+            continue;
+        }
+
+        let amt = p.get("amount")
+            .or_else(|| p.get("actual_cost"))
+            .or_else(|| p.get("ac"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
+        direct_ac += amt;
+        cost_record_ids.push(c_id);
+
+        let src_type = p.get("source_type").and_then(|v| v.as_str()).unwrap_or("");
+        if src_type == "procurement_receipt" {
+            if let Some(src_id) = p.get("source_id").and_then(|v| v.as_str()) {
+                if !src_id.is_empty() {
+                    posted_receipt_ids.insert(src_id.to_string());
+                }
+            }
+        }
+    }
+
+    let rcpt_rows = sqlx::query(
+        "SELECT id, contract_id, payload FROM procurement_receipts WHERE project_id = ?"
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await
+    .unwrap_or_default();
+
+    let mut receipt_ac = 0.0;
+    for r_row in rcpt_rows {
+        let r_id: String = r_row.get(0);
+        let r_contract: Option<String> = r_row.get(1);
+        let r_contract_str = r_contract.unwrap_or_default();
+        if !performance_contract_ids.is_empty() && !performance_contract_ids.contains(&r_contract_str) && !r_contract_str.is_empty() {
+            continue;
+        }
+        if posted_receipt_ids.contains(&r_id) {
+            continue;
+        }
+
+        let p_str: String = r_row.get(2);
+        let p: serde_json::Value = serde_json::from_str(&p_str).unwrap_or(serde_json::Value::Null);
+
+        let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if status != "Accepted" {
+            continue;
+        }
+
+        let r_date = p.get("receipt_date").or_else(|| p.get("date")).and_then(|v| v.as_str()).unwrap_or("");
+        if r_date.is_empty() || (!cutoff_date.is_empty() && r_date > cutoff_date.as_str()) {
+            continue;
+        }
+
+        let amt = p.get("accepted_amount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or_else(|| {
+                let qty = p.get("accepted_quantity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let uc = p.get("unit_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                qty * uc
+            });
+
+        receipt_ac += amt;
+        cost_record_ids.push(r_id);
+    }
+
+    let total_ac = direct_ac + receipt_ac;
+
+    // 6. SPI and CPI (Enforce positive denominators, return None if missing)
+    let spi_value = if !has_approved_baseline || cumulative_pv <= 0.0 {
+        None
+    } else {
+        Some(total_ev / cumulative_pv)
+    };
+
+    let cpi_value = if total_ac <= 0.0 {
+        None
+    } else {
+        Some(total_ev / total_ac)
+    };
+
+    Ok(EvmCalculationResult {
+        pv: cumulative_pv,
+        ev: total_ev,
+        ac: total_ac,
+        spi: spi_value,
+        cpi: cpi_value,
+        schedule_record_ids,
+        cost_record_ids,
+    })
+}
+
 pub async fn save_health_score_version_core(
     db_path: impl AsRef<Path>,
     req: SaveHealthScoreVersionRequest,
@@ -284,151 +844,14 @@ pub async fn save_health_score_version_core(
     }
 
     // Derive authentic metrics from database tables for this project
-    let cutoff_date = req.data_date.clone().unwrap_or_default();
+    let cutoff_date = req.data_date.clone().unwrap_or_default().trim().to_string();
 
-    // 1. Schedules & EVM (Cumulative EV, Cumulative PV)
-    let (schedule_ids, cumulative_pv, sched_ev): (Vec<String>, f64, f64) = if cutoff_date.is_empty() {
-        let rows = sqlx::query(
-            "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), json_extract(payload, '$.budget'), 0) AS REAL), 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL) 
-             FROM schedules WHERE project_id = ?"
-        )
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let pv: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let ev: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
-        (ids, pv, ev)
-    } else {
-        let rows = sqlx::query(
-            "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.planned_value'), json_extract(payload, '$.pv'), json_extract(payload, '$.budget'), 0) AS REAL), 
-                    CAST(COALESCE(json_extract(payload, '$.earned_value'), json_extract(payload, '$.ev'), 0) AS REAL) 
-             FROM schedules 
-             WHERE project_id = ? 
-             AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) IS NOT NULL 
-             AND COALESCE(json_extract(payload, '$.data_date'), json_extract(payload, '$.start_date'), json_extract(payload, '$.date')) <= ?"
-        )
-        .bind(&req.project_id)
-        .bind(&cutoff_date)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let pv: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-        let ev: f64 = rows.iter().map(|r| r.get::<f64, _>(2)).sum();
-        (ids, pv, ev)
-    };
-
-    // Also check earned value from approved WIR inspections if schedule activities don't carry explicit EV
-    let wir_ev: f64 = if cutoff_date.is_empty() {
-        let wir_rows = sqlx::query(
-            "SELECT CAST(COALESCE(json_extract(payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(payload, '$.unit_rate'), json_extract(payload, '$.unit_price'), 0) AS REAL)
-             FROM wir_entries 
-             WHERE project_id = ? 
-             AND (json_extract(payload, '$.status') = 'Approved' OR json_extract(payload, '$.status') = 'Passed')"
-        )
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        wir_rows.iter().map(|r| r.get::<f64, _>(0)).sum()
-    } else {
-        let wir_rows = sqlx::query(
-            "SELECT CAST(COALESCE(json_extract(payload, '$.quantity'), 0) AS REAL) * CAST(COALESCE(json_extract(payload, '$.unit_rate'), json_extract(payload, '$.unit_price'), 0) AS REAL)
-             FROM wir_entries 
-             WHERE project_id = ? 
-             AND (json_extract(payload, '$.status') = 'Approved' OR json_extract(payload, '$.status') = 'Passed')
-             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) IS NOT NULL 
-             AND COALESCE(json_extract(payload, '$.inspection_date'), json_extract(payload, '$.date')) <= ?"
-        )
-        .bind(&req.project_id)
-        .bind(&cutoff_date)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        wir_rows.iter().map(|r| r.get::<f64, _>(0)).sum()
-    };
-
-    let total_ev = if sched_ev > 0.0 {
-        sched_ev
-    } else if wir_ev > 0.0 {
-        wir_ev
-    } else {
-        0.0
-    };
-
-    let spi_value = if schedule_ids.is_empty() {
-        None
-    } else if cumulative_pv > 0.0 {
-        Some(total_ev / cumulative_pv)
-    } else if total_ev > 0.0 {
-        Some(1.0)
-    } else {
-        None
-    };
-
-    // 2. Cost Entries (CPI = Cumulative EV / Cumulative AC)
-    let (cost_ids, cpi_value): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
-        let rows = sqlx::query(
-            "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
-             FROM cost_entries WHERE project_id = ?"
-        )
-        .bind(&req.project_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-
-        let cpi = if ids.is_empty() {
-            None
-        } else if total_ac > 0.0 {
-            Some(total_ev / total_ac)
-        } else if total_ev > 0.0 {
-            Some(1.0)
-        } else {
-            None
-        };
-        (ids, cpi)
-    } else {
-        let rows = sqlx::query(
-            "SELECT id, 
-                    CAST(COALESCE(json_extract(payload, '$.actual_cost'), json_extract(payload, '$.ac'), json_extract(payload, '$.amount'), 0) AS REAL) 
-             FROM cost_entries 
-             WHERE project_id = ? 
-             AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) IS NOT NULL 
-             AND COALESCE(json_extract(payload, '$.posting_date'), json_extract(payload, '$.date'), json_extract(payload, '$.cost_date')) <= ?"
-        )
-        .bind(&req.project_id)
-        .bind(&cutoff_date)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let ids: Vec<String> = rows.iter().map(|r| r.get(0)).collect();
-        let total_ac: f64 = rows.iter().map(|r| r.get::<f64, _>(1)).sum();
-
-        let cpi = if ids.is_empty() {
-            None
-        } else if total_ac > 0.0 {
-            Some(total_ev / total_ac)
-        } else if total_ev > 0.0 {
-            Some(1.0)
-        } else {
-            None
-        };
-        (ids, cpi)
-    };
+    // 1. Governed EVM Reconciled Engine (SPI = Total EV / Total PV, CPI = Total EV / Total AC)
+    let evm_res = calculate_governed_evm_core(&mut tx, &req.project_id, &cutoff_date).await?;
+    let schedule_ids = evm_res.schedule_record_ids;
+    let spi_value = evm_res.spi;
+    let cost_ids = evm_res.cost_record_ids;
+    let cpi_value = evm_res.cpi;
 
     // 3. Cash Flow
     let (cash_ids, net_cash): (Vec<String>, Option<f64>) = if cutoff_date.is_empty() {
@@ -1427,12 +1850,17 @@ mod tests {
 
         sqlx::query(
             "CREATE TABLE projects (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT);
+             CREATE TABLE contracts (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, parent_main_contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE boq_items (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE project_baselines (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE reporting_periods (id TEXT PRIMARY KEY, project_id TEXT, start_date TEXT, end_date TEXT, is_locked INTEGER DEFAULT 0);
-             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
-             CREATE TABLE cost_entries (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE schedules (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE cost_entries (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE procurement_receipts (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE progress_corrections (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, contract_id TEXT, original_wir_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE cash_flow (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE variations (id TEXT PRIMARY KEY, project_id TEXT, status_sql TEXT, approved_date_sql TEXT, payload TEXT NOT NULL DEFAULT '{}');
-             CREATE TABLE wir_entries (id TEXT PRIMARY KEY, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
+             CREATE TABLE wir_entries (id TEXT PRIMARY KEY, project_id TEXT, contract_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE dq_execution_logs (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT NOT NULL DEFAULT '{}');
              CREATE TABLE audit_log (id TEXT PRIMARY KEY, created_at TEXT, project_id TEXT, payload TEXT);
              CREATE TABLE health_score_versions (
@@ -1474,6 +1902,11 @@ mod tests {
         .unwrap();
 
         sqlx::query("INSERT INTO projects VALUES ('prj-1', '2026-09-01', '{}')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO contracts (id, created_at, project_id, parent_main_contract_id, payload) VALUES ('cnt-1', '2026-09-01', 'prj-1', NULL, '{}')")
             .execute(&pool)
             .await
             .unwrap();
@@ -1749,11 +2182,28 @@ mod tests {
         let db = create_test_db().await;
         let pool = database(&db).await.unwrap();
 
+        // Populate lawful BOQ item and approved baseline for governed EVM derivation
+        sqlx::query(
+            "INSERT INTO boq_items (id, project_id, contract_id, payload) VALUES 
+             ('boq-1', 'prj-1', 'cnt-1', '{\"unit_rate\": 100.0}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO project_baselines (id, project_id, contract_id, payload) VALUES 
+             ('base-1', 'prj-1', 'cnt-1', '{\"status\": \"Approved\", \"distribution_snapshot\": [{\"schedule_id\": \"sch-1\", \"period_start\": \"2026-09-01\", \"period_end\": \"2026-09-10\", \"planned_value\": 100000.0}, {\"schedule_id\": \"sch-2\", \"period_start\": \"2026-09-15\", \"period_end\": \"2026-09-25\", \"planned_value\": 50000.0}]}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         // Populate sources with canonical EVM and operational fields before and after cutoff 2026-09-10
         sqlx::query(
             "INSERT INTO schedules (id, project_id, payload) VALUES 
-             ('sch-1', 'prj-1', '{\"start_date\": \"2026-09-05\", \"planned_value\": 100000.0, \"earned_value\": 90000.0}'),
-             ('sch-2', 'prj-1', '{\"start_date\": \"2026-09-15\", \"planned_value\": 50000.0, \"earned_value\": 40000.0}');"
+             ('sch-1', 'prj-1', '{\"start_date\": \"2026-09-05\", \"planned_value\": 100000.0}'),
+             ('sch-2', 'prj-1', '{\"start_date\": \"2026-09-15\", \"planned_value\": 50000.0}');"
         )
         .execute(&pool)
         .await
@@ -1788,10 +2238,10 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO wir_entries (id, project_id, payload) VALUES 
-             ('wir-1', 'prj-1', '{\"inspection_date\": \"2026-09-06\", \"status\": \"Approved\"}'),
-             ('wir-2', 'prj-1', '{\"inspection_date\": \"2026-09-07\", \"status\": \"Rejected\"}'),
-             ('wir-3', 'prj-1', '{\"inspection_date\": \"2026-09-16\", \"status\": \"Rejected\"}');"
+            "INSERT INTO wir_entries (id, project_id, contract_id, payload) VALUES 
+             ('wir-1', 'prj-1', 'cnt-1', '{\"inspection_date\": \"2026-09-06\", \"status\": \"Approved\", \"quantity\": 900.0, \"boq_item_id\": \"boq-1\"}'),
+             ('wir-2', 'prj-1', 'cnt-1', '{\"inspection_date\": \"2026-09-07\", \"status\": \"Rejected\"}'),
+             ('wir-3', 'prj-1', 'cnt-1', '{\"inspection_date\": \"2026-09-16\", \"status\": \"Rejected\"}');"
         )
         .execute(&pool)
         .await
@@ -1846,11 +2296,13 @@ mod tests {
             .await
             .unwrap();
 
-        // 1. Schedule: SPI = EV (90,000) / PV (100,000) = 0.90; sch-1 included, sch-2 excluded
+        // 1. Schedule: SPI = EV (90,000) / PV (100,000) = 0.90; sch-1 & wir-1 included, sch-2 excluded
         let sched_dim = &result.dimensions[0];
         assert_eq!(sched_dim.dimension, "Schedule");
         assert_eq!(sched_dim.raw_metric_value, Some(0.90));
-        assert_eq!(sched_dim.source_record_ids, vec!["sch-1".to_string()]);
+        assert!(sched_dim.source_record_ids.contains(&"sch-1".to_string()));
+        assert!(sched_dim.source_record_ids.contains(&"wir-1".to_string()));
+        assert!(!sched_dim.source_record_ids.contains(&"sch-2".to_string()));
 
         // 2. Cost: CPI = EV (90,000) / AC (80,000) = 1.125; cst-1 included, cst-2 excluded
         let cost_dim = &result.dimensions[1];
@@ -2030,5 +2482,261 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("Project does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_evm_two_data_dates_reconciliation() {
+        let db = create_test_db().await;
+        let pool = database(&db).await.unwrap();
+
+        // 1. Contracts: Main and Subcontract
+        sqlx::query(
+            "INSERT INTO contracts (id, created_at, project_id, parent_main_contract_id, payload) VALUES 
+             ('cnt-main', '2026-09-01', 'prj-1', NULL, '{}'),
+             ('cnt-sub', '2026-09-01', 'prj-1', 'cnt-main', '{}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 2. BOQ Items: Main rate 100, Subcontract rate 60 linked to main
+        sqlx::query(
+            "INSERT INTO boq_items (id, project_id, contract_id, payload) VALUES 
+             ('boq-main-1', 'prj-1', 'cnt-main', '{\"unit_rate\": 100.0}'),
+             ('boq-sub-1', 'prj-1', 'cnt-sub', '{\"unit_rate\": 60.0, \"main_boq_item_id\": \"boq-main-1\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 3. Approved Baseline with time-phased distribution
+        sqlx::query(
+            "INSERT INTO project_baselines (id, project_id, contract_id, payload) VALUES 
+             ('base-1', 'prj-1', 'cnt-main', '{\"status\": \"Approved\", \"distribution_snapshot\": [
+                 {\"schedule_id\": \"sch-1\", \"period_start\": \"2026-09-01\", \"period_end\": \"2026-09-10\", \"planned_value\": 60000.0},
+                 {\"schedule_id\": \"sch-2\", \"period_start\": \"2026-09-11\", \"period_end\": \"2026-09-20\", \"planned_value\": 120000.0}
+             ]}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO schedules (id, project_id, contract_id, payload) VALUES 
+             ('sch-1', 'prj-1', 'cnt-main', '{\"start_date\": \"2026-09-01\"}'),
+             ('sch-2', 'prj-1', 'cnt-main', '{\"start_date\": \"2026-09-11\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 4. WIR inspections with subcontract roll-up and future/undated exclusions
+        sqlx::query(
+            "INSERT INTO wir_entries (id, project_id, contract_id, payload) VALUES 
+             ('wir-1', 'prj-1', 'cnt-main', '{\"inspection_date\": \"2026-09-05\", \"status\": \"Approved\", \"quantity\": 400.0, \"boq_item_id\": \"boq-main-1\"}'),
+             ('wir-sub-1', 'prj-1', 'cnt-sub', '{\"inspection_date\": \"2026-09-08\", \"status\": \"Approved\", \"quantity\": 200.0, \"boq_item_id\": \"boq-sub-1\"}'),
+             ('wir-date2', 'prj-1', 'cnt-main', '{\"inspection_date\": \"2026-09-18\", \"status\": \"Approved\", \"quantity\": 300.0, \"boq_item_id\": \"boq-main-1\"}'),
+             ('wir-future', 'prj-1', 'cnt-main', '{\"inspection_date\": \"2026-09-25\", \"status\": \"Approved\", \"quantity\": 500.0, \"boq_item_id\": \"boq-main-1\"}'),
+             ('wir-undated', 'prj-1', 'cnt-main', '{\"status\": \"Approved\", \"quantity\": 500.0, \"boq_item_id\": \"boq-main-1\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 5. Governed Progress Corrections (reversals)
+        sqlx::query(
+            "INSERT INTO progress_corrections (id, project_id, contract_id, original_wir_id, payload) VALUES 
+             ('cor-1', 'prj-1', 'cnt-main', 'wir-1', '{\"status\": \"Posted\", \"effective_date\": \"2026-09-09\", \"correction_type\": \"Reversal\", \"quantity\": 50.0}'),
+             ('cor-future', 'prj-1', 'cnt-main', 'wir-1', '{\"status\": \"Posted\", \"effective_date\": \"2026-09-28\", \"correction_type\": \"Reversal\", \"quantity\": 100.0}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 6. Cost Entries and Procurement Receipts (with de-duplication)
+        sqlx::query(
+            "INSERT INTO cost_entries (id, project_id, contract_id, payload) VALUES 
+             ('cst-1', 'prj-1', 'cnt-main', '{\"posting_date\": \"2026-09-03\", \"amount\": 25000.0, \"status\": \"Posted\"}'),
+             ('cst-sub-1', 'prj-1', 'cnt-sub', '{\"posting_date\": \"2026-09-07\", \"amount\": 15000.0, \"status\": \"Approved\"}'),
+             ('cst-dup', 'prj-1', 'cnt-main', '{\"posting_date\": \"2026-09-04\", \"amount\": 10000.0, \"source_type\": \"procurement_receipt\", \"source_id\": \"rcpt-dup\", \"status\": \"Posted\"}'),
+             ('cst-date2', 'prj-1', 'cnt-main', '{\"posting_date\": \"2026-09-15\", \"amount\": 20000.0, \"status\": \"Posted\"}'),
+             ('cst-future', 'prj-1', 'cnt-main', '{\"posting_date\": \"2026-09-27\", \"amount\": 50000.0, \"status\": \"Posted\"}'),
+             ('cst-undated', 'prj-1', 'cnt-main', '{\"amount\": 50000.0, \"status\": \"Posted\"}'),
+             ('cst-draft', 'prj-1', 'cnt-main', '{\"posting_date\": \"2026-09-02\", \"amount\": 50000.0, \"status\": \"Draft\"}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO procurement_receipts (id, project_id, contract_id, payload) VALUES 
+             ('rcpt-dup', 'prj-1', 'cnt-main', '{\"receipt_date\": \"2026-09-04\", \"status\": \"Accepted\", \"accepted_amount\": 10000.0}'),
+             ('rcpt-unposted', 'prj-1', 'cnt-main', '{\"receipt_date\": \"2026-09-06\", \"status\": \"Accepted\", \"accepted_amount\": 5000.0}'),
+             ('rcpt-pending', 'prj-1', 'cnt-main', '{\"receipt_date\": \"2026-09-06\", \"status\": \"Pending\", \"accepted_amount\": 50000.0}');"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool.close().await;
+
+        // Verify Data Date 1 (2026-09-10)
+        let req_date1 = SaveHealthScoreVersionRequest {
+            operation_id: "op-date-1".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-DATE1".to_string(),
+            title: "Data Date 1 Reconciliation".to_string(),
+            data_date: Some("2026-09-10".to_string()),
+            schedule_weight: 50.0,
+            cost_weight: 50.0,
+            cash_weight: 0.0,
+            scope_weight: 0.0,
+            quality_weight: 0.0,
+            data_quality_weight: 0.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "PMO Lead".to_string(),
+        };
+
+        let res_date1 = save_health_score_version_core(&db, req_date1)
+            .await
+            .unwrap();
+
+        // At Date 1:
+        // PV = 60,000
+        // EV = (400 * 100) + (200 * 100) - (50 * 100) = 55,000
+        // AC = 25,000 + 15,000 + 10,000 + 5,000 = 55,000
+        // SPI = 55,000 / 60,000 = 0.916666...
+        // CPI = 55,000 / 55,000 = 1.0
+        let spi1 = res_date1.dimensions[0].raw_metric_value.unwrap();
+        let cpi1 = res_date1.dimensions[1].raw_metric_value.unwrap();
+        assert!((spi1 - (55000.0 / 60000.0)).abs() < 1e-4);
+        assert!((cpi1 - 1.0).abs() < 1e-4);
+
+        // Verify Data Date 2 (2026-09-20)
+        let req_date2 = SaveHealthScoreVersionRequest {
+            operation_id: "op-date-2".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-DATE2".to_string(),
+            title: "Data Date 2 Reconciliation".to_string(),
+            data_date: Some("2026-09-20".to_string()),
+            schedule_weight: 50.0,
+            cost_weight: 50.0,
+            cash_weight: 0.0,
+            scope_weight: 0.0,
+            quality_weight: 0.0,
+            data_quality_weight: 0.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "PMO Lead".to_string(),
+        };
+
+        let res_date2 = save_health_score_version_core(&db, req_date2)
+            .await
+            .unwrap();
+
+        // At Date 2:
+        // PV = 60,000 + 120,000 = 180,000
+        // EV = 55,000 + (300 * 100) = 85,000
+        // AC = 55,000 + 20,000 = 75,000
+        // SPI = 85,000 / 180,000 = 0.472222...
+        // CPI = 85,000 / 75,000 = 1.133333...
+        let spi2 = res_date2.dimensions[0].raw_metric_value.unwrap();
+        let cpi2 = res_date2.dimensions[1].raw_metric_value.unwrap();
+        assert!((spi2 - (85000.0 / 180000.0)).abs() < 1e-4);
+        assert!((cpi2 - (85000.0 / 75000.0)).abs() < 1e-4);
+    }
+
+    #[tokio::test]
+    async fn test_evm_zero_denominators_unavailable() {
+        let db = create_test_db().await;
+
+        let req = SaveHealthScoreVersionRequest {
+            operation_id: "op-zero-denom".to_string(),
+            project_id: "prj-1".to_string(),
+            version_code: "V-ZERO".to_string(),
+            title: "Zero Denominators Test".to_string(),
+            data_date: Some("2026-09-10".to_string()),
+            schedule_weight: 50.0,
+            cost_weight: 50.0,
+            cash_weight: 0.0,
+            scope_weight: 0.0,
+            quality_weight: 0.0,
+            data_quality_weight: 0.0,
+            schedule_warning_threshold: 0.95,
+            schedule_critical_threshold: 0.85,
+            schedule_direction: "higher_is_better".to_string(),
+            cost_warning_threshold: 0.95,
+            cost_critical_threshold: 0.85,
+            cost_direction: "higher_is_better".to_string(),
+            cash_warning_threshold: 0.0,
+            cash_critical_threshold: -50000.0,
+            cash_direction: "higher_is_better".to_string(),
+            scope_warning_threshold: 0.1,
+            scope_critical_threshold: 0.25,
+            scope_direction: "lower_is_better".to_string(),
+            quality_warning_threshold: 0.05,
+            quality_critical_threshold: 0.15,
+            quality_direction: "lower_is_better".to_string(),
+            data_quality_warning_threshold: 0.05,
+            data_quality_critical_threshold: 0.15,
+            data_quality_direction: "lower_is_better".to_string(),
+            notes: None,
+            actor: "PMO Lead".to_string(),
+        };
+
+        let res = save_health_score_version_core(&db, req)
+            .await
+            .unwrap();
+
+        // No baseline => SPI is None, dimension is Unavailable, score is 0.0
+        let sched_dim = &res.dimensions[0];
+        assert_eq!(sched_dim.dimension, "Schedule");
+        assert_eq!(sched_dim.raw_metric_value, None);
+        assert_eq!(sched_dim.status, "Unavailable");
+        assert_eq!(sched_dim.score, 0.0);
+        assert_eq!(sched_dim.freshness_status, "Missing");
+
+        // No cost entries => CPI is None, dimension is Unavailable, score is 0.0
+        let cost_dim = &res.dimensions[1];
+        assert_eq!(cost_dim.dimension, "Cost");
+        assert_eq!(cost_dim.raw_metric_value, None);
+        assert_eq!(cost_dim.status, "Unavailable");
+        assert_eq!(cost_dim.score, 0.0);
+        assert_eq!(cost_dim.freshness_status, "Missing");
     }
 }
