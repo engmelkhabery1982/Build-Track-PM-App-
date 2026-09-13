@@ -179,16 +179,26 @@ export function ReportPack({
     const activeHealthConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
     const isApprovedHealth = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
 
-    const healthResult = calculateGovernedHealthScore({
-      spi: evm.revenue.SPI || null,
-      cpi: evm.cost.CPI ?? null,
-      netCashBalance: cash,
-      unapprovedVariationRatio,
-      wirFailureRate,
-      missingDataRatio,
-      dataDate: reportDate,
-      versionCode: approvedHealthVersion?.version_code || undefined,
-    }, activeHealthConfig, isApprovedHealth);
+    const healthResult = (approvedHealthVersion && approvedHealthVersion.status === 'Approved' && approvedHealthVersion.dimensions)
+      ? {
+          overallScore: approvedHealthVersion.overall_score,
+          status: approvedHealthVersion.health_status as any,
+          confidence: approvedHealthVersion.confidence,
+          dimensions: approvedHealthVersion.dimensions,
+          dataDate: approvedHealthVersion.data_date || reportDate,
+          versionCode: approvedHealthVersion.version_code,
+          isGovernedApproved: true,
+        }
+      : calculateGovernedHealthScore({
+          spi: evm.revenue.SPI || null,
+          cpi: evm.cost.CPI ?? null,
+          netCashBalance: cash,
+          unapprovedVariationRatio,
+          wirFailureRate,
+          missingDataRatio,
+          dataDate: reportDate,
+          versionCode: approvedHealthVersion?.version_code || undefined,
+        }, activeHealthConfig, isApprovedHealth);
 
     return {
       metrics: {

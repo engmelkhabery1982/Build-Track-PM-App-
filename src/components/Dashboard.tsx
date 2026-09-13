@@ -424,15 +424,41 @@ export function Dashboard({
   }, [evm, stats, fWirs, reportDate, approvedHealthVersion]);
 
   const governedHealthResult = useMemo(() => {
+    if (approvedHealthVersion && approvedHealthVersion.status === 'Approved' && approvedHealthVersion.dimensions) {
+      return {
+        overallScore: approvedHealthVersion.overall_score,
+        status: approvedHealthVersion.health_status as any,
+        confidence: approvedHealthVersion.confidence,
+        overallConfidence: approvedHealthVersion.confidence,
+        hasMissingCriticalInputs: (approvedHealthVersion.dimensions || []).some(d => d.status === 'Unavailable' && (d.dimension === 'Schedule' || d.dimension === 'Cost')),
+        dimensions: approvedHealthVersion.dimensions.map(d => ({
+          dimension: d.dimension,
+          metricName: d.metricName || d.dimension,
+          rawValue: d.rawValue ?? null,
+          score: d.score,
+          weight: d.weight,
+          weightedScore: d.weightedScore ?? 0,
+          status: d.status as any,
+          confidence: d.confidence,
+          source: d.source,
+          sourceRecordIds: d.sourceRecordIds || [],
+          freshnessStatus: d.freshnessStatus || 'Fresh',
+        })),
+        dataDate: approvedHealthVersion.data_date || reportDate,
+        versionCode: approvedHealthVersion.version_code,
+        isGovernedApproved: true,
+        notes: approvedHealthVersion.notes || undefined,
+      };
+    }
     const activeConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
     const isApproved = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
     return calculateGovernedHealthScore(governedHealthInputs, activeConfig, isApproved);
-  }, [governedHealthInputs, approvedHealthVersion]);
+  }, [governedHealthInputs, approvedHealthVersion, reportDate]);
 
-  const healthScore = governedHealthResult.overallScore;
+  const healthScore = governedHealthResult.overallScore ?? 0;
   const healthBreakdown = useMemo(() => {
     return governedHealthResult.dimensions.map((dim) => {
-      const metricVal = dim.rawMetricValue !== null ? dim.rawMetricValue : 'Unavailable';
+      const metricVal = dim.rawValue !== null ? dim.rawValue : 'Unavailable';
       return `${dim.dimension}: ${dim.score}/100 (${dim.weight}% weight, +${dim.weightedScore} pts) [${dim.metricName}: ${metricVal}] - ${dim.status}`;
     });
   }, [governedHealthResult]);

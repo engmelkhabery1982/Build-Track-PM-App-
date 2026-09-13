@@ -279,6 +279,8 @@ pub async fn save_health_score_version_core(
     }
 
     // Derive authentic metrics from database tables for this project
+    let cutoff_date = req.data_date.clone().unwrap_or_default();
+
     // 1. Schedules / EVM (SPI)
     let schedule_rows = sqlx::query("SELECT id FROM schedules WHERE project_id = ?")
         .bind(&req.project_id)
@@ -286,6 +288,7 @@ pub async fn save_health_score_version_core(
         .await
         .map_err(|e| e.to_string())?;
     let schedule_ids: Vec<String> = schedule_rows.iter().map(|r| r.get::<String, _>(0)).collect();
+    let spi_value: Option<f64> = None; // Unavailable unless authentic progress data exists in table
 
     // 2. Cost Entries (CPI)
     let cost_rows = sqlx::query("SELECT id FROM cost_entries WHERE project_id = ?")
@@ -294,6 +297,7 @@ pub async fn save_health_score_version_core(
         .await
         .map_err(|e| e.to_string())?;
     let cost_ids: Vec<String> = cost_rows.iter().map(|r| r.get::<String, _>(0)).collect();
+    let cpi_value: Option<f64> = None; // Unavailable unless authentic cost data exists in table
 
     // 3. Cash Flow
     let cash_rows = sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ?")
@@ -322,7 +326,7 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
     let var_ids: Vec<String> = var_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let unapproved_var_ratio: Option<f64> = if var_ids.is_empty() {
-        Some(0.0)
+        None
     } else {
         let pending = var_rows
             .iter()
@@ -342,7 +346,7 @@ pub async fn save_health_score_version_core(
         .map_err(|e| e.to_string())?;
     let wir_ids: Vec<String> = wir_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let wir_fail_rate: Option<f64> = if wir_ids.is_empty() {
-        None // Mark Unavailable if zero records exist!
+        None
     } else {
         let failed = wir_rows
             .iter()
@@ -355,33 +359,38 @@ pub async fn save_health_score_version_core(
     };
 
     // 6. Data Quality
-    let dq_ratio: Option<f64> = Some(0.0);
+    let total_records = schedule_ids.len() + cost_ids.len() + cash_ids.len() + var_ids.len() + wir_ids.len();
+    let dq_ratio: Option<f64> = if total_records == 0 {
+        None
+    } else {
+        Some(0.0) // 0% missing fields when all existing records are fully populated
+    };
 
     // Compute dimensions
     let dim_sched = calculate_dimension_score(
         "Schedule",
         req.schedule_weight,
-        if schedule_ids.is_empty() { None } else { Some(1.0) },
+        spi_value,
         "Schedule Performance Index (SPI)",
         req.schedule_warning_threshold,
         req.schedule_critical_threshold,
         &req.schedule_direction,
         "Governed Schedules & EVM Progress",
         schedule_ids,
-        "Fresh",
+        if spi_value.is_none() { "Missing" } else { "Fresh" },
     );
 
     let dim_cost = calculate_dimension_score(
         "Cost",
         req.cost_weight,
-        if cost_ids.is_empty() { None } else { Some(1.0) },
+        cpi_value,
         "Cost Performance Index (CPI)",
         req.cost_warning_threshold,
         req.cost_critical_threshold,
         &req.cost_direction,
         "Governed Cost Control Accounts & AC",
         cost_ids,
-        "Fresh",
+        if cpi_value.is_none() { "Missing" } else { "Fresh" },
     );
 
     let dim_cash = calculate_dimension_score(

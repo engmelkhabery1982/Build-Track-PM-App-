@@ -121,8 +121,9 @@ function saveWebStorage(items: HealthScoreWorkflowResultDto[]) {
       localStorage.setItem('bt_health_score_versions', JSON.stringify(items));
     } catch {}
   }
+  const copy = [...items];
   memoryStore.length = 0;
-  memoryStore.push(...items);
+  memoryStore.push(...copy);
 }
 
 async function invokeHealthScore<T>(command: string, request: Record<string, unknown>): Promise<T> {
