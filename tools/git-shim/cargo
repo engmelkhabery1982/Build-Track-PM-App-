@@ -1,3 +1,0 @@
-#!/bin/bash
-echo "cargo: not found" >&2
-exit 127
