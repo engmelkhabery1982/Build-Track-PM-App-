@@ -1,9 +1,9 @@
 # Agent Queue Cursor
 
 mode: OPEN_SEQUENTIAL_CANDIDATE_QUEUE
-last_completed_candidate: W04
-next_feature: W05
-last_commit: ca43df5a0945643f966b233c58cd897af0edba18
-status: W04_ACCEPTED_8_OF_10_W05_CORRECTION_REQUIRED
+last_completed_candidate: W05
+next_feature: W06
+last_commit: d77b8006fa1a5fba7a3abce07601c1e9cd9ebeb9
+status: W05_ACCEPTED_8_OF_10_W06_WAITING_FOR_USER_COMMAND
 pending_local_verification: none
-instruction: Read CODEX_W05_REVIEW_2026-09-10.md and close W05-C01..C09 on the preferred main implementation. Preserve the accepted application and dependency declarations; restore package-lock consistency. Do not start W06 until every correction and W05-G01..G10 passes its delivery gate. Never merge or restore the divergent Arena W05 implementation.
+instruction: W05 candidate was delivered and locally corrected; next feature is W06. Stop after every feature. Start W06 only when the user explicitly says to start the next feature; Codex acceptance or an ACTIVE update is not required. Never modify authority files or restore rejected implementations.

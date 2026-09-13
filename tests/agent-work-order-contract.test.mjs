@@ -37,15 +37,18 @@ test('universal agent prompt enforces governed sources, atomic transitions and h
 test('active and master work orders point to the current gate and detailed authority', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
-  assert.match(active, /CURRENT_FEATURE=W05/);
-  assert.match(active, /CURRENT_STATUS=CORRECTION_REQUIRED_BEFORE_W06/);
-  assert.match(active, /PREREQUISITE=W04:CLOSED_8_OF_10_BY_CODEX/);
+  assert.match(active, /CURRENT_FEATURE=W06/);
+  assert.match(active, /CURRENT_STATUS=OPEN_WAITING_FOR_USER_COMMAND/);
+  assert.match(active, /PREREQUISITE=W05:CLOSED_8_OF_10_BY_CODEX/);
   assert.match(active, /CLOUD_BASE_BRANCH=main/);
   assert.match(active, /DELIVERY_BRANCH=CURRENT_BOUND_BRANCH/);
   assert.match(active, /EXECUTION_MODE=OPEN_SEQUENTIAL_CANDIDATE_QUEUE/);
   assert.match(active, /OPEN_FEATURE_RANGE=W04-W90/);
-  assert.match(active, /FEATURE_BATCH_LIMIT=87/);
-  assert.match(active, /STOP_AFTER_CURRENT_FEATURE=false/);
+  assert.match(active, /FEATURE_BATCH_LIMIT=1/);
+  assert.match(active, /STOP_AFTER_CURRENT_FEATURE=true/);
+  assert.match(active, /ALL_CANDIDATE_FEATURES_OPEN=W04-W90/);
+  assert.match(active, /NEXT_FEATURE_REQUIRES_USER_COMMAND=true/);
+  assert.match(active, /NEXT_FEATURE_REQUIRES_CODEX_ACCEPTANCE=false/);
   assert.match(active, /AGENT_MUST_NOT_EDIT=true/);
   assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR\.md/);
