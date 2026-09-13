@@ -2,18 +2,30 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  detectCommandSpoofing,
+  repositoryRootFromModule,
+  resolveTrustedExecutable,
+  verifyProtectedFiles,
+} from './protected-file-integrity.mjs';
 
 const argv = Object.fromEntries(process.argv.slice(2).reduce((pairs, item, index, all) => {
   if (item.startsWith('--')) pairs.push([item.slice(2), all[index + 1]]); return pairs;
 }, []));
 const fail = (message) => { throw new Error(`DELIVERY FAIL: ${message}`); };
-const execute = (command, args = []) => {
-  const result = spawnSync(command, args, { encoding: 'utf8', shell: process.platform === 'win32' });
+const execute = (command, args = [], options = {}) => {
+  const result = spawnSync(command, args, { encoding: 'utf8', shell: options.shell ?? (process.platform === 'win32'), cwd: options.cwd });
   return { name: [command, ...args].join(' '), exit_code: result.status ?? 127,
-    output: `${result.stdout || ''}${result.stderr || ''}`.trim() };
+    output: `${result.stdout || ''}${result.stderr || ''}${result.error ? `\n${result.error.message}` : ''}`.trim() };
 };
-const git = (...args) => { const result = execute('git', args); if (result.exit_code) fail(result.output); return result.output; };
-const root = git('rev-parse', '--show-toplevel'); process.chdir(root);
+const root = repositoryRootFromModule(import.meta.url); process.chdir(root);
+try {
+  verifyProtectedFiles(root);
+  detectCommandSpoofing(root);
+} catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+const gitExecutable = resolveTrustedExecutable(root, 'git');
+if (!gitExecutable) fail('trusted external Git executable is unavailable.');
+const git = (...args) => { const result = execute(gitExecutable, args, { shell: false, cwd: root }); if (result.exit_code) fail(result.output); return result.output; };
 const active = Object.fromEntries(readFileSync(resolve(root, 'docs/agent-work-orders/ACTIVE.md'), 'utf8').split(/\r?\n/)
   .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean).map((m) => [m[1], m[2].trim()]));
 const feature = argv.feature; const startHead = argv['start-head'];
@@ -86,10 +98,14 @@ for (const line of changes) {
   if (/(^|\/)(node_modules|dist|target)(\/|$)|\.(zip|db|sqlite|sqlite3)$/i.test(path)) fail(`artifact forbidden: ${path}`);
 }
 
-const commands = [execute('npm', ['test']), execute('npm', ['run', 'build']),
-  execute('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml']), execute('git', ['diff', '--check', startHead])];
+const cargoExecutable = resolveTrustedExecutable(root, 'cargo');
+const cargoResult = cargoExecutable
+  ? execute(cargoExecutable, ['test', '--manifest-path', 'src-tauri/Cargo.toml'], { shell: false, cwd: root })
+  : { name: 'cargo test --manifest-path src-tauri/Cargo.toml', exit_code: 127, output: 'trusted external Cargo executable not found' };
+const commands = [execute('npm', ['test'], { cwd: root }), execute('npm', ['run', 'build'], { cwd: root }),
+  cargoResult, execute(gitExecutable, ['diff', '--check', startHead], { shell: false, cwd: root })];
 const cargoCommand = commands[2];
-const cargoUnavailable = cargoCommand.exit_code !== 0 && /ENOENT|not found|not recognized|cannot find/i.test(cargoCommand.output);
+const cargoUnavailable = !cargoExecutable;
 const availableCommandsPass = commands.every((item, index) => item.exit_code === 0 || (index === 2 && allowMissingCargo && cargoUnavailable));
 const evidenceResult = availableCommandsPass ? (cargoUnavailable ? 'PENDING_LOCAL_CARGO' : 'PASS') : 'FAIL';
 const hashes = changes.map((line) => line.split('\t').at(-1).replaceAll('\\', '/')).filter((path) => existsSync(resolve(root, path)))
@@ -99,5 +115,9 @@ const evidence = { feature, result: evidenceResult, start_head: startHead,
   end_head: git('rev-parse', 'HEAD'), generated_utc: new Date().toISOString(), changes: [...changes, `A\t${evidenceRelative}`],
   file_hashes: hashes, commands };
 writeFileSync(resolve(root, evidenceRelative), `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+try {
+  verifyProtectedFiles(root);
+  detectCommandSpoofing(root);
+} catch (error) { fail(error instanceof Error ? error.message : String(error)); }
 console.log(JSON.stringify(evidence, null, 2));
 if (evidence.result === 'FAIL') process.exit(1);

@@ -1,6 +1,6 @@
 # W06 Result
 
-Status: READY FOR CODEX REVIEW
+Status: WIP — CODEX CORRECTION ROUND 10 REQUIRED
 
 W06-G01=PASS
 W06-G02=PASS
@@ -11,7 +11,7 @@ W06-G06=PASS
 W06-G07=PASS
 W06-G08=PASS
 W06-G09=PASS
-W06-G10=PASS
+W06-G10=FAIL
 
 W06-C01=PASS
 W06-C02=PASS
@@ -20,7 +20,7 @@ W06-C04=PASS
 W06-C05=PASS
 W06-C06=PASS
 W06-C07=PASS
-W06-C08=PASS
+W06-C08=FAIL
 
 Correction Round 9 Codex Verification:
 - Targeted Node: PASS (286/286).
@@ -39,4 +39,4 @@ Prior candidate implementation retained where valid:
   * Zero/invalid denominators gracefully return Unavailable.
 - Verification: All gates fully verified and passed.
 
-READY FOR CODEX REVIEW
+NOT READY — follow `CODEX_W06_REVIEW_2026-09-13.md`, correction round 10.

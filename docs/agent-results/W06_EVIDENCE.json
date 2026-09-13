@@ -1,8 +1,8 @@
 {
   "feature": "W06",
-  "result": "PENDING_LOCAL_CARGO",
+  "result": "FAIL_CODEX_LOCAL_VERIFICATION",
   "start_head": "d77b8006fa1a5fba7a3abce07601c1e9cd9ebeb9",
-  "end_head": "0e6520755822059d550760c754a12363c7a6c677",
+  "end_head": "9ab0fa6f26636c89b07276297745d7015777d725",
   "generated_utc": "2026-09-13T21:08:26.299Z",
   "changes": [
     "A\tdocs/agent-results/W06_EVIDENCE.json"

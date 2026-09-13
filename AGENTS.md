@@ -14,6 +14,14 @@ to edit project source, tests, documentation, local development migrations,
 and build configuration; run local tests/builds; and create safe local
 checkpoints without waiting for per-file or per-step approval.
 
+This build/config authority belongs exclusively to Codex. It is not delegated
+or inherited by Arena, Google AI Studio, Aider, Ollama, or any other execution
+agent. Execution agents must obey `ACTIVE.md`, its feature allowlist, and the
+cryptographic protected-file manifest. They may not edit package manifests,
+lockfiles, Cargo configuration, agent gates, or the protected-file manifest
+unless Codex has first issued a repository-recorded authorization for those
+exact paths and refreshed the protected baseline itself.
+
 Codex must work in complete, testable increments:
 
 1. Define the feature acceptance criteria before implementation.

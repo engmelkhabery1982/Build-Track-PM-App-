@@ -2,11 +2,23 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  detectCommandSpoofing,
+  repositoryRootFromModule,
+  resolveTrustedExecutable,
+  verifyProtectedFiles,
+} from './protected-file-integrity.mjs';
 
-const run = (command, args = []) => execFileSync(command, args, { encoding: 'utf8' }).trim();
 const fail = (message) => { throw new Error(`PREFLIGHT FAIL: ${message}`); };
-const root = run('git', ['rev-parse', '--show-toplevel']);
+const root = repositoryRootFromModule(import.meta.url);
 process.chdir(root);
+try {
+  verifyProtectedFiles(root);
+  detectCommandSpoofing(root);
+} catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+const gitExecutable = resolveTrustedExecutable(root, 'git');
+if (!gitExecutable) fail('trusted external Git executable is unavailable.');
+const run = (args = []) => execFileSync(gitExecutable, args, { encoding: 'utf8', shell: false, cwd: root }).trim();
 
 const activePath = resolve(root, 'docs/agent-work-orders/ACTIVE.md');
 if (!existsSync(activePath)) fail('ACTIVE.md is missing.');
@@ -22,24 +34,24 @@ for (const key of ['CORRECTION_FILE', 'EXECUTION_PLAN_FILE']) {
   if (active[key] && !existsSync(resolve(root, active[key]))) fail(`ACTIVE.${key} points to missing file: ${active[key]}`);
 }
 
-const status = run('git', ['status', '--porcelain=v1', '--untracked-files=all']);
+const status = run(['status', '--porcelain=v1', '--untracked-files=all']);
 if (status) fail(`working tree is not clean.\n${status}`);
-const head = run('git', ['rev-parse', 'HEAD']);
-const branch = run('git', ['branch', '--show-current']);
+const head = run(['rev-parse', 'HEAD']);
+const branch = run(['branch', '--show-current']);
 const patternText = active.WORK_BRANCH_PATTERN || `^${active.DELIVERY_BRANCH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
 let pattern;
 try { pattern = new RegExp(patternText); } catch { fail(`invalid WORK_BRANCH_PATTERN: ${patternText}`); }
 if (!pattern.test(branch) && !queueMode) fail(`current branch '${branch}' does not match WORK_BRANCH_PATTERN '${patternText}'.`);
 let lineage_verification = 'ANCESTOR';
 try {
-  run('git', ['cat-file', '-e', `${active.ACCEPTED_HEAD}^{commit}`]);
-  run('git', ['merge-base', '--is-ancestor', active.ACCEPTED_HEAD, head]);
+  run(['cat-file', '-e', `${active.ACCEPTED_HEAD}^{commit}`]);
+  run(['merge-base', '--is-ancestor', active.ACCEPTED_HEAD, head]);
 } catch {
   if (active.ACCEPTED_LINEAGE_MODE !== 'ANCESTOR_OR_REMOTE_MAIN_ATTESTATION') {
     fail(`HEAD ${head} is not based on accepted ${active.ACCEPTED_HEAD}.`);
   }
   let remoteHead;
-  try { remoteHead = run('git', ['rev-parse', `origin/${active.CLOUD_BASE_BRANCH}`]); }
+  try { remoteHead = run(['rev-parse', `origin/${active.CLOUD_BASE_BRANCH}`]); }
   catch { fail(`accepted commit is absent and origin/${active.CLOUD_BASE_BRANCH} cannot be verified.`); }
   if (remoteHead !== head && !queueMode) fail(`accepted history is shallow and HEAD ${head} does not equal pulled origin/${active.CLOUD_BASE_BRANCH} ${remoteHead}.`);
   const attestationRelative = active.ACCEPTED_ATTESTATION_FILE;
@@ -56,7 +68,8 @@ try {
 for (const path of ['AGENTS.md', 'docs/agent-work-orders/AGENT_START_HERE_AR.md', 'docs/agent-work-orders/ACTIVE.md',
   'docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md', 'docs/agent-work-orders/FEATURE_READ_PACKS_AR.md',
   'docs/agent-work-orders/COMPACT_PROJECT_MODEL_AR.md', 'docs/agent-work-orders/OPEN_90_FEATURE_EXECUTION_SYSTEM_AR.md',
-  'tools/agent-delivery-gate.mjs']) {
+  'tools/agent-delivery-gate.mjs', 'tools/protected-file-integrity.mjs',
+  'tools/agent-protected-files.json', 'tools/agent-governance-public-key.pem']) {
   if (!existsSync(resolve(root, path))) fail(`required file missing: ${path}`);
 }
 

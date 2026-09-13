@@ -297,3 +297,45 @@ method at Data Date, use linked activity Revenue BAC as fallback denominator, an
 only when no explicit method exists. Add two-account SOV-only and `0/100`/`50/50` parity fixtures.
 Run all gates, push W06, then stop. Do not start W07 or modify package/authority files.
 
+## Correction round 10 verification — commit `9ab0fa6`
+
+The candidate added useful SOV resolution and the four measurement-method branches, but W06 is
+still `CORRECTION_REQUIRED — NOT 8/10`:
+
+- Codex targeted Node verification is `17/17 PASS` and the production build is PASS. Initial
+  targeted Cargo verification was `4/11`: seven tests failed because the production query now
+  requires `contract_sov_lines`, but the shared real-schema test fixture was not migrated. Codex
+  added that missing test table as a narrow test-infrastructure repair; the agent still must run
+  and report Cargo honestly.
+- No two-account SOV-only, `0/100`, `50/50`, or mixed-method Rust parity fixture was added. The
+  Result claims those paths passed even though the diff adds no executable test for them.
+- An active/closed SOV line is currently accepted as `delivery_cost_bac` when no approved Cost
+  Plan exists. SOV is a contract/revenue authority, not an internal delivery-cost baseline. This
+  violates the W06/A3 separation rule and can manufacture CPI from selling budget. Both the Rust
+  persisted engine and `src/utils/evm.ts` must require an approved Cost Plan for Cost BAC/EV/CPI;
+  SOV may resolve the BOQ link only.
+- In a Control Account containing at least one explicitly measured activity plus another activity
+  without a method, Rust selects `earned_from_activities` for the whole account but contributes
+  zero for the unconfigured activity. Canonical behavior must either reject the incomplete setup
+  or use the governed Quantity/WIR path for that individual activity; it must not silently omit
+  earned work.
+- The account schedule scan includes all project schedules and does not use `SchedEntry.contract_id`.
+  It can therefore admit subcontract/live rows outside the selected main-contract schedule scope.
+  Filter linked activities to the same main-contract authority used for Revenue PV.
+- Weighted Milestone consumes the current weight without proving its status/effective date is on
+  or before the requested Data Date. A later milestone update must not rewrite an earlier frozen
+  score. Apply dated status evidence or return Requires setup for undated measurement.
+- The candidate again removed `framer-motion` from `package-lock.json` while production still
+  imports it. Codex restored the lock. The repeated forbidden-file and gate-shim behavior is now
+  blocked by the signed protected-file manifest and trusted executable resolution.
+
+### Required correction round 10
+
+Preserve the useful SOV BOQ mapping and measurement branches. Require an approved Cost Plan for
+delivery-cost indicators, scope linked schedules to the selected main contract, handle mixed
+measurement accounts without omission, and make Weighted Milestone Data-Date safe. Add real Rust
+fixtures with two SOV-only Control Accounts and separate/mixed `0/100`, `50/50`, Quantity and
+Weighted Milestone activities at two Data Dates. Assert exact parity with TypeScript and assert
+Cost Unavailable for active SOV without an approved Cost Plan. Run Node, build, full Cargo and diff
+through the hardened gate, publish honest evidence, push W06 and stop. Do not start W07.
+

@@ -38,7 +38,7 @@ test('active and master work orders point to the current gate and detailed autho
   const active = read('docs/agent-work-orders/ACTIVE.md');
   const master = read('docs/agent-work-orders/MASTER_CLOUD_DEVELOPMENT_WORK_ORDER_AR.md');
   assert.match(active, /CURRENT_FEATURE=W06/);
-  assert.match(active, /CURRENT_STATUS=CORRECTION_REQUIRED_WAITING_FOR_USER_COMMAND/);
+  assert.match(active, /CURRENT_STATUS=CORRECTION_(?:ROUND_\d+_)?REQUIRED_WAITING_FOR_USER_COMMAND/);
   assert.match(active, /PREREQUISITE=W05:CLOSED_8_OF_10_BY_CODEX/);
   assert.match(active, /CLOUD_BASE_BRANCH=main/);
   assert.match(active, /DELIVERY_BRANCH=CURRENT_BOUND_BRANCH/);
@@ -87,8 +87,11 @@ test('machine agent gates enforce accepted ancestry, allowlists and executable e
   assert.match(portablePreflight, /origin\/\$\{active\.CLOUD_BASE_BRANCH\}/);
   assert.match(portableDelivery, /READY FOR CODEX REVIEW/);
   assert.match(portableDelivery, /REQUIRED_GAPS/);
-  assert.match(portableDelivery, /execute\('npm', \['run', 'build'\]\)/);
-  assert.match(portableDelivery, /execute\('cargo', \['test'/);
+  assert.match(portableDelivery, /execute\('npm', \['run', 'build'\], \{ cwd: root \}\)/);
+  assert.match(portableDelivery, /resolveTrustedExecutable\(root, 'cargo'\)/);
+  assert.match(portablePreflight, /verifyProtectedFiles\(root\)/);
+  assert.match(portableDelivery, /verifyProtectedFiles\(root\)/);
+  assert.match(portableDelivery, /detectCommandSpoofing\(root\)/);
   assert.match(portableDelivery, /allow-missing-cargo/);
   assert.match(portableDelivery, /PENDING_LOCAL_CARGO/);
 });
