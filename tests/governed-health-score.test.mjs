@@ -191,31 +191,67 @@ test('W06-C03 - Project-scoped authority and custom config conversion', () => {
   assert.strictEqual(schedDim.status, 'Amber');
 });
 
-test('W06-C04 & W06-C05 - Maker-Checker & Reopen mapping', () => {
-  const rawDto = {
-    id: 'v-uuid-1',
-    project_id: 'PRJ-101',
-    version_code: 'V-HEALTH-001',
-    title: 'Baseline 1',
-    status: 'Draft',
+test('W06-C04 - Maker-Checker violation error handling in workflow', async () => {
+  const { saveHealthScoreVersion, approveHealthScoreVersion } = await import('../src/data/healthScoreWorkflow.ts');
+  const draft = await saveHealthScoreVersion({
+    operation_id: 'op-test-mc-01',
+    project_id: 'PRJ-TEST-MC',
+    version_code: 'V-TEST-01',
+    title: 'Test Maker Checker',
     schedule_weight: 20,
     cost_weight: 20,
     cash_weight: 20,
     scope_weight: 15,
     quality_weight: 15,
     data_quality_weight: 10,
-    overall_score: 90,
-    health_status: 'Green',
-    confidence: 100,
-    dimensions: [],
-    created_by: 'User Alice',
-    payload: '{}',
-  };
+    schedule_warning_threshold: 0.95,
+    schedule_critical_threshold: 0.85,
+    schedule_direction: 'higher_is_better',
+    cost_warning_threshold: 0.95,
+    cost_critical_threshold: 0.85,
+    cost_direction: 'higher_is_better',
+    cash_warning_threshold: 0,
+    cash_critical_threshold: -50000,
+    cash_direction: 'higher_is_better',
+    scope_warning_threshold: 0.10,
+    scope_critical_threshold: 0.25,
+    scope_direction: 'lower_is_better',
+    quality_warning_threshold: 0.05,
+    quality_critical_threshold: 0.15,
+    quality_direction: 'lower_is_better',
+    data_quality_warning_threshold: 0.05,
+    data_quality_critical_threshold: 0.15,
+    data_quality_direction: 'lower_is_better',
+    actor: 'User Maker',
+  });
 
-  const mapped = mapDtoToHealthScoreVersion(rawDto);
-  assert.strictEqual(mapped.created_by, 'User Alice');
-  assert.strictEqual(mapped.status, 'Draft');
-  assert.strictEqual(mapped.schedule_weight, 20);
+  assert.strictEqual(draft.created_by, 'User Maker');
+  assert.strictEqual(draft.status, 'Draft');
+
+  // Attempt approval by same maker -> should reject
+  await assert.rejects(
+    async () => {
+      await approveHealthScoreVersion({
+        operation_id: 'op-test-mc-02',
+        version_id: draft.id,
+        actor: 'User Maker',
+      });
+    },
+    (err) => {
+      assert.ok(err.message.includes('Maker-checker violation') || err.message.includes('cannot approve'));
+      return true;
+    }
+  );
+
+  // Approval by checker -> should succeed
+  const approved = await approveHealthScoreVersion({
+    operation_id: 'op-test-mc-03',
+    version_id: draft.id,
+    actor: 'User Checker',
+  });
+
+  assert.strictEqual(approved.status, 'Approved');
+  assert.strictEqual(approved.approved_by, 'User Checker');
 });
 
 test('W06-C07 - Cross-screen consistency across all consumers', () => {

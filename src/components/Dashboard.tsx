@@ -19,11 +19,14 @@ import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/re
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import { buildBoqWasteLedger, buildOperationalScopeReport, calculateEarnedScheduleFromSeries } from '@/utils/projectControlAnalytics';
-import { calculateGovernedHealthScore, DEFAULT_HEALTH_CONFIG, type RawHealthInputs } from '@/utils/governedHealthScore';
+import { calculateGovernedHealthScore, configFromVersion, type RawHealthInputs } from '@/utils/governedHealthScore';
+import { GovernedHealthScoreCard } from './GovernedHealthScoreCard';
+import { getHealthScoreVersion } from '@/data/healthScoreWorkflow';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, ContractSOVLine, ControlAccount, ProcurementReceipt, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
   Variation, DocumentEntry, WIREntry, ProgressCorrection, ProjectBaseline, ReportingPeriod, GovernanceRegisterEntry, RFIEntry, SubmittalEntry, QualityEntry, CostPlanVersion,
+  HealthScoreVersion,
 } from '@/types';
 
 interface DashboardProps {
@@ -394,24 +397,37 @@ export function Dashboard({
     };
   }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate, evm]);
 
+  const [approvedHealthVersion, setApprovedHealthVersion] = useState<HealthScoreVersion | null>(null);
+
+  useEffect(() => {
+    if (selectedProjectId && selectedProjectId !== 'all') {
+      getHealthScoreVersion({ project_id: selectedProjectId })
+        .then((ver) => setApprovedHealthVersion(ver))
+        .catch(() => setApprovedHealthVersion(null));
+    } else {
+      setApprovedHealthVersion(null);
+    }
+  }, [selectedProjectId]);
+
   const governedHealthInputs: RawHealthInputs = useMemo(() => {
+    const totalQualityItems = stats.openQualityItems + (fWirs ? fWirs.length : 0);
     return {
       spi: evm.revenue.SPI || null,
       cpi: evm.cost.CPI ?? null,
       netCashBalance: stats.netCashFlow,
       unapprovedVariationRatio: stats.totalVariations > 0 ? (stats.pendingVariations / stats.totalVariations) : 0,
-      wirFailureRate: (stats.openQualityItems > 0)
-        ? (stats.openQualityItems / (stats.openQualityItems + (fWirs.length || 10)))
-        : 0,
-      missingDataRatio: 0,
+      wirFailureRate: totalQualityItems > 0 ? (stats.openQualityItems / totalQualityItems) : null,
+      missingDataRatio: null,
       dataDate: reportDate,
-      versionCode: 'V-HEALTH-GOVERNED',
+      versionCode: approvedHealthVersion?.version_code || undefined,
     };
-  }, [evm, stats, fWirs.length, reportDate]);
+  }, [evm, stats, fWirs, reportDate, approvedHealthVersion]);
 
   const governedHealthResult = useMemo(() => {
-    return calculateGovernedHealthScore(governedHealthInputs, DEFAULT_HEALTH_CONFIG);
-  }, [governedHealthInputs]);
+    const activeConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
+    const isApproved = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
+    return calculateGovernedHealthScore(governedHealthInputs, activeConfig, isApproved);
+  }, [governedHealthInputs, approvedHealthVersion]);
 
   const healthScore = governedHealthResult.overallScore;
   const healthBreakdown = useMemo(() => {
@@ -943,7 +959,17 @@ export function Dashboard({
               <button onClick={() => onNavigate('governance')} className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-primary-300"><p className="text-xs font-medium text-neutral-500">Open Risks / Issues</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.openGovernanceItems}</p><p className="mt-1 text-xs text-neutral-500">Require ownership and action</p></button>
               <button onClick={() => onNavigate('governance')} className={`rounded-xl border p-4 text-left shadow-sm hover:border-primary-300 ${stats.criticalGovernanceItems > 0 ? 'border-error-200 bg-error-50' : 'border-neutral-200 bg-white'}`}><p className="text-xs font-medium text-neutral-500">Critical Governance Items</p><p className="mt-1 text-2xl font-bold text-neutral-900">{stats.criticalGovernanceItems}</p><p className="mt-1 text-xs text-neutral-500">Critical likelihood or impact</p></button>
             </div>
-            {/* Health Score + Charts row 1 */}
+            {/* Governed Project Health Score Card */}
+            <div className="mb-5">
+              <GovernedHealthScoreCard
+                inputs={governedHealthInputs}
+                approvedVersion={approvedHealthVersion}
+                projectId={selectedProjectId}
+                projectName={selectedProject?.name || 'Selected Project'}
+                dataDate={reportDate}
+                onVersionUpdated={(ver) => setApprovedHealthVersion(ver)}
+              />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Health Score Gauge */}
               <div className="bg-white rounded-xl border border-neutral-200 p-5 shadow-sm">

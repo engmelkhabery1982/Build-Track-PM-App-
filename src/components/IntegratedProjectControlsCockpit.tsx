@@ -399,12 +399,12 @@ export function IntegratedProjectControlsCockpit({
       unapprovedVariationRatio: (cockpitMetrics.change.pendingVariationsValue > 0 && cockpitMetrics.scope.totalScopeValue > 0)
         ? (cockpitMetrics.change.pendingVariationsValue / cockpitMetrics.scope.totalScopeValue) : 0,
       wirFailureRate: (cockpitMetrics.quality.totalNCRs > 0)
-        ? (cockpitMetrics.quality.openNCRs / cockpitMetrics.quality.totalNCRs) : 0,
-      missingDataRatio: 0,
+        ? (cockpitMetrics.quality.openNCRs / cockpitMetrics.quality.totalNCRs) : null,
+      missingDataRatio: null,
       dataDate: dataDate || undefined,
-      versionCode: 'V-HEALTH-GOVERNED',
+      versionCode: approvedHealthScoreVersion?.version_code || undefined,
     };
-  }, [evm, cockpitMetrics, dataDate]);
+  }, [evm, cockpitMetrics, dataDate, approvedHealthScoreVersion]);
 
   // Tooltip controller
   const showTooltip = (e: React.MouseEvent, dimensionKey: string) => {

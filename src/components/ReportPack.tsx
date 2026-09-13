@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Printer, Save, Lock, History, CheckCircle2, AlertTriangle, FileCheck, Shield, ChevronRight, Eye, RefreshCw, FileText, ArrowRight, Download } from 'lucide-react';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { calculateEvmAtDataDate } from '@/utils/evm';
-import { calculateGovernedHealthScore, GOVERNED_HEALTH_CONFIG_TEMPLATE } from '@/utils/governedHealthScore';
-import type { ReportTemplate, ReportVersion } from '@/types';
+import { calculateGovernedHealthScore, configFromVersion, GOVERNED_HEALTH_CONFIG_TEMPLATE } from '@/utils/governedHealthScore';
+import { getHealthScoreVersion } from '@/data/healthScoreWorkflow';
+import type { ReportTemplate, ReportVersion, HealthScoreVersion } from '@/types';
 
 const money = (value: number | null | undefined) => {
   if (value === null || value === undefined) return 'Unavailable';
@@ -99,6 +100,18 @@ export function ReportPack({
   const [filterPackType, setFilterPackType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
+  const [approvedHealthVersion, setApprovedHealthVersion] = useState<HealthScoreVersion | null>(null);
+
+  useEffect(() => {
+    if (projectId && projectId !== 'all') {
+      getHealthScoreVersion({ project_id: projectId })
+        .then((ver) => setApprovedHealthVersion(ver))
+        .catch(() => setApprovedHealthVersion(null));
+    } else {
+      setApprovedHealthVersion(null);
+    }
+  }, [projectId]);
+
   // Calculate live report data and reconciliation details
   const liveData = useMemo(() => {
     const selectedProjects = projectId === 'all' ? projects : projects.filter((project) => project.id === projectId);
@@ -157,18 +170,25 @@ export function ReportPack({
       : 0;
     const missingDateCount = missingContractDates + missingVariationDates + missingWirDates + missingCostDates + missingCashDates;
     const totalEntityCount = selectedProjects.length + mainContracts.length + effectiveVariations.length + eligibleWirs.length + scopedCosts.length + cashFlow.length;
-    const missingDataRatio = totalEntityCount > 0 ? (missingDateCount / totalEntityCount) : 0;
+    const missingDataRatio = totalEntityCount > 0 ? (missingDateCount / totalEntityCount) : null;
+
+    const totalWirs = eligibleWirs.length;
+    const failedWirs = eligibleWirs.filter((w) => w.status === 'Rejected' || w.status === 'Failed' || w.result === 'Fail').length;
+    const wirFailureRate = totalWirs > 0 ? (failedWirs / totalWirs) : null;
+
+    const activeHealthConfig = approvedHealthVersion ? configFromVersion(approvedHealthVersion) : null;
+    const isApprovedHealth = Boolean(approvedHealthVersion && approvedHealthVersion.status === 'Approved');
 
     const healthResult = calculateGovernedHealthScore({
       spi: evm.revenue.SPI || null,
       cpi: evm.cost.CPI ?? null,
       netCashBalance: cash,
       unapprovedVariationRatio,
-      wirFailureRate: 0,
+      wirFailureRate,
       missingDataRatio,
       dataDate: reportDate,
-      versionCode: 'V-HEALTH-GOVERNED',
-    }, GOVERNED_HEALTH_CONFIG_TEMPLATE, true);
+      versionCode: approvedHealthVersion?.version_code || undefined,
+    }, activeHealthConfig, isApprovedHealth);
 
     return {
       metrics: {

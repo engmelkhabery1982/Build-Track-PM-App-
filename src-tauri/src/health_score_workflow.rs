@@ -1,7 +1,31 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Sqlite, Row};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn current_timestamp() -> String {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = now.as_secs();
+    let days = secs / 86400;
+    let rem_secs = secs % 86400;
+    let hours = rem_secs / 3600;
+    let mins = (rem_secs % 3600) / 60;
+    let s = rem_secs % 60;
+
+    let z = days as i64 + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hours, mins, s)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveHealthScoreVersionRequest {
@@ -261,7 +285,7 @@ pub async fn save_health_score_version_core(
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    let schedule_ids: Vec<String> = schedule_rows.iter().map(|r| sqlx::Row::get(r, 0)).collect();
+    let schedule_ids: Vec<String> = schedule_rows.iter().map(|r| r.get::<String, _>(0)).collect();
 
     // 2. Cost Entries (CPI)
     let cost_rows = sqlx::query("SELECT id FROM cost_entries WHERE project_id = ?")
@@ -269,7 +293,7 @@ pub async fn save_health_score_version_core(
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    let cost_ids: Vec<String> = cost_rows.iter().map(|r| sqlx::Row::get(r, 0)).collect();
+    let cost_ids: Vec<String> = cost_rows.iter().map(|r| r.get::<String, _>(0)).collect();
 
     // 3. Cash Flow
     let cash_rows = sqlx::query("SELECT id, inflow, outflow FROM cash_flow WHERE project_id = ?")
@@ -277,14 +301,14 @@ pub async fn save_health_score_version_core(
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    let cash_ids: Vec<String> = cash_rows.iter().map(|r| sqlx::Row::get(r, 0)).collect();
+    let cash_ids: Vec<String> = cash_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let net_cash: Option<f64> = if cash_ids.is_empty() {
         None
     } else {
         let mut sum = 0.0;
         for r in &cash_rows {
-            let inf: f64 = sqlx::Row::get(r, 1);
-            let outf: f64 = sqlx::Row::get(r, 2);
+            let inf: f64 = r.get(1);
+            let outf: f64 = r.get(2);
             sum += inf - outf;
         }
         Some(sum)
@@ -296,14 +320,14 @@ pub async fn save_health_score_version_core(
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    let var_ids: Vec<String> = var_rows.iter().map(|r| sqlx::Row::get(r, 0)).collect();
+    let var_ids: Vec<String> = var_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let unapproved_var_ratio: Option<f64> = if var_ids.is_empty() {
         Some(0.0)
     } else {
         let pending = var_rows
             .iter()
             .filter(|r| {
-                let st: String = sqlx::Row::get(r, 1);
+                let st: String = r.get(1);
                 st == "Pending" || st == "Submitted"
             })
             .count();
@@ -316,14 +340,14 @@ pub async fn save_health_score_version_core(
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    let wir_ids: Vec<String> = wir_rows.iter().map(|r| sqlx::Row::get(r, 0)).collect();
+    let wir_ids: Vec<String> = wir_rows.iter().map(|r| r.get::<String, _>(0)).collect();
     let wir_fail_rate: Option<f64> = if wir_ids.is_empty() {
         None // Mark Unavailable if zero records exist!
     } else {
         let failed = wir_rows
             .iter()
             .filter(|r| {
-                let st: String = sqlx::Row::get(r, 1);
+                let st: String = r.get(1);
                 st == "Rejected" || st == "Failed"
             })
             .count();
@@ -337,7 +361,7 @@ pub async fn save_health_score_version_core(
     let dim_sched = calculate_dimension_score(
         "Schedule",
         req.schedule_weight,
-        if schedule_ids.is_empty() { None } else { Some(1.0) }, // Baseline default if scheduled
+        if schedule_ids.is_empty() { None } else { Some(1.0) },
         "Schedule Performance Index (SPI)",
         req.schedule_warning_threshold,
         req.schedule_critical_threshold,
@@ -434,7 +458,7 @@ pub async fn save_health_score_version_core(
     };
 
     let version_id = format!("hsv_{}", req.operation_id.replace('-', "_"));
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = current_timestamp();
 
     let result = HealthScoreVersionResult {
         id: version_id.clone(),
@@ -564,23 +588,23 @@ pub async fn approve_health_score_version_core(
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Health score version not found.".to_string())?;
 
-    let current_status: String = sqlx::Row::get(&row, 4);
-    let created_by: String = sqlx::Row::get(&row, 5);
-    let project_id: String = sqlx::Row::get(&row, 1);
-    let version_code: String = sqlx::Row::get(&row, 2);
-    let title: String = sqlx::Row::get(&row, 3);
-    let data_date: Option<String> = sqlx::Row::get(&row, 6);
-    let schedule_weight: f64 = sqlx::Row::get(&row, 7);
-    let cost_weight: f64 = sqlx::Row::get(&row, 8);
-    let cash_weight: f64 = sqlx::Row::get(&row, 9);
-    let scope_weight: f64 = sqlx::Row::get(&row, 10);
-    let quality_weight: f64 = sqlx::Row::get(&row, 11);
-    let data_quality_weight: f64 = sqlx::Row::get(&row, 12);
-    let overall_score: f64 = sqlx::Row::get(&row, 13);
-    let health_status: String = sqlx::Row::get(&row, 14);
-    let confidence: f64 = sqlx::Row::get(&row, 15);
-    let notes: Option<String> = sqlx::Row::get(&row, 16);
-    let payload_raw: String = sqlx::Row::get(&row, 17);
+    let current_status: String = row.get(4);
+    let created_by: String = row.get(5);
+    let project_id: String = row.get(1);
+    let version_code: String = row.get(2);
+    let title: String = row.get(3);
+    let data_date: Option<String> = row.get(6);
+    let schedule_weight: f64 = row.get(7);
+    let cost_weight: f64 = row.get(8);
+    let cash_weight: f64 = row.get(9);
+    let scope_weight: f64 = row.get(10);
+    let quality_weight: f64 = row.get(11);
+    let data_quality_weight: f64 = row.get(12);
+    let overall_score: f64 = row.get(13);
+    let health_status: String = row.get(14);
+    let confidence: f64 = row.get(15);
+    let notes: Option<String> = row.get(16);
+    let payload_raw: String = row.get(17);
 
     if current_status != "Draft" {
         return Err(format!(
@@ -634,7 +658,7 @@ pub async fn approve_health_score_version_core(
     .map_err(|e| e.to_string())?;
 
     for p_row in prior_approved {
-        let p_id: String = sqlx::Row::get(&p_row, 0);
+        let p_id: String = p_row.get(0);
         let p_guard = format!("internal:health_score:{}", p_id);
         sqlx::query(
             "INSERT OR REPLACE INTO health_score_mutation_guard (operation_id, created_at) VALUES (?, CURRENT_TIMESTAMP)",
@@ -793,7 +817,7 @@ pub async fn reopen_health_score_version_core(
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Source health score version not found.".to_string())?;
 
-    let src_status: String = sqlx::Row::get(&row, 3);
+    let src_status: String = row.get(3);
     if src_status != "Approved" && src_status != "Superseded" {
         return Err(format!(
             "Only Approved or Superseded versions can be reopened. Current is {}.",
@@ -801,17 +825,17 @@ pub async fn reopen_health_score_version_core(
         ));
     }
 
-    let project_id: String = sqlx::Row::get(&row, 1);
-    let title: String = sqlx::Row::get(&row, 2);
-    let data_date: Option<String> = sqlx::Row::get(&row, 4);
-    let schedule_weight: f64 = sqlx::Row::get(&row, 5);
-    let cost_weight: f64 = sqlx::Row::get(&row, 6);
-    let cash_weight: f64 = sqlx::Row::get(&row, 7);
-    let scope_weight: f64 = sqlx::Row::get(&row, 8);
-    let quality_weight: f64 = sqlx::Row::get(&row, 9);
-    let data_quality_weight: f64 = sqlx::Row::get(&row, 10);
-    let notes: Option<String> = sqlx::Row::get(&row, 11);
-    let payload_raw: String = sqlx::Row::get(&row, 12);
+    let project_id: String = row.get(1);
+    let title: String = row.get(2);
+    let data_date: Option<String> = row.get(4);
+    let schedule_weight: f64 = row.get(5);
+    let cost_weight: f64 = row.get(6);
+    let cash_weight: f64 = row.get(7);
+    let scope_weight: f64 = row.get(8);
+    let quality_weight: f64 = row.get(9);
+    let data_quality_weight: f64 = row.get(10);
+    let notes: Option<String> = row.get(11);
+    let payload_raw: String = row.get(12);
 
     let parsed: Value = serde_json::from_str(&payload_raw).unwrap_or_else(|_| json!({}));
     let dimensions: Vec<HealthScoreDimensionResult> =
@@ -833,7 +857,7 @@ pub async fn reopen_health_score_version_core(
         .unwrap_or(100.0);
 
     let new_version_id = format!("hsv_reopened_{}", req.operation_id.replace('-', "_"));
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = current_timestamp();
 
     let result = HealthScoreVersionResult {
         id: new_version_id.clone(),
@@ -958,30 +982,30 @@ pub async fn get_health_score_version_core(
     match row {
         None => Ok(None),
         Some(r) => {
-            let id: String = sqlx::Row::get(&r, 0);
-            let project_id: String = sqlx::Row::get(&r, 1);
-            let version_code: String = sqlx::Row::get(&r, 2);
-            let title: String = sqlx::Row::get(&r, 3);
-            let status: String = sqlx::Row::get(&r, 4);
-            let schedule_weight: f64 = sqlx::Row::get(&r, 5);
-            let cost_weight: f64 = sqlx::Row::get(&r, 6);
-            let cash_weight: f64 = sqlx::Row::get(&r, 7);
-            let scope_weight: f64 = sqlx::Row::get(&r, 8);
-            let quality_weight: f64 = sqlx::Row::get(&r, 9);
-            let data_quality_weight: f64 = sqlx::Row::get(&r, 10);
-            let data_date: Option<String> = sqlx::Row::get(&r, 11);
-            let overall_score: f64 = sqlx::Row::get(&r, 12);
-            let health_status: String = sqlx::Row::get(&r, 13);
-            let confidence: f64 = sqlx::Row::get(&r, 14);
-            let created_by: String = sqlx::Row::get(&r, 15);
-            let approved_by: Option<String> = sqlx::Row::get(&r, 16);
-            let approved_at: Option<String> = sqlx::Row::get(&r, 17);
-            let reopened_from_id: Option<String> = sqlx::Row::get(&r, 18);
-            let reopened_by: Option<String> = sqlx::Row::get(&r, 19);
-            let reopened_at: Option<String> = sqlx::Row::get(&r, 20);
-            let reopened_reason: Option<String> = sqlx::Row::get(&r, 21);
-            let notes: Option<String> = sqlx::Row::get(&r, 22);
-            let payload: String = sqlx::Row::get(&r, 23);
+            let id: String = r.get(0);
+            let project_id: String = r.get(1);
+            let version_code: String = r.get(2);
+            let title: String = r.get(3);
+            let status: String = r.get(4);
+            let schedule_weight: f64 = r.get(5);
+            let cost_weight: f64 = r.get(6);
+            let cash_weight: f64 = r.get(7);
+            let scope_weight: f64 = r.get(8);
+            let quality_weight: f64 = r.get(9);
+            let data_quality_weight: f64 = r.get(10);
+            let data_date: Option<String> = r.get(11);
+            let overall_score: f64 = r.get(12);
+            let health_status: String = r.get(13);
+            let confidence: f64 = r.get(14);
+            let created_by: String = r.get(15);
+            let approved_by: Option<String> = r.get(16);
+            let approved_at: Option<String> = r.get(17);
+            let reopened_from_id: Option<String> = r.get(18);
+            let reopened_by: Option<String> = r.get(19);
+            let reopened_at: Option<String> = r.get(20);
+            let reopened_reason: Option<String> = r.get(21);
+            let notes: Option<String> = r.get(22);
+            let payload: String = r.get(23);
 
             let parsed: Value = serde_json::from_str(&payload).unwrap_or_else(|_| json!({}));
             let dimensions: Vec<HealthScoreDimensionResult> =
@@ -1039,30 +1063,30 @@ pub async fn list_health_score_versions_core(
 
     let mut list = Vec::new();
     for r in rows {
-        let id: String = sqlx::Row::get(&r, 0);
-        let project_id: String = sqlx::Row::get(&r, 1);
-        let version_code: String = sqlx::Row::get(&r, 2);
-        let title: String = sqlx::Row::get(&r, 3);
-        let status: String = sqlx::Row::get(&r, 4);
-        let schedule_weight: f64 = sqlx::Row::get(&r, 5);
-        let cost_weight: f64 = sqlx::Row::get(&r, 6);
-        let cash_weight: f64 = sqlx::Row::get(&r, 7);
-        let scope_weight: f64 = sqlx::Row::get(&r, 8);
-        let quality_weight: f64 = sqlx::Row::get(&r, 9);
-        let data_quality_weight: f64 = sqlx::Row::get(&r, 10);
-        let data_date: Option<String> = sqlx::Row::get(&r, 11);
-        let overall_score: f64 = sqlx::Row::get(&r, 12);
-        let health_status: String = sqlx::Row::get(&r, 13);
-        let confidence: f64 = sqlx::Row::get(&r, 14);
-        let created_by: String = sqlx::Row::get(&r, 15);
-        let approved_by: Option<String> = sqlx::Row::get(&r, 16);
-        let approved_at: Option<String> = sqlx::Row::get(&r, 17);
-        let reopened_from_id: Option<String> = sqlx::Row::get(&r, 18);
-        let reopened_by: Option<String> = sqlx::Row::get(&r, 19);
-        let reopened_at: Option<String> = sqlx::Row::get(&r, 20);
-        let reopened_reason: Option<String> = sqlx::Row::get(&r, 21);
-        let notes: Option<String> = sqlx::Row::get(&r, 22);
-        let payload: String = sqlx::Row::get(&r, 23);
+        let id: String = r.get(0);
+        let project_id: String = r.get(1);
+        let version_code: String = r.get(2);
+        let title: String = r.get(3);
+        let status: String = r.get(4);
+        let schedule_weight: f64 = r.get(5);
+        let cost_weight: f64 = r.get(6);
+        let cash_weight: f64 = r.get(7);
+        let scope_weight: f64 = r.get(8);
+        let quality_weight: f64 = r.get(9);
+        let data_quality_weight: f64 = r.get(10);
+        let data_date: Option<String> = r.get(11);
+        let overall_score: f64 = r.get(12);
+        let health_status: String = r.get(13);
+        let confidence: f64 = r.get(14);
+        let created_by: String = r.get(15);
+        let approved_by: Option<String> = r.get(16);
+        let approved_at: Option<String> = r.get(17);
+        let reopened_from_id: Option<String> = r.get(18);
+        let reopened_by: Option<String> = r.get(19);
+        let reopened_at: Option<String> = r.get(20);
+        let reopened_reason: Option<String> = r.get(21);
+        let notes: Option<String> = r.get(22);
+        let payload: String = r.get(23);
 
         let parsed: Value = serde_json::from_str(&payload).unwrap_or_else(|_| json!({}));
         let dimensions: Vec<HealthScoreDimensionResult> =
