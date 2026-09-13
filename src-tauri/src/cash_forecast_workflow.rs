@@ -140,23 +140,32 @@ pub fn money(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
-fn add_days_iso(date_str: &str, days: i64) -> String {
-    // Parse "YYYY-MM-DD"
-    let parts: Vec<&str> = date_str.split('-').collect();
-    if parts.len() != 3 {
-        return date_str.to_string();
-    }
-    let y: i32 = parts[0].parse().unwrap_or(2026);
-    let m: u32 = parts[1].parse().unwrap_or(1);
-    let d: u32 = parts[2].parse().unwrap_or(1);
+fn validate_iso_date(value: &str, field: &str) -> Result<(), String> {
+    let b = value.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' || !b.iter().enumerate().all(|(i, x)| i == 4 || i == 7 || x.is_ascii_digit()) { return Err(format!("{field} must be YYYY-MM-DD.")); }
+    let y: i32 = value[0..4].parse().map_err(|_| format!("Invalid {field}."))?;
+    let m: u32 = value[5..7].parse().map_err(|_| format!("Invalid {field}."))?;
+    let d: u32 = value[8..10].parse().map_err(|_| format!("Invalid {field}."))?;
+    let max = days_in_month(y, m);
+    if max == 0 || d == 0 || d > max { return Err(format!("{field} is not a valid calendar date.")); }
+    Ok(())
+}
 
-    // Naive day offset calculation preserving calendar
-    let total_days = (y as i64) * 365 + ((y as i64) / 4) + ((m as i64) * 30) + (d as i64) + days;
-    let new_y = total_days / 365;
-    let rem = total_days % 365;
-    let new_m = (rem / 30).clamp(1, 12);
-    let new_d = (rem % 30).clamp(1, 28);
-    format!("{:04}-{:02}-{:02}", new_y, new_m, new_d)
+fn add_days_iso(date_str: &str, days: i64) -> Result<String, String> {
+    validate_iso_date(date_str, "source date")?;
+    let mut y: i32 = date_str[0..4].parse().map_err(|_| "Invalid source date".to_string())?;
+    let mut m: u32 = date_str[5..7].parse().map_err(|_| "Invalid source date".to_string())?;
+    let mut d: u32 = date_str[8..10].parse().map_err(|_| "Invalid source date".to_string())?;
+    let step: i32 = if days < 0 { -1 } else { 1 };
+    for _ in 0..days.unsigned_abs() {
+        if step > 0 { d += 1; } else if d > 1 { d -= 1; continue; } else { if m == 1 { y -= 1; m = 12; } else { m -= 1; } d = days_in_month(y, m); continue; }
+        if d > days_in_month(y, m) { d = 1; if m == 12 { y += 1; m = 1; } else { m += 1; } }
+    }
+    Ok(format!("{:04}-{:02}-{:02}", y, m, d))
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month { 1|3|5|7|8|10|12 => 31, 4|6|9|11 => 30, 2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29, 2 => 28, _ => 0 }
 }
 
 fn to_period(date_str: &str) -> String {
@@ -215,6 +224,7 @@ pub async fn derive_forecast_from_sqlite(
     advance_recovery_rate: f64,
     contingency_drawdown_rate: f64,
 ) -> Result<(Vec<CashItemDetail>, Vec<CashForecastBucket>, CashForecastSummary), String> {
+    validate_iso_date(data_date, "data_date")?;
     let mut items: Vec<CashItemDetail> = Vec::new();
 
     // 1. Payment Certificates (Approved, Partially Paid, Paid)
@@ -235,9 +245,9 @@ pub async fn derive_forecast_from_sqlite(
             .get("certificate_type")
             .or_else(|| payload.get("certificateType"))
             .and_then(Value::as_str)
-            .unwrap_or("Client");
+            .ok_or_else(|| format!("Certificate {} has no governed certificate type (Requires setup).", cert_id))?;
 
-        let is_client = cert_type == "Client";
+        let is_client = match cert_type { "Client" => true, "Subcontractor" | "Supplier" => false, _ => return Err(format!("Certificate {} has an unknown governed type (Requires setup).", cert_id)) };
         let direction = if is_client { "Inflow" } else { "Outflow" };
 
         let net_value = payload
@@ -246,14 +256,14 @@ pub async fn derive_forecast_from_sqlite(
             .or_else(|| payload.get("netCertifiedValue"))
             .or_else(|| payload.get("gross_certified_value"))
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .ok_or_else(|| format!("Certificate {} has no governed amount (Requires setup).", cert_id))?;
 
         let cert_date = payload
             .get("certificate_date")
             .or_else(|| payload.get("approved_date"))
             .or_else(|| payload.get("period_id"))
             .and_then(Value::as_str)
-            .unwrap_or(data_date);
+            .ok_or_else(|| format!("Certificate {} has no governed date (Requires setup).", cert_id))?;
 
         // Fetch actual partial payments for this certificate
         let payment_rows = sqlx::query(
@@ -313,10 +323,10 @@ pub async fn derive_forecast_from_sqlite(
                 _ => lag_days,
             };
 
-            let mut due_date = add_days_iso(cert_date, scenario_lag);
+            let mut due_date = add_days_iso(cert_date, scenario_lag)?;
             // Overdue forecast placed immediately after data date
             if due_date.as_str() <= data_date {
-                due_date = add_days_iso(data_date, 1);
+                due_date = add_days_iso(data_date, 1)?;
             }
 
             // Apply advance recovery or contingency factor
@@ -356,23 +366,26 @@ pub async fn derive_forecast_from_sqlite(
             .get("total_amount")
             .or_else(|| payload.get("amount"))
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .ok_or_else(|| format!("Supplier invoice {} has no governed amount (Requires setup).", inv_id))?;
 
         let paid_amount = payload
             .get("paid_amount")
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .ok_or_else(|| format!("Supplier invoice {} has no governed settlement amount (Requires setup).", inv_id))?;
 
-        let inv_date = payload
-            .get("invoice_date")
-            .and_then(Value::as_str)
-            .unwrap_or(data_date);
+        let inv_date = payload.get("invoice_date").and_then(Value::as_str)
+            .ok_or_else(|| format!("Supplier invoice {} has no governed date (Requires setup).", inv_id))?;
+        let invoice_terms = payload.get("payment_terms_days").or_else(|| payload.get("paymentTermsDays")).and_then(Value::as_i64)
+            .ok_or_else(|| format!("Supplier invoice {} has no source-specific payment terms (Requires setup).", inv_id))?;
+        if payload.get("payment_terms_status").and_then(Value::as_str) != Some("Approved") {
+            return Err(format!("Supplier invoice {} payment terms are not approved (Requires setup).", inv_id));
+        }
 
         if paid_amount > 0.009 {
             let paid_date = payload
                 .get("paid_date")
                 .and_then(Value::as_str)
-                .unwrap_or(inv_date);
+                .ok_or_else(|| format!("Supplier invoice {} has no governed settlement date (Requires setup).", inv_id))?;
 
             let m_type = if paid_date <= data_date {
                 "Actual"
@@ -393,9 +406,9 @@ pub async fn derive_forecast_from_sqlite(
 
         let ap_remaining = money(total_amount - paid_amount);
         if ap_remaining > 0.009 {
-            let mut due_date = add_days_iso(inv_date, sub_lag);
+            let mut due_date = add_days_iso(inv_date, invoice_terms)?;
             if due_date.as_str() <= data_date {
-                due_date = add_days_iso(data_date, 1);
+                due_date = add_days_iso(data_date, 1)?;
             }
             items.push(CashItemDetail {
                 source_id: inv_id.clone(),
@@ -427,15 +440,18 @@ pub async fn derive_forecast_from_sqlite(
             .get("total_amount")
             .or_else(|| payload.get("amount"))
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .ok_or_else(|| format!("PO {} has no governed amount (Requires setup).", po_id))?;
 
-        let po_date = payload
-            .get("order_date")
-            .and_then(Value::as_str)
-            .unwrap_or(data_date);
+        let po_date = payload.get("order_date").and_then(Value::as_str)
+            .ok_or_else(|| format!("PO {} has no governed date (Requires setup).", po_id))?;
+        let po_terms = payload.get("payment_terms_days").or_else(|| payload.get("paymentTermsDays")).and_then(Value::as_i64)
+            .ok_or_else(|| format!("PO {} has no source-specific payment terms (Requires setup).", po_id))?;
+        if payload.get("payment_terms_status").and_then(Value::as_str) != Some("Approved") {
+            return Err(format!("PO {} payment terms are not approved (Requires setup).", po_id));
+        }
 
         if total_amount > 0.009 {
-            let due_date = add_days_iso(po_date, sub_lag);
+            let due_date = add_days_iso(po_date, po_terms)?;
             items.push(CashItemDetail {
                 source_id: po_id.clone(),
                 source_type: "purchase_order_commitment".into(),
@@ -462,10 +478,8 @@ pub async fn derive_forecast_from_sqlite(
         let payload_str: String = row.get("payload");
         let payload: Value = serde_json::from_str(&payload_str).map_err(|e| e.to_string())?;
 
-        let source_type = payload
-            .get("source_type")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let source_type = payload.get("source_type").and_then(Value::as_str)
+            .ok_or_else(|| format!("Cash flow {} has no governed source type (Requires setup).", cid))?;
 
         // Skip records already tracked by certificates or POs to prevent double-counting
         if source_type == "payment_certificate"
@@ -476,16 +490,16 @@ pub async fn derive_forecast_from_sqlite(
             continue;
         }
 
-        let date = payload
-            .get("date")
-            .and_then(Value::as_str)
-            .unwrap_or(data_date);
-
-        let inflow = payload.get("inflow").and_then(Value::as_f64).unwrap_or(0.0);
-        let outflow = payload
-            .get("outflow")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+        let date = payload.get("date").and_then(Value::as_str)
+            .ok_or_else(|| format!("Cash flow {} has no governed date (Requires setup).", cid))?;
+        validate_iso_date(date, "cash flow date")?;
+        let inflow = payload.get("inflow").and_then(Value::as_f64)
+            .ok_or_else(|| format!("Cash flow {} has no governed inflow (Requires setup).", cid))?;
+        let outflow = payload.get("outflow").and_then(Value::as_f64)
+            .ok_or_else(|| format!("Cash flow {} has no governed outflow (Requires setup).", cid))?;
+        if inflow < 0.0 || outflow < 0.0 || (inflow <= 0.009 && outflow <= 0.009) {
+            return Err(format!("Cash flow {} has an invalid governed amount (Requires setup).", cid));
+        }
 
         let movement_type = if date <= data_date {
             "Actual"
@@ -497,11 +511,8 @@ pub async fn derive_forecast_from_sqlite(
             items.push(CashItemDetail {
                 source_id: cid.clone(),
                 source_type: "cash_flow_inflow".into(),
-                description: payload
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Manual Inflow")
-                    .into(),
+                description: payload.get("description").and_then(Value::as_str)
+                    .ok_or_else(|| format!("Cash flow {} has no governed description (Requires setup).", cid))?.into(),
                 date: date.to_string(),
                 direction: "Inflow".into(),
                 movement_type: movement_type.into(),
@@ -512,11 +523,8 @@ pub async fn derive_forecast_from_sqlite(
             items.push(CashItemDetail {
                 source_id: cid.clone(),
                 source_type: "cash_flow_outflow".into(),
-                description: payload
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Manual Outflow")
-                    .into(),
+                description: payload.get("description").and_then(Value::as_str)
+                    .ok_or_else(|| format!("Cash flow {} has no governed description (Requires setup).", cid))?.into(),
                 date: date.to_string(),
                 direction: "Outflow".into(),
                 movement_type: movement_type.into(),
@@ -680,49 +688,20 @@ pub async fn save_cash_forecast_version(
     let version_id = format!("cfv_{}_{}", req.project_id, req.version_code);
     let scenario = req.scenario.unwrap_or_else(|| "Base".into());
 
-    // W05-C01: Governed payment terms authority. Reject arbitrary caller defaults.
-    // If not provided in request, look up master contract terms from SQLite; otherwise return Requires setup error.
-    let client_lag = if let Some(lag) = req.client_payment_lag_days {
-        lag
-    } else {
-        let contract_terms: Option<i64> = sqlx::query_scalar(
-            "SELECT json_extract(payload, '$.payment_terms_days') FROM contracts WHERE project_id = ? AND json_extract(payload, '$.contract_type') IN ('Client', 'Main') LIMIT 1"
-        )
-        .bind(&req.project_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-        .flatten();
-
-        match contract_terms {
-            Some(terms) if terms >= 0 => terms,
-            _ => return Err("Payment terms authority violation: missing governed contract client payment terms (Requires setup).".into()),
-        }
-    };
-
-    let sub_lag = if let Some(lag) = req.subcontractor_payment_lag_days {
-        lag
-    } else {
-        let sub_terms: Option<i64> = sqlx::query_scalar(
-            "SELECT json_extract(payload, '$.payment_terms_days') FROM contracts WHERE project_id = ? AND json_extract(payload, '$.contract_type') = 'Subcontractor' LIMIT 1"
-        )
-        .bind(&req.project_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-        .flatten();
-
-        match sub_terms {
-            Some(terms) if terms >= 0 => terms,
-            _ => return Err("Payment terms authority violation: missing governed subcontractor payment terms (Requires setup).".into()),
-        }
-    };
-
-    let advance_recovery = req.advance_recovery_rate_percent.unwrap_or(0.0);
-    let contingency_drawdown = req.contingency_drawdown_percent.unwrap_or(0.0);
-    let toc_rate = req.retention_release_toc_percent.unwrap_or(0.0);
-    let dlc_rate = req.retention_release_dlc_percent.unwrap_or(0.0);
-    let vat_lag = req.vat_payout_lag_months.unwrap_or(0);
+    // W05-C01/C07: all authority and assumptions are explicit; no caller or first-row fallback.
+    let contract_id = req.contract_id.as_ref().ok_or_else(|| "Contract authority is Requires setup.".to_string())?;
+    let client_lag: i64 = sqlx::query_scalar("SELECT json_extract(payload, '$.payment_terms_days') FROM contracts WHERE id = ? AND project_id = ? AND json_extract(payload, '$.status') = 'Approved'")
+        .bind(contract_id).bind(&req.project_id).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?
+        .flatten().ok_or_else(|| "Payment terms authority violation: missing governed contract client payment terms (Requires setup).".to_string())?;
+    let sub_lag: i64 = sqlx::query_scalar("SELECT json_extract(payload, '$.subcontractor_payment_terms_days') FROM contracts WHERE id = ? AND project_id = ? AND json_extract(payload, '$.status') = 'Approved'")
+        .bind(contract_id).bind(&req.project_id).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?
+        .flatten().ok_or_else(|| "Payment terms authority violation: missing governed subcontractor payment terms (Requires setup).".to_string())?;
+    if req.client_payment_lag_days != Some(client_lag) || req.subcontractor_payment_lag_days != Some(sub_lag) { return Err("Caller payment terms do not match governed contract authority.".into()); }
+    let advance_recovery = req.advance_recovery_rate_percent.ok_or_else(|| "Advance recovery assumption is Requires setup.".to_string())?;
+    let contingency_drawdown = req.contingency_drawdown_percent.ok_or_else(|| "Contingency assumption is Requires setup.".to_string())?;
+    let toc_rate = req.retention_release_toc_percent.ok_or_else(|| "TOC retention terms are Requires setup.".to_string())?;
+    let dlc_rate = req.retention_release_dlc_percent.ok_or_else(|| "DLC retention terms are Requires setup.".to_string())?;
+    let vat_lag = req.vat_payout_lag_months.ok_or_else(|| "VAT terms are Requires setup.".to_string())?;
 
     // Derive forecast from authoritative SQLite source tables
     let (_items, buckets, summary) = derive_forecast_from_sqlite(
@@ -840,6 +819,8 @@ pub async fn approve_cash_forecast_version(
     if req.approved_at.trim().is_empty() {
         return Err("Approval timestamp (approved_at) cannot be empty.".into());
     }
+    let approval_date = req.approved_at.get(..10).ok_or_else(|| "Approval timestamp must begin with YYYY-MM-DD.".to_string())?;
+    validate_iso_date(approval_date, "approved_at")?;
 
     // Load existing version
     let row = sqlx::query(
@@ -1612,4 +1593,13 @@ mod tests {
 
         assert!(is_locked.is_some(), "Locked period check must find the locked period");
     }
+    #[test]
+    fn w05_c06_exact_gregorian_boundaries() {
+        assert_eq!(add_days_iso("2028-02-28", 1).unwrap(), "2028-02-29");
+        assert_eq!(add_days_iso("2028-02-28", 2).unwrap(), "2028-03-01");
+        assert_eq!(add_days_iso("2027-12-31", 1).unwrap(), "2028-01-01");
+        assert_eq!(add_days_iso("2028-01-01", -1).unwrap(), "2027-12-31");
+        assert!(add_days_iso("2026-02-29", 1).is_err());
+    }
+
 }

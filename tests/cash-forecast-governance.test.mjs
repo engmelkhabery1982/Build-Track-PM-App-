@@ -630,3 +630,17 @@ test("W05-C05: Executable Negative Tests in Rust - tests cover authority, idempo
   );
 });
 
+
+// W05-C06..C08 correction contracts: executable source guard checks for the
+// Rust authority path are supplemented by the Rust tests reserved for Cargo.
+test("W05-C06..C08: final correction path rejects calendar, authority, and financial fallbacks", () => {
+  const rust = readFileSync(new URL("../src-tauri/src/cash_forecast_workflow.rs", import.meta.url), "utf8");
+  assert.match(rust, /fn add_days_iso\(date_str: &str, days: i64\) -> Result<String, String>/);
+  assert.match(rust, /2028-02-28/);
+  assert.match(rust, /payment_terms_status/);
+  assert.ok(rust.includes("status') = 'Approved'"));
+  assert.doesNotMatch(rust, /total_days = .*365/);
+  assert.doesNotMatch(rust, /unwrap_or\(data_date\)/);
+  assert.doesNotMatch(rust, /unwrap_or\("Manual Inflow"\)/);
+  assert.doesNotMatch(rust, /unwrap_or\("Manual Outflow"\)/);
+});
