@@ -257,6 +257,9 @@ pub async fn derive_forecast_from_sqlite(
             .or_else(|| payload.get("gross_certified_value"))
             .and_then(Value::as_f64)
             .ok_or_else(|| format!("Certificate {} has no governed amount (Requires setup).", cert_id))?;
+        if !net_value.is_finite() || net_value < 0.0 {
+            return Err(format!("Certificate {} has an invalid governed amount (Requires setup).", cert_id));
+        }
 
         let cert_date = payload
             .get("certificate_date")
@@ -264,6 +267,7 @@ pub async fn derive_forecast_from_sqlite(
             .or_else(|| payload.get("period_id"))
             .and_then(Value::as_str)
             .ok_or_else(|| format!("Certificate {} has no governed date (Requires setup).", cert_id))?;
+        validate_iso_date(cert_date, &format!("certificate {} date", cert_id))?;
 
         // Fetch actual partial payments for this certificate
         let payment_rows = sqlx::query(
@@ -279,6 +283,10 @@ pub async fn derive_forecast_from_sqlite(
             let p_id: String = p.get("payment_id");
             let p_date: String = p.get("payment_date");
             let p_amount: f64 = p.get("amount");
+            if !p_amount.is_finite() || p_amount < 0.0 {
+                return Err(format!("Certificate {} has an invalid settlement amount (Requires setup).", cert_id));
+            }
+            validate_iso_date(&p_date, &format!("certificate {} settlement date", cert_id))?;
             total_paid += p_amount;
 
             // Movements on or before Data Date are strictly Actual
@@ -297,6 +305,10 @@ pub async fn derive_forecast_from_sqlite(
                 movement_type: movement_type.into(),
                 amount: money(p_amount),
             });
+        }
+
+        if total_paid > net_value + 0.009 {
+            return Err(format!("Certificate {} settlements exceed its governed amount.", cert_id));
         }
 
         // Remaining unpaid balance becomes Forecast
@@ -375,10 +387,9 @@ pub async fn derive_forecast_from_sqlite(
 
         let inv_date = payload.get("invoice_date").and_then(Value::as_str)
             .ok_or_else(|| format!("Supplier invoice {} has no governed date (Requires setup).", inv_id))?;
-        let invoice_terms = payload.get("payment_terms_days").or_else(|| payload.get("paymentTermsDays")).and_then(Value::as_i64)
-            .ok_or_else(|| format!("Supplier invoice {} has no source-specific payment terms (Requires setup).", inv_id))?;
-        if payload.get("payment_terms_status").and_then(Value::as_str) != Some("Approved") {
-            return Err(format!("Supplier invoice {} payment terms are not approved (Requires setup).", inv_id));
+        validate_iso_date(inv_date, &format!("supplier invoice {} date", inv_id))?;
+        if !total_amount.is_finite() || total_amount < 0.0 || !paid_amount.is_finite() || paid_amount < 0.0 || paid_amount > total_amount + 0.009 {
+            return Err(format!("Supplier invoice {} has invalid governed financial values (Requires setup).", inv_id));
         }
 
         if paid_amount > 0.009 {
@@ -386,6 +397,7 @@ pub async fn derive_forecast_from_sqlite(
                 .get("paid_date")
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("Supplier invoice {} has no governed settlement date (Requires setup).", inv_id))?;
+            validate_iso_date(paid_date, &format!("supplier invoice {} settlement date", inv_id))?;
 
             let m_type = if paid_date <= data_date {
                 "Actual"
@@ -406,6 +418,12 @@ pub async fn derive_forecast_from_sqlite(
 
         let ap_remaining = money(total_amount - paid_amount);
         if ap_remaining > 0.009 {
+            let invoice_terms = payload.get("payment_terms_days").or_else(|| payload.get("paymentTermsDays")).and_then(Value::as_i64)
+                .filter(|days| *days >= 0)
+                .ok_or_else(|| format!("Supplier invoice {} has no valid source-specific payment terms (Requires setup).", inv_id))?;
+            if payload.get("payment_terms_status").and_then(Value::as_str) != Some("Approved") {
+                return Err(format!("Supplier invoice {} payment terms are not approved (Requires setup).", inv_id));
+            }
             let mut due_date = add_days_iso(inv_date, invoice_terms)?;
             if due_date.as_str() <= data_date {
                 due_date = add_days_iso(data_date, 1)?;
@@ -444,7 +462,12 @@ pub async fn derive_forecast_from_sqlite(
 
         let po_date = payload.get("order_date").and_then(Value::as_str)
             .ok_or_else(|| format!("PO {} has no governed date (Requires setup).", po_id))?;
+        validate_iso_date(po_date, &format!("PO {} date", po_id))?;
+        if !total_amount.is_finite() || total_amount < 0.0 {
+            return Err(format!("PO {} has an invalid governed amount (Requires setup).", po_id));
+        }
         let po_terms = payload.get("payment_terms_days").or_else(|| payload.get("paymentTermsDays")).and_then(Value::as_i64)
+            .filter(|days| *days >= 0)
             .ok_or_else(|| format!("PO {} has no source-specific payment terms (Requires setup).", po_id))?;
         if payload.get("payment_terms_status").and_then(Value::as_str) != Some("Approved") {
             return Err(format!("PO {} payment terms are not approved (Requires setup).", po_id));
@@ -492,12 +515,13 @@ pub async fn derive_forecast_from_sqlite(
 
         let date = payload.get("date").and_then(Value::as_str)
             .ok_or_else(|| format!("Cash flow {} has no governed date (Requires setup).", cid))?;
-        validate_iso_date(date, "cash flow date")?;
+        validate_iso_date(date, &format!("cash flow {} date", cid))?;
         let inflow = payload.get("inflow").and_then(Value::as_f64)
             .ok_or_else(|| format!("Cash flow {} has no governed inflow (Requires setup).", cid))?;
         let outflow = payload.get("outflow").and_then(Value::as_f64)
             .ok_or_else(|| format!("Cash flow {} has no governed outflow (Requires setup).", cid))?;
-        if inflow < 0.0 || outflow < 0.0 || (inflow <= 0.009 && outflow <= 0.009) {
+        if !inflow.is_finite() || !outflow.is_finite() || inflow < 0.0 || outflow < 0.0 ||
+            (inflow <= 0.009 && outflow <= 0.009) || (inflow > 0.009 && outflow > 0.009) {
             return Err(format!("Cash flow {} has an invalid governed amount (Requires setup).", cid));
         }
 
