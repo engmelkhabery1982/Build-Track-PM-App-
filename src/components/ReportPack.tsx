@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Printer, Save, Lock, History, CheckCircle2, AlertTriangle, FileCheck, Shield, ChevronRight, Eye, RefreshCw, FileText, ArrowRight, Download } from 'lucide-react';
 import { useProjectDataDate } from '@/context/ProjectDataDateContext';
 import { calculateEvmAtDataDate } from '@/utils/evm';
+import { calculateGovernedHealthScore, DEFAULT_HEALTH_CONFIG } from '@/utils/governedHealthScore';
 import type { ReportTemplate, ReportVersion } from '@/types';
 
 const money = (value: number | null | undefined) => {
@@ -148,6 +149,27 @@ export function ReportPack({
       procurementReceipts,
     });
 
+    // Governed Health Score
+    const totalVariationsCount = effectiveVariations.length;
+    const pendingVariationsCount = variations.filter((v) => projectIds.has(v.project_id) && (v.status === 'Pending' || v.status === 'Submitted')).length;
+    const unapprovedVariationRatio = (totalVariationsCount + pendingVariationsCount) > 0
+      ? (pendingVariationsCount / (totalVariationsCount + pendingVariationsCount))
+      : 0;
+    const missingDateCount = missingContractDates + missingVariationDates + missingWirDates + missingCostDates + missingCashDates;
+    const totalEntityCount = selectedProjects.length + mainContracts.length + effectiveVariations.length + eligibleWirs.length + scopedCosts.length + cashFlow.length;
+    const missingDataRatio = totalEntityCount > 0 ? (missingDateCount / totalEntityCount) : 0;
+
+    const healthResult = calculateGovernedHealthScore({
+      spi: evm.revenue.SPI || null,
+      cpi: evm.cost.CPI ?? null,
+      netCashBalance: cash,
+      unapprovedVariationRatio,
+      wirFailureRate: 0,
+      missingDataRatio,
+      dataDate: reportDate,
+      versionCode: 'V-HEALTH-GOVERNED',
+    }, DEFAULT_HEALTH_CONFIG);
+
     return {
       metrics: {
         count: selectedProjects.length,
@@ -167,6 +189,8 @@ export function ReportPack({
         cashOutflow,
         delayed,
         activities: activities.length,
+        governedHealthScore: healthResult.overallScore,
+        governedHealthStatus: healthResult.status,
         missingContractDates,
         missingVariationDates,
         missingWirDates,
@@ -350,6 +374,7 @@ export function ReportPack({
     ['Delivery Cost BAC', displayMetrics?.hasCostPlan ? money(displayMetrics?.costBac) : 'Unavailable'],
     ['Delivery Cost EAC', displayMetrics?.hasCostPlan ? money(displayMetrics?.costEac) : 'Unavailable'],
     ['Delayed activities', displayMetrics?.delayed || 0, true],
+    ['Governed Health Score', displayMetrics?.governedHealthScore !== undefined ? `${displayMetrics.governedHealthScore}/100 (${displayMetrics.governedHealthStatus})` : 'Unavailable'],
   ];
   const cardTemplateFields: Record<string, string> = {
     'Revenue Planned Value (PV)': 'Planned Value',
@@ -357,6 +382,7 @@ export function ReportPack({
     'Delivery Actual Cost (AC)': 'Actual Cost',
     'Delivery Cost BAC': 'Budget',
     'Delivery Cost EAC': 'EAC',
+    'Governed Health Score': 'Health Score',
   };
   const visibleCards = displayTemplate?.selected_fields?.length
     ? cards.filter(([label]) => !cardTemplateFields[label] || displayTemplate.selected_fields.includes(cardTemplateFields[label]))

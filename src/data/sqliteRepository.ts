@@ -234,6 +234,15 @@ export class SqliteRepository implements DataRepository {
         issued_at: stored.issued_at,
         superseded_by: stored.superseded_by,
       });
+    } else if (tableName === 'health_score_versions') {
+      Object.assign(payload, {
+        project_id: stored.project_id,
+        version_code: (stored as any).version_code || payload.version_code,
+        title: (stored as any).title || payload.title,
+        status: stored.status || payload.status,
+        owner: (stored as any).owner || payload.owner,
+        reason: (stored as any).reason || payload.reason,
+      });
     }
     return payload as T;
   }
@@ -652,6 +661,18 @@ export class SqliteRepository implements DataRepository {
           Number(record.total_cost) || 0, record.notes || null, JSON.stringify({ ...record, status: 'Draft' }),
         ],
       );
+    } else if (tableName === "health_score_versions") {
+      await database.execute(
+        `INSERT INTO health_score_versions (
+          id, created_at, project_id, version_code, title, status, owner, reason, payload
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          record.id, record.created_at || now, record.project_id,
+          record.version_code, record.title || record.version_code,
+          record.status || 'Draft', record.owner || 'System', record.reason || '',
+          JSON.stringify(record),
+        ],
+      );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {
       await database.execute(
         `INSERT INTO ${tableName} (id, created_at, project_id, contract_id, parent_main_project_id, parent_main_contract_id, boq_header_id, boq_item_id, control_account_id, payload)
@@ -965,6 +986,16 @@ export class SqliteRepository implements DataRepository {
           Number(record.fuel_quantity) || 0, Number(record.fuel_rate) || 0,
           Number(record.fuel_cost) || 0, Number(record.total_cost) || 0,
           record.notes || null, JSON.stringify({ ...record, status: 'Draft' }), id,
+        ],
+      );
+    } else if (tableName === "health_score_versions") {
+      await database.execute(
+        `UPDATE health_score_versions
+         SET project_id = $1, version_code = $2, title = $3, status = $4, owner = $5, reason = $6, payload = $7
+         WHERE id = $8`,
+        [
+          record.project_id, record.version_code, record.title,
+          record.status, record.owner, record.reason, JSON.stringify(record), id,
         ],
       );
     } else if (CONTROL_ACCOUNT_SOURCE_TABLES.has(tableName)) {

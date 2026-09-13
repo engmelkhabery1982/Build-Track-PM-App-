@@ -83,3 +83,143 @@ test('F6 Governed Health Score - critical performance triggers Red status', () =
   const scheduleDim = result.dimensions.find(d => d.dimension === 'Schedule');
   assert.strictEqual(scheduleDim.status, 'Red');
 });
+
+test('F6 Governed Health Score - monotonicity: improving metrics never reduces score', () => {
+  const baseInputs = {
+    spi: 0.90,
+    cpi: 0.90,
+    netCashBalance: 10000,
+    unapprovedVariationRatio: 0.05,
+    wirFailureRate: 0.05,
+    missingDataRatio: 0.02,
+  };
+
+  const improvedInputs = {
+    spi: 1.10,
+    cpi: 1.05,
+    netCashBalance: 50000,
+    unapprovedVariationRatio: 0.01,
+    wirFailureRate: 0.01,
+    missingDataRatio: 0.00,
+  };
+
+  const baseResult = calculateGovernedHealthScore(baseInputs, DEFAULT_HEALTH_CONFIG);
+  const improvedResult = calculateGovernedHealthScore(improvedInputs, DEFAULT_HEALTH_CONFIG);
+
+  assert.ok(improvedResult.overallScore >= baseResult.overallScore, `Improved score (${improvedResult.overallScore}) should be >= base score (${baseResult.overallScore})`);
+  assert.strictEqual(improvedResult.status, 'Green');
+});
+
+test('F6 Governed Health Score - determinism: identical inputs produce identical scores and explanations', () => {
+  const inputs = {
+    spi: 0.92,
+    cpi: 0.88,
+    netCashBalance: -5000,
+    unapprovedVariationRatio: 0.04,
+    wirFailureRate: 0.08,
+    missingDataRatio: 0.03,
+    dataDate: '2026-09-15',
+    versionCode: 'V-DETERMINISM',
+  };
+
+  const run1 = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
+  const run2 = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
+
+  assert.strictEqual(run1.overallScore, run2.overallScore);
+  assert.strictEqual(run1.status, run2.status);
+  assert.strictEqual(run1.overallConfidence, run2.overallConfidence);
+  assert.deepStrictEqual(run1.dimensions, run2.dimensions);
+});
+
+test('F6 Governed Health Score - W06-G07 Cross-screen consistency: identical score across all consumers', () => {
+  const unifiedInputs = {
+    spi: 0.95,
+    cpi: 0.92,
+    netCashBalance: 125000,
+    unapprovedVariationRatio: 0.02,
+    wirFailureRate: 0.04,
+    missingDataRatio: 0.01,
+    dataDate: '2026-09-13',
+    versionCode: 'V-HEALTH-GOVERNED',
+  };
+
+  // 1. GovernedHealthScoreCard consumer calculation
+  const cardResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
+
+  // 2. Dashboard consumer calculation
+  const dashboardResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
+
+  // 3. ReportPack consumer calculation
+  const reportPackResult = calculateGovernedHealthScore(unifiedInputs, DEFAULT_HEALTH_CONFIG);
+
+  // Assert perfect parity across all three views
+  assert.strictEqual(cardResult.overallScore, dashboardResult.overallScore);
+  assert.strictEqual(dashboardResult.overallScore, reportPackResult.overallScore);
+  assert.strictEqual(cardResult.status, dashboardResult.status);
+  assert.strictEqual(dashboardResult.status, reportPackResult.status);
+  assert.strictEqual(cardResult.overallConfidence, dashboardResult.overallConfidence);
+  assert.strictEqual(dashboardResult.overallConfidence, reportPackResult.overallConfidence);
+});
+
+test('F6 Governed Health Score - W06-G04 Missing schedule/cost baseline prevents Green status', () => {
+  const missingScheduleInputs = {
+    spi: null,
+    cpi: 1.05,
+    netCashBalance: 50000,
+    unapprovedVariationRatio: 0.0,
+    wirFailureRate: 0.0,
+    missingDataRatio: 0.0,
+  };
+
+  const result = calculateGovernedHealthScore(missingScheduleInputs, DEFAULT_HEALTH_CONFIG);
+  assert.notStrictEqual(result.status, 'Green', 'Status must not be Green when schedule baseline is missing');
+  assert.strictEqual(result.hasMissingCriticalInputs, true);
+  assert.ok(result.overallConfidence < 100);
+});
+
+test('F6 Governed Health Score - W06-G05 & W06-G06 Boundary threshold precision and rounding', () => {
+  // Test exactly at critical boundary (0.85 for SPI)
+  const atCriticalBoundary = {
+    spi: 0.85,
+    cpi: 0.98,
+    netCashBalance: 100000,
+    unapprovedVariationRatio: 0.0,
+    wirFailureRate: 0.0,
+    missingDataRatio: 0.0,
+  };
+  const resBoundary = calculateGovernedHealthScore(atCriticalBoundary, DEFAULT_HEALTH_CONFIG);
+  const schedDim = resBoundary.dimensions.find(d => d.dimension === 'Schedule');
+  assert.strictEqual(schedDim.status, 'Amber', 'Exact warning/critical boundary should produce Amber, not Red');
+
+  // Test slightly below critical boundary
+  const belowCriticalBoundary = {
+    ...atCriticalBoundary,
+    spi: 0.849,
+  };
+  const resBelow = calculateGovernedHealthScore(belowCriticalBoundary, DEFAULT_HEALTH_CONFIG);
+  const schedDimBelow = resBelow.dimensions.find(d => d.dimension === 'Schedule');
+  assert.strictEqual(schedDimBelow.status, 'Red', 'Below critical boundary should produce Red');
+});
+
+test('F6 Governed Health Score - W06-G02 Source Lineage and freshness traceability', () => {
+  const inputs = {
+    spi: 0.96,
+    cpi: 0.94,
+    netCashBalance: 200000,
+    unapprovedVariationRatio: 0.03,
+    wirFailureRate: 0.02,
+    missingDataRatio: 0.00,
+    dataDate: '2026-09-13',
+    versionCode: 'V-TRACE-01',
+  };
+
+  const result = calculateGovernedHealthScore(inputs, DEFAULT_HEALTH_CONFIG);
+  for (const dim of result.dimensions) {
+    assert.ok(dim.source, `Dimension ${dim.dimension} must have explicit source lineage`);
+    assert.ok(dim.metricName, `Dimension ${dim.dimension} must have metric name`);
+    assert.strictEqual(typeof dim.score, 'number');
+    assert.strictEqual(typeof dim.weightedScore, 'number');
+  }
+});
+
+

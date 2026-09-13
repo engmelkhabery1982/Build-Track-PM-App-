@@ -19,6 +19,7 @@ import { plannedResourceCostAt, timePhasedPlannedResourceCost } from '@/utils/re
 import { calculateEvmAtDataDate } from '@/utils/evm';
 import { calculateControlAccountSummary } from '@/utils/controlAccountSummary';
 import { buildBoqWasteLedger, buildOperationalScopeReport, calculateEarnedScheduleFromSeries } from '@/utils/projectControlAnalytics';
+import { calculateGovernedHealthScore, DEFAULT_HEALTH_CONFIG, type RawHealthInputs } from '@/utils/governedHealthScore';
 import type {
   Project, Task, Cost, CostEntry, Procurement, Safety, ProgressEntry, ProjectWithStats, ViewKey,
   Schedule, Contract, BOQHeader, BOQItem, ContractSOVLine, ControlAccount, ProcurementReceipt, CashFlowEntry, SubcontractorInvoice, ClientInvoice,
@@ -393,54 +394,32 @@ export function Dashboard({
     };
   }, [fProjects, fTasks, fCosts, fCostEntries, fProcurement, fSafety, fProgress, fSchedules, fWirs, primaryContracts, fBOQ, fCashFlow, fSubInv, fClientInv, fVariations, fDocuments, fBaselines, fReportingPeriods, fGovernance, fRfis, fSubmittals, fQuality, reportDate, evm]);
 
-  const [healthScore, healthBreakdown] = useMemo(() => {
-    let score = 100;
-    const breakdown: string[] = [];
-
-    const addPenalty = (value: number, max: number, message: string) => {
-      const penalty = Math.min(value, max);
-      if (penalty > 0) {
-        score -= penalty;
-        breakdown.push(`${message}: -${penalty}`);
-      }
-      return penalty;
+  const governedHealthInputs: RawHealthInputs = useMemo(() => {
+    return {
+      spi: evm.revenue.SPI || null,
+      cpi: evm.cost.CPI ?? null,
+      netCashBalance: stats.netCashFlow,
+      unapprovedVariationRatio: stats.totalVariations > 0 ? (stats.pendingVariations / stats.totalVariations) : 0,
+      wirFailureRate: (stats.openQualityItems > 0)
+        ? (stats.openQualityItems / (stats.openQualityItems + (fWirs.length || 10)))
+        : 0,
+      missingDataRatio: 0,
+      dataDate: reportDate,
+      versionCode: 'V-HEALTH-GOVERNED',
     };
+  }, [evm, stats, fWirs.length, reportDate]);
 
-    addPenalty(stats.delayedTasks * 5, 25, `${stats.delayedTasks} delayed tasks`);
-    addPenalty(stats.highSeverity * 8, 20, `${stats.highSeverity} high/critical safety issues`);
-    addPenalty(stats.openSafety * 3, 10, `${stats.openSafety} open safety issues`);
-    addPenalty(stats.criticalGovernanceItems * 8, 20, `${stats.criticalGovernanceItems} critical governance items`);
-    addPenalty(stats.openQualityItems * 2, 10, `${stats.openQualityItems} open quality items`);
-    addPenalty(stats.openRfis, 5, `${stats.openRfis} open RFIs`);
-    
-    if (evm.CPI > 0 && evm.CPI < 0.9) {
-      const penalty = 15;
-      score -= penalty;
-      breakdown.push(`CPI ${evm.CPI.toFixed(2)} (below 0.9): -${penalty}`);
-    }
-    
-    if (evm.SPI > 0 && evm.SPI < 0.9) {
-      const penalty = 10;
-      score -= penalty;
-      breakdown.push(`SPI ${evm.SPI.toFixed(2)} (below 0.9): -${penalty}`);
-    }
+  const governedHealthResult = useMemo(() => {
+    return calculateGovernedHealthScore(governedHealthInputs, DEFAULT_HEALTH_CONFIG);
+  }, [governedHealthInputs]);
 
-    if (stats.budgetUtilization > 90) {
-      const penalty = 10;
-      score -= penalty;
-      breakdown.push(`Budget utilization ${stats.budgetUtilization}%: -${penalty}`);
-    }
-
-    if (stats.netCashFlow < 0) {
-      const penalty = 5;
-      score -= penalty;
-      breakdown.push(`Negative cash flow: -${penalty}`);
-    }
-
-    addPenalty(stats.pendingVariations * 2, 5, `${stats.pendingVariations} pending variations`);
-
-    return [Math.max(0, Math.round(score)), breakdown] as const;
-  }, [stats, evm]);
+  const healthScore = governedHealthResult.overallScore;
+  const healthBreakdown = useMemo(() => {
+    return governedHealthResult.dimensions.map((dim) => {
+      const metricVal = dim.rawMetricValue !== null ? dim.rawMetricValue : 'Unavailable';
+      return `${dim.dimension}: ${dim.score}/100 (${dim.weight}% weight, +${dim.weightedScore} pts) [${dim.metricName}: ${metricVal}] - ${dim.status}`;
+    });
+  }, [governedHealthResult]);
 
   const warnings = useMemo(() => generateWarnings(
     evm.CPI,
@@ -999,15 +978,17 @@ export function Dashboard({
                     <ul className="mt-2 space-y-1 pl-4">
                       {healthBreakdown.map((item, i) => {
                         let view: ViewKey | null = null;
-                        if (item.includes('CPI') || item.includes('Budget')) {
+                        if (item.startsWith('Cost:')) {
                           view = 'costs';
-                        } else if (item.includes('SPI') || item.includes('delayed tasks')) {
+                        } else if (item.startsWith('Schedule:')) {
                           view = 'schedule';
-                        } else if (item.includes('safety') || item.includes('HSE')) {
-                          view = 'safety';
-                        } else if (item.includes('variation')) {
+                        } else if (item.startsWith('Cash:')) {
+                          view = 'cashflow';
+                        } else if (item.startsWith('Scope:')) {
                           view = 'variations';
-                        } else if (item.includes('governance') || item.includes('RFI') || item.includes('quality')) {
+                        } else if (item.startsWith('Quality:')) {
+                          view = 'quality';
+                        } else if (item.startsWith('Data Quality:')) {
                           view = 'governance';
                         }
 

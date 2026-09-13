@@ -16,6 +16,7 @@ export const STATUS_SETS = {
   laborTimesheet: ['Draft', 'Submitted', 'Approved', 'Posted', 'Reversed'],
   equipmentLog: ['Draft', 'Submitted', 'Approved', 'Posted', 'Reversed'],
   portalSubmission: ['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Requires Clarification'],
+  healthScoreVersion: ['Draft', 'Approved', 'Archived'],
 } as const;
 
 export const CANONICAL_FIELDS = {
@@ -94,6 +95,7 @@ export const CANONICAL_FIELDS = {
   laborTimesheet: ['timesheet_number', 'work_date', 'shift', 'crew_name', 'submitter', 'status', 'total_regular_hours', 'total_overtime_hours', 'total_amount'],
   resourceMaster: ['resource_code', 'resource_name', 'resource_type', 'role_or_type', 'unit', 'standard_rate', 'overtime_rate', 'fuel_rate', 'fuel_unit', 'daily_capacity_hours', 'calendar_id', 'availability_start_date', 'availability_end_date', 'status'],
   equipmentLog: ['log_number', 'log_date', 'shift', 'resource_id', 'operator_name', 'submitter', 'meter_start', 'meter_end', 'meter_hours', 'operating_hours', 'idle_hours', 'breakdown_hours', 'total_hours', 'hourly_rate', 'equipment_cost', 'fuel_quantity', 'fuel_rate', 'fuel_cost', 'total_cost', 'status'],
+  healthScoreVersion: ['version_code', 'title', 'status', 'owner', 'reason', 'project_id', 'created_at'],
 } as const;
 
 export const IMPORT_FIELD_ALIASES: Record<string, string> = {
