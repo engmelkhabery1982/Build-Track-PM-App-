@@ -1,45 +1,37 @@
-# BuildTrack Agent Bootstrap
-
-اقرأ هذا الملف كاملًا؛ وهو بوابة قصيرة بدل قراءة وثائق المشروع الطويلة. ثم اقرأ
-`COMPACT_PROJECT_MODEL_AR.md` مرة واحدة و`OPEN_90_FEATURE_EXECUTION_SYSTEM_AR.md`؛
-لا تقرأ Master أو Ledger أو سجل المحادثة.
+# BuildTrack Agent Bootstrap — Operational Reliability Freeze
 
 ## ترتيب السلطة
 
-`AGENTS.md` ← هذا الملف ← `ACTIVE.md` ← قسم المواصفة النشطة ← حزمة القراءة النشطة.
+`AGENTS.md` ← هذا الملف ← `ACTIVE.md` ← قسم ORF الحالي في الخطة ← حزمة القراءة.
 
-الرسالة التنفيذية الوحيدة الحالية هي المسار الموجود في `ACTIVE.UNIFIED_PROMPT`؛ أي V1/V2
-أو work order قديم مرجع تاريخي ولا يوقف القائمة المفتوحة.
+اقرأ فقط المسارات التي يسميها `ACTIVE.md`: `SPEC_FILE` و`READ_PACK_FILE` و
+`UNIFIED_PROMPT` و`GOLDEN_SCENARIO` عند طلب ORF الحالية.
 
-- `ACTIVE.md` وحده يحدد الميزة. Ledger ونتائج الوكلاء والمحادثات تاريخ فقط.
-- Codex وحده يعدل ملفات السلطة ويقبل 8/10 وينقل المؤشر.
-- الوكيل يسحب آخر `CLOUD_BASE_BRANCH` أولًا ويسجل HEAD الناتج باعتباره `START_HEAD`.
-  `ACCEPTED_HEAD` هو سلف وظيفي موثوق للتحقق فقط، وليس commit للـcheckout أو reset.
-- الوكيل ينفذ ميزة واحدة في كل commit، ثم ينتقل تلقائيًا إلى التالية في القائمة المفتوحة
-  داخل نفس المحادثة والفرع ما دامت البيئة متاحة.
-- في Google Arena قد يكون فرع العمل `arena/*`؛ هذا مسموح إذا طابق
-  `ACTIVE.WORK_BRANCH_PATTERN`. لا تغيّر المؤشر، ويظل GitHub sync إلى `main`.
-- استخدم بوابات Node `.mjs` في كل الأنظمة؛ ملفات PowerShell بديل Windows فقط.
-- إذا كانت Arena لا تحتوي commit التاريخي بسبب shallow snapshot، فالـpreflight لا يتجاوز
-  الحوكمة: يشترط أن يساوي HEAD نسخة `origin/main` المسحوبة وأن تطابق بصمة ملف قبول Codex
-  القيم المسجلة في `ACTIVE.md`.
-- كاتب واحد فقط لكل branch. العمل المتوازي يكون بفروع مستقلة وميزات مختلفة.
-- الفرع المقيد أو الشجرة غير النظيفة تعالج حسب `ARENA_BOUND_BRANCH_BOOTSTRAP_AR.md`؛
-  commit `[handoff] Wxx` فقط هو الذي يطلب الدمج الآلي في Agent Cloud main.
+كل ملفات W07–W90 وV1/V2/V3 وMaster/Ledger أصبحت تاريخًا غير منفذ حتى `ORF14`.
 
-## حدود المنتج الثابتة
+## قاعدة البدء
 
-- عقد رئيسي واحد ينشئ مشروعًا واحدًا؛ عقد الباطن يتبع الرئيسي ولا ينشئ مشروعًا.
-- BOQ الرئيسي مرجع نطاق/كمية/سعر العميل، وبند الباطن مرتبط به وتكلفته بسعر عقده.
-- Variation المعتمد يضيف أثرًا قابلًا للتتبع ولا يمحو الأصل.
-- Baseline مجمد، وCurrent وForecast منفصلان، وProject Data Date تاريخ قطع موحد.
-- كل رقم أو كمية أو تاريخ يعود إلى سجل SQLite وحالة اعتماد. عند غياب المصدر استخدم
-  `Unavailable/Requires data` ولا تخترع قيمة.
-- الانتقال الحاكم وآثاره المالية وaudit داخل transaction backend واحدة.
-- الحقل الجديد يحتاج Data Dictionary وmigration وmapping وtypes/UI واختبار.
+1. اسحب أحدث `CLOUD_BASE_BRANCH` دون reset/force.
+2. سجل HEAD وشغل `PREFLIGHT_COMMAND`.
+3. إذا كانت `CURRENT_EXECUTOR=CODEX_LOCAL_ONLY` فتوقف دون تعديل.
+4. غير ذلك نفذ `CURRENT_FEATURE` فقط، من read pack الحالي وفي allowlist فقط.
+5. سلم Result/Evidence/commit ثم توقف. لا تبدأ `NEXT_FEATURE` دون تحديث Codex للسلطة.
 
-## دليل التسليم
+## ثوابت المنتج
 
-لا قيمة لعبارة “الاختبارات نجحت” دون evidence آلي: command، exit code، test count،
-HEAD، file hashes، وقائمة diff. نفذ preflight قبل الكتابة وdelivery gate قبل commit.
-أي ملف خارج allowlist أو حذف أو secret أو artifact أو تعديل config/lock يفشل التسليم.
+- عقد رئيسي واحد ينشئ مشروعًا واحدًا؛ الباطن تابع ولا ينشئ مشروعًا.
+- BOQ الرئيسي مرجع نطاق/كمية/سعر عميل، والباطن تكلفة مرتبطة به.
+- Variation أثر مستقل مؤرخ، ولا يمحو الأصل.
+- Baseline وCurrent وForecast منفصلة، وData Date موحد.
+- Revenue منفصل عن Delivery Cost؛ Cost indicators تحتاج Approved Cost Plan.
+- كل رقم يعود إلى SQLite وسجل وحالة اعتماد؛ الغياب = Unavailable لا صفرًا مخترعًا.
+- كل انتقال حاكم وآثاره وaudit في transaction واحدة قابلة للrollback/retry.
+
+## ممنوعات التجميد
+
+- إضافة شاشة/ميزة/تكامل أو إعادة تصميم UX خارج فجوة قبول مثبتة.
+- mock success، sample production data، hidden fallback، أو تعديل expected لإمرار الاختبار.
+- حذف/rename/whole-file overwrite أو تعديل package/config/authority.
+- قراءة المشروع كاملًا؛ القراءة المقيدة إلزامية.
+
+Codex وحده يعلن `CLOSED — 8/10` ويحدث المؤشر ويبني الإصدار.

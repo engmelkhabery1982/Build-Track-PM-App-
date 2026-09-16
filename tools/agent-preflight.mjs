@@ -26,6 +26,8 @@ const active = Object.fromEntries(readFileSync(activePath, 'utf8').split(/\r?\n/
   .map((line) => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean)
   .map((match) => [match[1], match[2].trim()]));
 const queueMode = active.EXECUTION_MODE === 'OPEN_SEQUENTIAL_CANDIDATE_QUEUE';
+const freezeMode = active.EXECUTION_MODE === 'OPERATIONAL_RELIABILITY_FREEZE';
+const flexibleExecutionMode = queueMode || freezeMode;
 
 for (const key of ['ACCEPTED_HEAD', 'CLOUD_BASE_BRANCH', 'DELIVERY_BRANCH', 'CURRENT_FEATURE', 'MODIFY_ALLOWLIST', 'FORBIDDEN']) {
   if (!active[key]) fail(`ACTIVE.${key} is missing.`);
@@ -41,7 +43,7 @@ const branch = run(['branch', '--show-current']);
 const patternText = active.WORK_BRANCH_PATTERN || `^${active.DELIVERY_BRANCH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
 let pattern;
 try { pattern = new RegExp(patternText); } catch { fail(`invalid WORK_BRANCH_PATTERN: ${patternText}`); }
-if (!pattern.test(branch) && !queueMode) fail(`current branch '${branch}' does not match WORK_BRANCH_PATTERN '${patternText}'.`);
+if (!pattern.test(branch) && !flexibleExecutionMode) fail(`current branch '${branch}' does not match WORK_BRANCH_PATTERN '${patternText}'.`);
 let lineage_verification = 'ANCESTOR';
 try {
   run(['cat-file', '-e', `${active.ACCEPTED_HEAD}^{commit}`]);
@@ -53,7 +55,7 @@ try {
   let remoteHead;
   try { remoteHead = run(['rev-parse', `origin/${active.CLOUD_BASE_BRANCH}`]); }
   catch { fail(`accepted commit is absent and origin/${active.CLOUD_BASE_BRANCH} cannot be verified.`); }
-  if (remoteHead !== head && !queueMode) fail(`accepted history is shallow and HEAD ${head} does not equal pulled origin/${active.CLOUD_BASE_BRANCH} ${remoteHead}.`);
+  if (remoteHead !== head && !flexibleExecutionMode) fail(`accepted history is shallow and HEAD ${head} does not equal pulled origin/${active.CLOUD_BASE_BRANCH} ${remoteHead}.`);
   const attestationRelative = active.ACCEPTED_ATTESTATION_FILE;
   const expectedHash = active.ACCEPTED_ATTESTATION_SHA256;
   if (!attestationRelative || !expectedHash) fail('shallow verification requires ACCEPTED_ATTESTATION_FILE and SHA256.');
@@ -68,6 +70,10 @@ try {
 for (const path of ['AGENTS.md', 'docs/agent-work-orders/AGENT_START_HERE_AR.md', 'docs/agent-work-orders/ACTIVE.md',
   'docs/agent-work-orders/NEXT_WEEK_90_FEATURES_EXECUTION_PLAN_AR.md', 'docs/agent-work-orders/FEATURE_READ_PACKS_AR.md',
   'docs/agent-work-orders/COMPACT_PROJECT_MODEL_AR.md', 'docs/agent-work-orders/OPEN_90_FEATURE_EXECUTION_SYSTEM_AR.md',
+  'docs/agent-work-orders/OPERATIONAL_RELIABILITY_FREEZE_MASTER_PLAN_AR.md',
+  'docs/agent-work-orders/OPERATIONAL_RELIABILITY_READ_PACKS_AR.md',
+  'docs/agent-work-orders/OPERATIONAL_ACCEPTANCE_GOLDEN_SCENARIO_AR.md',
+  'docs/agent-work-orders/UNIVERSAL_STABILIZATION_AGENT_PROMPT_V4_AR.md',
   'tools/agent-delivery-gate.mjs', 'tools/protected-file-integrity.mjs',
   'tools/agent-protected-files.json', 'tools/agent-governance-public-key.pem']) {
   if (!existsSync(resolve(root, path))) fail(`required file missing: ${path}`);
@@ -77,5 +83,6 @@ console.log(JSON.stringify({ result: 'PASS', repository: root, branch,
   required_base_branch: active.CLOUD_BASE_BRANCH, delivery_target: active.DELIVERY_BRANCH,
   head, accepted_ancestor: active.ACCEPTED_HEAD, lineage_verification, feature: active.CURRENT_FEATURE,
   execution_mode: active.EXECUTION_MODE || 'SINGLE_FEATURE', open_feature_range: active.OPEN_FEATURE_RANGE || null,
+  current_executor: active.CURRENT_EXECUTOR || null, new_feature_development: active.NEW_FEATURE_DEVELOPMENT || null,
   correction_file: active.CORRECTION_FILE || null, execution_plan_file: active.EXECUTION_PLAN_FILE || null,
   modify_allowlist: active.MODIFY_ALLOWLIST.split('|'), conditional_modify: (active.CONDITIONAL_MODIFY || '').split('|').filter(Boolean) }, null, 2));

@@ -31,10 +31,15 @@ const active = Object.fromEntries(readFileSync(resolve(root, 'docs/agent-work-or
 const feature = argv.feature; const startHead = argv['start-head'];
 const allowMissingCargo = Object.hasOwn(argv, 'allow-missing-cargo');
 if (!feature || !startHead) fail('use --start-head <commit> --feature <Wxx>.');
-const featureNumber = Number(/^W(\d{2})$/.exec(feature)?.[1]);
+const featureMatch = /^(W|ORF)(\d{2})$/.exec(feature || '');
+const featureFamily = featureMatch?.[1] || null;
+const featureNumber = Number(featureMatch?.[2]);
 const queueMode = active.EXECUTION_MODE === 'OPEN_SEQUENTIAL_CANDIDATE_QUEUE';
-if (!queueMode && feature !== active.CURRENT_FEATURE) fail(`requested ${feature} but ACTIVE selects ${active.CURRENT_FEATURE}.`);
-if (queueMode && (!Number.isInteger(featureNumber) || featureNumber < 4 || featureNumber > 90)) fail(`requested ${feature} is outside OPEN_FEATURE_RANGE W04-W90.`);
+const freezeMode = active.EXECUTION_MODE === 'OPERATIONAL_RELIABILITY_FREEZE';
+if (freezeMode && feature !== active.CURRENT_FEATURE) fail(`operational freeze requested ${feature} but ACTIVE selects ${active.CURRENT_FEATURE}.`);
+if (!queueMode && !freezeMode && feature !== active.CURRENT_FEATURE) fail(`requested ${feature} but ACTIVE selects ${active.CURRENT_FEATURE}.`);
+if (queueMode && (featureFamily !== 'W' || !Number.isInteger(featureNumber) || featureNumber < 4 || featureNumber > 90)) fail(`requested ${feature} is outside OPEN_FEATURE_RANGE W04-W90.`);
+if (freezeMode && (featureFamily !== 'ORF' || !Number.isInteger(featureNumber) || featureNumber < 0 || featureNumber > 14)) fail(`requested ${feature} is outside OPEN_FEATURE_RANGE ORF00-ORF14.`);
 git('cat-file', '-e', `${startHead}^{commit}`);
 
 const resultRelative = `docs/agent-results/${feature}_RESULT.md`;
