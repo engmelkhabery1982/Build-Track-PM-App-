@@ -33,16 +33,19 @@ test('V4 prompt is token-bounded, single-gate and forbids fabricated success', (
   assert.match(prompt, /PENDING_LOCAL_CARGO/);
 });
 
-test('ACTIVE selects ORF00, freezes new features and constrains destructive behavior', () => {
+test('ACTIVE selects one ordered ORF gate, freezes new features and constrains destructive behavior', () => {
   const active = read('docs/agent-work-orders/ACTIVE.md');
   assert.match(active, /STATE_SCHEMA=4/);
   assert.match(active, /EXECUTION_MODE=OPERATIONAL_RELIABILITY_FREEZE/);
   assert.match(active, /NEW_FEATURE_DEVELOPMENT=FROZEN/);
   assert.match(active, /FROZEN_FEATURE_RANGE=W07-W90/);
   assert.match(active, /OPEN_FEATURE_RANGE=ORF00-ORF14/);
-  assert.match(active, /CURRENT_FEATURE=ORF00/);
+  const current = Number(active.match(/CURRENT_FEATURE=ORF(\d{2})/)?.[1]);
+  const next = Number(active.match(/NEXT_FEATURE=ORF(\d{2})/)?.[1]);
+  assert.ok(Number.isInteger(current) && current >= 0 && current <= 14, 'ACTIVE must select one ORF gate.');
+  assert.equal(next, current + 1, 'ACTIVE must point to the immediately following ORF gate.');
   assert.match(active, /CURRENT_EXECUTOR=CODEX_LOCAL_ONLY/);
-  assert.match(active, /NEXT_FEATURE=ORF01/);
+  assert.match(active, /NEXT_FEATURE_REQUIRES_USER_COMMAND=true/);
   assert.match(active, /DELETE_ALLOWLIST=\[\]/);
   assert.match(active, /OPERATIONAL_RELIABILITY_FREEZE_MASTER_PLAN_AR\.md/);
   assert.match(active, /UNIVERSAL_STABILIZATION_AGENT_PROMPT_V4_AR\.md/);

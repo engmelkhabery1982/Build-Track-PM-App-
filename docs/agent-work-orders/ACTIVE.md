@@ -7,11 +7,11 @@
 STATE_SCHEMA=4
 OWNER=CODEX
 AGENT_MUST_NOT_EDIT=true
-ACCEPTED_HEAD=d77b8006fa1a5fba7a3abce07601c1e9cd9ebeb9
-RELEASE_CANDIDATE_HEAD=befdd12c1df56e9e78ded4105fec16a9b4f77127
+ACCEPTED_HEAD=47e02cdc2c4141eb6e2410d0e915f106d63b43ee
+RELEASE_CANDIDATE_HEAD=47e02cdc2c4141eb6e2410d0e915f106d63b43ee
 ACCEPTED_LINEAGE_MODE=ANCESTOR_OR_REMOTE_MAIN_ATTESTATION
-ACCEPTED_ATTESTATION_FILE=docs/agent-results/CODEX_W05_ACCEPTANCE_2026-09-13.md
-ACCEPTED_ATTESTATION_SHA256=17B2E5DFA5CD5EF0ECF6249882EB5788E56D62E23341CE4D42519A4F87A0793E
+ACCEPTED_ATTESTATION_FILE=docs/agent-results/ORF00_RESULT.md
+ACCEPTED_ATTESTATION_SHA256=F7E6950DA1BD767EFD818C9A426CEB650B61F3E03FC321CEB41EF7B34EC77DCB
 CLOUD_BASE_BRANCH=main
 DELIVERY_BRANCH=CURRENT_BOUND_BRANCH
 HANDOFF_MARKER=[handoff]
@@ -25,52 +25,52 @@ EXECUTION_MODE=OPERATIONAL_RELIABILITY_FREEZE
 NEW_FEATURE_DEVELOPMENT=FROZEN
 FROZEN_FEATURE_RANGE=W07-W90
 OPEN_FEATURE_RANGE=ORF00-ORF14
-CURRENT_FEATURE=ORF00
-CURRENT_TITLE=Release Truth and Version Unification
-CURRENT_STATUS=READY_FOR_CODEX_LOCAL_EXECUTION
+CURRENT_FEATURE=ORF01
+CURRENT_TITLE=SQLite Transaction and Lock Reliability
+CURRENT_STATUS=WAITING_FOR_USER_COMMAND
 CURRENT_EXECUTOR=CODEX_LOCAL_ONLY
-CODEX_REVIEW_STATUS=STABILIZATION_AUTHORITY_ACTIVATED
+CODEX_REVIEW_STATUS=ORF00_CLOSED_8_OF_10_GLOBAL_CARGO_RED
 FEATURE_BATCH_LIMIT=1
 STOP_AFTER_CURRENT_FEATURE=true
 NEXT_FEATURE_REQUIRES_USER_COMMAND=true
 NEXT_FEATURE_REQUIRES_CODEX_ACCEPTANCE=true
 PARALLEL_CANDIDATE_FEATURES=DISABLED
 OUT_OF_SCOPE_COMMITS=FORBIDDEN
-SPEC_ANCHOR=ORF00
+SPEC_ANCHOR=ORF01
 SPEC_FILE=docs/agent-work-orders/OPERATIONAL_RELIABILITY_FREEZE_MASTER_PLAN_AR.md
 EXECUTION_PLAN_FILE=docs/agent-work-orders/OPERATIONAL_RELIABILITY_FREEZE_MASTER_PLAN_AR.md
 READ_PACK_FILE=docs/agent-work-orders/OPERATIONAL_RELIABILITY_READ_PACKS_AR.md
-READ_PACK=ORF00
+READ_PACK=ORF01
 GOLDEN_SCENARIO=docs/agent-work-orders/OPERATIONAL_ACCEPTANCE_GOLDEN_SCENARIO_AR.md
 PROJECT_MODEL=docs/agent-work-orders/COMPACT_PROJECT_MODEL_AR.md
 QUEUE_CURSOR=docs/agent-results/AGENT_QUEUE_CURSOR.md
 UNIFIED_PROMPT=docs/agent-work-orders/UNIVERSAL_STABILIZATION_AGENT_PROMPT_V4_AR.md
-NEXT_FEATURE=ORF01
+NEXT_FEATURE=ORF02
 DELETE_ALLOWLIST=[]
-MODIFY_ALLOWLIST=src-tauri/src/commercial_workflow.rs|src-tauri/src/cost_plan_versioning.rs|src-tauri/src/estimate_versioning.rs|src-tauri/src/import_batch.rs|src-tauri/src/lib.rs|src-tauri/src/report_versioning.rs|src-tauri/src/supplier_ap.rs|tests/tauri-command-registration.test.mjs|docs/agent-results/ORF00_RESULT.md|docs/agent-results/ORF00_EVIDENCE.json
-CONDITIONAL_MODIFY=tests/agent-work-order-contract.test.mjs|tests/agent-protected-integrity.test.mjs
+MODIFY_ALLOWLIST=src-tauri/src/claims_workflow.rs|src-tauri/src/commercial_workflow.rs|src-tauri/src/supplier_ap.rs|src-tauri/src/certificate_workflow.rs|src-tauri/src/cash_forecast_workflow.rs|src-tauri/src/cost_plan_versioning.rs|src-tauri/src/import_batch.rs|src-tauri/src/report_versioning.rs|src-tauri/src/health_score_workflow.rs|docs/agent-results/ORF01_RESULT.md|docs/agent-results/ORF01_EVIDENCE.json
+CONDITIONAL_MODIFY=[]
 FORBIDDEN=AGENTS.md|docs/agent-work-orders/**|package.json|package-lock.json|bun.lock|src-tauri/Cargo.toml|src-tauri/Cargo.lock|vite.config.*|.env*|metadata.json|tools/agent-preflight.mjs|tools/agent-delivery-gate.mjs|tools/protected-file-integrity.mjs|tools/update-protected-file-manifest.mjs|tools/agent-protected-files.json|tools/agent-governance-public-key.pem
-REQUIRED_GAPS=ORF00-G01|ORF00-G02|ORF00-G03|ORF00-G04|ORF00-G05|ORF00-G06|ORF00-G07|ORF00-G08|ORF00-G09|ORF00-G10
+REQUIRED_GAPS=ORF01-G01|ORF01-G02|ORF01-G03|ORF01-G04|ORF01-G05|ORF01-G06|ORF01-G07|ORF01-G08|ORF01-G09|ORF01-G10
 REQUIRED_TESTS=node tools/agent-preflight.mjs|npm test|npm run lint|npm run build|cargo test --manifest-path src-tauri/Cargo.toml|git diff --check
-KNOWN_FAILED_DELIVERY=RUST_CLAIM_REVERSAL_DATABASE_LOCK|LOCAL_CLOUD_VERSION_DIVERGENCE|NO_TRUE_E2E_ACCEPTANCE
+KNOWN_FAILED_DELIVERY=RUST_CLAIM_REVERSAL_DATABASE_LOCK|NO_TRUE_E2E_ACCEPTANCE
 ```
 
-## ORF00 gate meanings
+## ORF01 gate meanings
 
-- `ORF00-G01`: inventory records local/cloud heads, statuses and hashes.
-- `ORF00-G02`: seven local Rust candidates preserved before integration.
-- `ORF00-G03`: every hunk classified Keep/Upstream/Conflict/Reject.
-- `ORF00-G04`: one clean release branch created from governed cloud base.
-- `ORF00-G05`: kept hunks ported atomically; no whole-file overwrite.
-- `ORF00-G06`: migrations/wrappers/invoke registrations reconcile.
-- `ORF00-G07`: no user DB or secrets touched.
-- `ORF00-G08`: Node/Lint/Build/Cargo/Diff evidence generated honestly.
-- `ORF00-G09`: before/after recovery checkpoints and manifests exist.
-- `ORF00-G10`: clean status and single candidate HEAD ready for ORF01.
+- `ORF01-G01`: the locked-period claims reversal failure is reproduced from the accepted head.
+- `ORF01-G02`: every transaction early-return path is inventoried in the bounded Rust read pack.
+- `ORF01-G03`: failed claims mutations explicitly roll back before returning.
+- `ORF01-G04`: an immediate retry after rejection succeeds without `database is locked`.
+- `ORF01-G05`: late-audit failures leave no posting, status, guard or audit residue.
+- `ORF01-G06`: idempotent replay returns the original governed result without duplication.
+- `ORF01-G07`: locked-period rejection preserves original source and variation history.
+- `ORF01-G08`: parallel readers and sequential writers complete under the canonical pool policy.
+- `ORF01-G09`: the full Rust suite passes isolated and three consecutive complete runs.
+- `ORF01-G10`: Node/Lint/Build/Cargo/Diff evidence is green and the tree is clean.
 
 القواعد:
 
-- لا ينفذ وكيل cloud `ORF00`; هي `CODEX_LOCAL_ONLY` بسبب وجود العمل غير الملتزم محليًا.
-- بعد إغلاقها يحدث Codex هذا الملف إلى ORF01؛ لا يبدأ الوكيل ORF01 من تلقاء نفسه.
+- تم إغلاق `ORF00` في `47e02cdc2c4141eb6e2410d0e915f106d63b43ee` مع بقاء بوابة Cargo العامة حمراء بسبب عطل ORF01 المثبت.
+- لا يبدأ Codex أو وكيل cloud `ORF01` قبل أمر مستخدم جديد؛ عند البدء تكون مراجعة Cargo المحلية إلزامية.
 - ممنوع تعديل ملفات السلطة أو توسيع allowlist أو إعادة فتح W07–W90.
 - لا توجد نتيجة `CLOSED` أو 8/10 من الوكيل؛ Codex وحده يقبل البوابة.
