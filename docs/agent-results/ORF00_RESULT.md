@@ -98,6 +98,19 @@ copying a whole file from one worktree to another.
 No installed application database, Supabase project, environment secret, backup or user record was
 opened or modified during ORF00.
 
+## Independent local review gate
+
+The required read-only Ollama review was attempted twice and did not produce a review:
+
+- `qwen2.5-coder:7b` with the result, registration test and bounded `lib.rs` excerpt timed out after
+  180 seconds.
+- `llama3.2:3b` with only the result and registration test timed out after 120 seconds.
+
+Status: `UNAVAILABLE — TIMEOUT`, not PASS. No background agent was left running and no Ollama
+output was used to justify acceptance. Codex acceptance remains based on the executable evidence
+listed above; the independent review gate must be retried after the local inference performance
+issue is addressed.
+
 ## Next gate
 
 ORF01 must explicitly roll back failed claims transactions and prove immediate retry, isolated and

@@ -13,9 +13,9 @@
     "tools/update-protected-file-manifest.mjs": "798AA958E44381E104E707EBFF3E2C6CB63EF89FB69DBE7D047D3F8D095588BB",
     "tools/agent-governance-public-key.pem": "55F0C866CBDC9CB3DE176AE4C26E8FFFC7727FB53BE5A77084449B46D4639193",
     "AGENTS.md": "63463CEE525F0DA3FE0B2B42682A5FE4CAA79FC061BB2AB06EC0B2FD30E1CE07",
-    "docs/agent-work-orders/ACTIVE.md": "6E952A8072737A08496518985C120CDD20CE88EC84EF832C3D5E4EF6AC7B5449"
+    "docs/agent-work-orders/ACTIVE.md": "66D5EEDDAD12293B71751BB468DE525EEEE389B0F92C08DFD3F9DBD9A4B7E4F5"
   },
   "public_key_file": "tools/agent-governance-public-key.pem",
-  "signature": "WtNI1s/wmvXHFd148URjkPoFpDqcXyh3tvkYos5h+JUhZ10aSSREKJs4khIN9dx+Akoq37zqisXjtCjjMviTCw==",
+  "signature": "Oife3TiDRj8Rv+5bmsdoJCYBb4Y2//x5NCL1IpH4gccAGTm45CBOtKSsT3/PzaIJFjYgkRK5fswGrPYFeyq5AQ==",
   "authorization_note": "Execution agents cannot refresh this signed baseline. Only Codex holds the private signing key outside the repository."
 }
