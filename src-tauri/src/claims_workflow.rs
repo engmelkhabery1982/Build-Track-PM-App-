@@ -823,56 +823,85 @@ pub async fn notify_claim(
     require_text(&req.notified_at, "Notification date")?;
     let pool = open_pool(path).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    if let Some(result) = previous_operation(&mut tx, &req.operation_id, &req.claim_id).await? {
+    let previous = match previous_operation(&mut tx, &req.operation_id, &req.claim_id).await {
+        Ok(previous) => previous,
+        Err(error) => {
+            return match tx.rollback().await {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{}; failed to roll back claim notification transaction: {}",
+                    error, rollback_error
+                )),
+            };
+        }
+    };
+    if let Some(result) = previous {
         tx.rollback().await.ok();
         return Ok(result);
     }
-    enter_mutation_guard(&mut tx, &req.operation_id).await?;
-    let claim = fetch_claim(&mut tx, &req.claim_id).await?;
-    if claim.status != "Draft" {
-        return Err(format!(
-            "Only a Draft claim can be notified; current status is '{}'.",
-            claim.status
-        ));
+
+    let result: Result<ClaimOperationResult, String> = async {
+        enter_mutation_guard(&mut tx, &req.operation_id).await?;
+        let claim = fetch_claim(&mut tx, &req.claim_id).await?;
+        if claim.status != "Draft" {
+            return Err(format!(
+                "Only a Draft claim can be notified; current status is '{}'.",
+                claim.status
+            ));
+        }
+        if req.notified_at != claim.notice_date {
+            return Err("Notification date must match the governed claim notice date.".into());
+        }
+        let lines = fetch_claim_lines(&mut tx, &req.claim_id).await?;
+        let (notice_elapsed_days, notice_allowed_days) =
+            validate_claim_scope_and_notice(&mut tx, &claim, &lines).await?;
+        sqlx::query("UPDATE claims SET status='Notified',notified_by=?,notified_at=? WHERE id=?")
+            .bind(&req.actor)
+            .bind(&req.notified_at)
+            .bind(&req.claim_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        log_claim_audit(
+            &mut tx,
+            &claim,
+            "NotifyClaim",
+            &req.actor,
+            json!({
+                "operation_id":req.operation_id,
+                "notified_at":req.notified_at,
+                "event_date":claim.event_date,
+                "notice_elapsed_days":notice_elapsed_days,
+                "notice_allowed_days":notice_allowed_days,
+                "late_notice":notice_elapsed_days > notice_allowed_days
+            }),
+        )
+        .await?;
+        let result = ClaimOperationResult {
+            operation_id: req.operation_id.clone(),
+            claim_id: req.claim_id.clone(),
+            status: "Notified".into(),
+            variation_id: None,
+        };
+        record_operation(&mut tx, "NotifyClaim", &result).await?;
+        exit_mutation_guard(&mut tx, &req.operation_id).await?;
+        Ok(result)
     }
-    if req.notified_at != claim.notice_date {
-        return Err("Notification date must match the governed claim notice date.".into());
+    .await;
+
+    match result {
+        Ok(result) => {
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(result)
+        }
+        Err(error) => match tx.rollback().await {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{}; failed to roll back claim notification transaction: {}",
+                error, rollback_error
+            )),
+        },
     }
-    let lines = fetch_claim_lines(&mut tx, &req.claim_id).await?;
-    let (notice_elapsed_days, notice_allowed_days) =
-        validate_claim_scope_and_notice(&mut tx, &claim, &lines).await?;
-    sqlx::query("UPDATE claims SET status='Notified',notified_by=?,notified_at=? WHERE id=?")
-        .bind(&req.actor)
-        .bind(&req.notified_at)
-        .bind(&req.claim_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    log_claim_audit(
-        &mut tx,
-        &claim,
-        "NotifyClaim",
-        &req.actor,
-        json!({
-            "operation_id":req.operation_id,
-            "notified_at":req.notified_at,
-            "event_date":claim.event_date,
-            "notice_elapsed_days":notice_elapsed_days,
-            "notice_allowed_days":notice_allowed_days,
-            "late_notice":notice_elapsed_days > notice_allowed_days
-        }),
-    )
-    .await?;
-    let result = ClaimOperationResult {
-        operation_id: req.operation_id.clone(),
-        claim_id: req.claim_id.clone(),
-        status: "Notified".into(),
-        variation_id: None,
-    };
-    record_operation(&mut tx, "NotifyClaim", &result).await?;
-    exit_mutation_guard(&mut tx, &req.operation_id).await?;
-    tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(result)
 }
 
 pub async fn start_claim_assessment(
@@ -2213,5 +2242,108 @@ mod tests {
         assert_eq!(value, 0.0);
         pool.close().await;
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn notify_claim_rollback_cleans_guard_and_permits_subsequent_write() {
+        let path = test_path("notify-rollback");
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        save_claim_draft(&path, draft("save")).await.unwrap();
+
+        // 1. Claim in an invalid status for notify_claim (status != 'Draft')
+        {
+            let pool = open_pool(&path).await.unwrap();
+            sqlx::query("UPDATE claims SET status = 'Submitted' WHERE id = 'cl'")
+                .execute(&pool)
+                .await
+                .unwrap();
+            pool.close().await;
+        }
+
+        // 2. Reject notify_claim
+        let rejected_req = NotifyClaimRequest {
+            operation_id: "notify-rejected".into(),
+            claim_id: "cl".into(),
+            actor: "maker".into(),
+            notified_at: "2026-01-05".into(),
+        };
+        let err = notify_claim(&path, rejected_req).await.unwrap_err();
+        assert!(err.contains("Only a Draft claim can be notified"));
+
+        // 3. Immediately after rejection:
+        // - claims_mutation_guard is 0
+        // - original claim status is unchanged ('Submitted')
+        // - no workflow operation or audit log for rejected operation
+        {
+            let pool = open_pool(&path).await.unwrap();
+            let guard_count: i64 = sqlx::query_scalar("SELECT count(*) FROM claims_mutation_guard")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(guard_count, 0, "claims_mutation_guard must be 0 after rollback");
+
+            let status: String = sqlx::query_scalar("SELECT status FROM claims WHERE id = 'cl'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(status, "Submitted", "original claim status must be preserved");
+
+            let op_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM claim_workflow_operations WHERE operation_id = 'notify-rejected'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(op_count, 0, "no workflow operation must exist for rejected attempt");
+
+            let audit_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM audit_log WHERE payload LIKE '%notify-rejected%'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(audit_count, 0, "no audit log must exist for rejected attempt");
+            pool.close().await;
+        }
+
+        // Restore claim to Draft to allow a valid attempt
+        {
+            let pool = open_pool(&path).await.unwrap();
+            sqlx::query("UPDATE claims SET status = 'Draft' WHERE id = 'cl'")
+                .execute(&pool)
+                .await
+                .unwrap();
+            pool.close().await;
+        }
+
+        // 4 & 5. Execute valid attempt immediately after rejection using new connection;
+        // must succeed without "database is locked" error
+        let valid_req = NotifyClaimRequest {
+            operation_id: "notify-valid".into(),
+            claim_id: "cl".into(),
+            actor: "maker".into(),
+            notified_at: "2026-01-05".into(),
+        };
+        let result = notify_claim(&path, valid_req).await.unwrap();
+        assert_eq!(result.status, "Notified");
+
+        {
+            let pool = open_pool(&path).await.unwrap();
+            let status: String = sqlx::query_scalar("SELECT status FROM claims WHERE id = 'cl'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(status, "Notified");
+
+            let guard_count: i64 = sqlx::query_scalar("SELECT count(*) FROM claims_mutation_guard")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(guard_count, 0);
+            pool.close().await;
+        }
+
+        let _ = std::fs::remove_file(&path);
     }
 }
