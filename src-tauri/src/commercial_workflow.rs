@@ -7,147 +7,631 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApprovalRequest { pub operation_id: String, pub source_id: String, pub actor: String, pub approved_at: String }
+pub struct ApprovalRequest {
+    pub operation_id: String,
+    pub source_id: String,
+    pub actor: String,
+    pub approved_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CertificateSettlementRequest { pub operation_id: String, pub certificate_id: String, pub actor: String, pub paid_at: String }
+pub struct CertificateSettlementRequest {
+    pub operation_id: String,
+    pub certificate_id: String,
+    pub actor: String,
+    pub paid_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReversalRequest { pub operation_id: String, pub source_table: String, pub source_id: String, pub actor: String, pub reason: String }
+pub struct ReversalRequest {
+    pub operation_id: String,
+    pub source_table: String,
+    pub source_id: String,
+    pub actor: String,
+    pub reason: String,
+}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Result { pub operation_id: String, pub status: String }
+pub struct Result {
+    pub operation_id: String,
+    pub status: String,
+}
 
 #[derive(Clone)]
-struct Scope { project_id:String, contract_id:Option<String>, boq_header_id:Option<String>, boq_item_id:Option<String>, parent_main_project_id:Option<String>, parent_main_contract_id:Option<String> }
-fn stamp()->String { use std::time::{SystemTime,UNIX_EPOCH}; format!("{}Z",SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()) }
-fn n(v:&Value,k:&str)->f64 {v.get(k).and_then(Value::as_f64).unwrap_or(0.0)}
-fn s(v:&Value,k:&str)->String {v.get(k).and_then(Value::as_str).unwrap_or_default().to_string()}
-fn money(v:f64)->f64 {(v*100.0).round()/100.0}
-async fn db(path:&Path)->std::result::Result<SqlitePool,String>{SqlitePool::connect_with(SqliteConnectOptions::new().filename(path).create_if_missing(true).foreign_keys(true)).await.map_err(|e|e.to_string())}
-async fn scope_doc(tx:&mut Transaction<'_,Sqlite>,table:&str,id:&str)->std::result::Result<(Scope,Value),String>{
- let q=format!("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM {table} WHERE id=?");
- let r=sqlx::query(&q).bind(id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Commercial document was not found.")?;
- let scope=Scope{project_id:r.try_get("project_id").map_err(|e|e.to_string())?,contract_id:r.try_get("contract_id").map_err(|e|e.to_string())?,boq_header_id:r.try_get("boq_header_id").map_err(|e|e.to_string())?,boq_item_id:r.try_get("boq_item_id").map_err(|e|e.to_string())?,parent_main_project_id:r.try_get("parent_main_project_id").map_err(|e|e.to_string())?,parent_main_contract_id:r.try_get("parent_main_contract_id").map_err(|e|e.to_string())?};
- Ok((scope,serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?))
+struct Scope {
+    project_id: String,
+    contract_id: Option<String>,
+    boq_header_id: Option<String>,
+    boq_item_id: Option<String>,
+    parent_main_project_id: Option<String>,
+    parent_main_contract_id: Option<String>,
 }
-async fn guard(tx:&mut Transaction<'_,Sqlite>,id:&str,on:bool)->std::result::Result<(),String>{if on{sqlx::query("INSERT INTO commercial_mutation_guard(operation_id,created_at) VALUES (?,?)").bind(id).bind(stamp()).execute(&mut **tx).await}else{sqlx::query("DELETE FROM commercial_mutation_guard WHERE operation_id=?").bind(id).execute(&mut **tx).await}.map_err(|e|e.to_string())?;Ok(())}
-async fn put(tx:&mut Transaction<'_,Sqlite>,table:&str,id:&str,v:&Value)->std::result::Result<(),String>{let g=format!("internal:{table}:{id}");guard(tx,&g,true).await?;let q=format!("UPDATE {table} SET payload=? WHERE id=?");sqlx::query(&q).bind(v.to_string()).bind(id).execute(&mut **tx).await.map_err(|e|e.to_string())?;guard(tx,&g,false).await}
-async fn post(tx:&mut Transaction<'_,Sqlite>,id:&str,table:&str,source:&str,kind:&str,actor:&str,day:&str,reason:&str,snapshot:&Value)->std::result::Result<(),String>{
-  sqlx::query("INSERT INTO commercial_workflow_postings(id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(day).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
-  
-  let audit_id = format!("audit:{}:{}", table, id);
-  let audit = json!({"id":audit_id,"timestamp":day,"action":kind,"table_name":table,"record_id":source,"actor":actor,"details":reason,"before":null,"after":snapshot});
-  let project_id = snapshot.get("project_id").and_then(|v| v.as_str());
-  let contract_id = snapshot.get("contract_id").and_then(|v| v.as_str());
-  
-  sqlx::query("INSERT INTO audit_log (id, created_at, project_id, contract_id, payload) VALUES (?, ?, ?, ?, ?)")
+fn stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    format!(
+        "{}Z",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    )
+}
+fn n(v: &Value, k: &str) -> f64 {
+    v.get(k).and_then(Value::as_f64).unwrap_or(0.0)
+}
+fn s(v: &Value, k: &str) -> String {
+    v.get(k)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+fn money(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+async fn db(path: &Path) -> std::result::Result<SqlitePool, String> {
+    SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .foreign_keys(true),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+async fn scope_doc(
+    tx: &mut Transaction<'_, Sqlite>,
+    table: &str,
+    id: &str,
+) -> std::result::Result<(Scope, Value), String> {
+    let q=format!("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM {table} WHERE id=?");
+    let r = sqlx::query(&q)
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Commercial document was not found.")?;
+    let scope = Scope {
+        project_id: r.try_get("project_id").map_err(|e| e.to_string())?,
+        contract_id: r.try_get("contract_id").map_err(|e| e.to_string())?,
+        boq_header_id: r.try_get("boq_header_id").map_err(|e| e.to_string())?,
+        boq_item_id: r.try_get("boq_item_id").map_err(|e| e.to_string())?,
+        parent_main_project_id: r
+            .try_get("parent_main_project_id")
+            .map_err(|e| e.to_string())?,
+        parent_main_contract_id: r
+            .try_get("parent_main_contract_id")
+            .map_err(|e| e.to_string())?,
+    };
+    Ok((
+        scope,
+        serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?,
+    ))
+}
+async fn guard(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+    on: bool,
+) -> std::result::Result<(), String> {
+    if on {
+        sqlx::query("INSERT INTO commercial_mutation_guard(operation_id,created_at) VALUES (?,?)")
+            .bind(id)
+            .bind(stamp())
+            .execute(&mut **tx)
+            .await
+    } else {
+        sqlx::query("DELETE FROM commercial_mutation_guard WHERE operation_id=?")
+            .bind(id)
+            .execute(&mut **tx)
+            .await
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+async fn put(
+    tx: &mut Transaction<'_, Sqlite>,
+    table: &str,
+    id: &str,
+    v: &Value,
+) -> std::result::Result<(), String> {
+    let g = format!("internal:{table}:{id}");
+    guard(tx, &g, true).await?;
+    let q = format!("UPDATE {table} SET payload=? WHERE id=?");
+    sqlx::query(&q)
+        .bind(v.to_string())
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    guard(tx, &g, false).await
+}
+async fn post(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+    table: &str,
+    source: &str,
+    kind: &str,
+    actor: &str,
+    day: &str,
+    reason: &str,
+    snapshot: &Value,
+) -> std::result::Result<(), String> {
+    sqlx::query("INSERT INTO commercial_workflow_postings(id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(day).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+
+    let audit_id = format!("audit:{}:{}", table, id);
+    let audit = json!({"id":audit_id,"timestamp":day,"action":kind,"table_name":table,"record_id":source,"actor":actor,"details":reason,"before":null,"after":snapshot});
+    let project_id = snapshot.get("project_id").and_then(|v| v.as_str());
+    let contract_id = snapshot.get("contract_id").and_then(|v| v.as_str());
+
+    sqlx::query("INSERT INTO audit_log (id, created_at, project_id, contract_id, payload) VALUES (?, ?, ?, ?, ?)")
    .bind(audit_id).bind(stamp()).bind(project_id).bind(contract_id).bind(audit.to_string())
    .execute(&mut **tx).await.map_err(|e|e.to_string())?;
-   
-  Ok(())
+
+    Ok(())
 }
-async fn cash(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,source:&str,day:&str,number:&str,kind:&str,status:&str,amount:f64,client:bool)->std::result::Result<(),String>{
- sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type') LIKE 'payment_certificate_%' AND json_extract(payload,'$.source_id')=?").bind(source).execute(&mut **tx).await.map_err(|e|e.to_string())?;
- if amount.abs()<0.000001{return Ok(())};let id=format!("payment_certificate_{}:{}",kind.to_lowercase(),source);let payload=json!({"id":id,"date":day,"description":format!("Payment certificate {kind}: {number}"),"category":if client{"Client Receipt"}else{"Subcontractor Payment"},"inflow":if client{money(amount)}else{0.0},"outflow":if client{0.0}else{money(amount)},"net":if client{money(amount)}else{money(-amount)},"cumulative_balance":0,"movement_type":kind,"status":status,"source_type":format!("payment_certificate_{}",kind.to_lowercase()),"source_id":source});
- sqlx::query("INSERT INTO cash_flow(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())
+async fn cash(
+    tx: &mut Transaction<'_, Sqlite>,
+    scope: &Scope,
+    source: &str,
+    day: &str,
+    number: &str,
+    kind: &str,
+    status: &str,
+    amount: f64,
+    client: bool,
+) -> std::result::Result<(), String> {
+    sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type') LIKE 'payment_certificate_%' AND json_extract(payload,'$.source_id')=?").bind(source).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    if amount.abs() < 0.000001 {
+        return Ok(());
+    };
+    let id = format!("payment_certificate_{}:{}", kind.to_lowercase(), source);
+    let payload = json!({"id":id,"date":day,"description":format!("Payment certificate {kind}: {number}"),"category":if client{"Client Receipt"}else{"Subcontractor Payment"},"inflow":if client{money(amount)}else{0.0},"outflow":if client{0.0}else{money(amount)},"net":if client{money(amount)}else{money(-amount)},"cumulative_balance":0,"movement_type":kind,"status":status,"source_type":format!("payment_certificate_{}",kind.to_lowercase()),"source_id":source});
+    sqlx::query("INSERT INTO cash_flow(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    Ok(())
 }
-async fn synchronize_invoice_tracking(tx:&mut Transaction<'_,Sqlite>,certificate:&Value,payment_date:Option<&str>,reversed:bool)->std::result::Result<(),String>{
- let tracking_id=s(certificate,"invoice_tracking_id"); if tracking_id.is_empty(){return Ok(())}; let client=s(certificate,"certificate_type")=="Client";
- let tracking_table=if client{"client_invoice_tracking"}else{"subcontractor_invoice_tracking"}; let invoice_table=if client{"client_invoices"}else{"subcontractor_invoices"};
- let q=format!("SELECT project_id,contract_id,payload FROM {tracking_table} WHERE id=?"); let row=sqlx::query(&q).bind(&tracking_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Selected invoice register row no longer exists.")?;
- let project:String=row.try_get("project_id").map_err(|e|e.to_string())?;let contract:Option<String>=row.try_get("contract_id").map_err(|e|e.to_string())?;if project!=s(certificate,"project_id")||contract.as_deref()!=Some(s(certificate,"contract_id").as_str()){return Err("Certificate and invoice register must share the same project and contract.".into())};let tracking:Value=serde_json::from_str(&row.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let number=s(&tracking,"invoice_number");if number.is_empty(){return Err("Selected invoice register has no invoice number.".into())};let(status,payment_status)=if reversed{("Generated","Unpaid")}else if payment_date.is_some(){("Approved","Paid")}else{("Approved","Unpaid")};
- let tracking_update=format!("UPDATE {tracking_table} SET payload=json_set(payload,'$.status',?,'$.payment_status',?,'$.payment_date',?) WHERE id=?");sqlx::query(&tracking_update).bind(status).bind(payment_status).bind(payment_date).bind(&tracking_id).execute(&mut **tx).await.map_err(|e|e.to_string())?;let invoice_update=format!("UPDATE {invoice_table} SET payload=json_set(payload,'$.status',?,'$.payment_status',?,'$.payment_date',?) WHERE json_extract(payload,'$.invoice_number')=?");sqlx::query(&invoice_update).bind(status).bind(payment_status).bind(payment_date).bind(&number).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())
+async fn synchronize_invoice_tracking(
+    tx: &mut Transaction<'_, Sqlite>,
+    certificate: &Value,
+    payment_date: Option<&str>,
+    reversed: bool,
+) -> std::result::Result<(), String> {
+    let tracking_id = s(certificate, "invoice_tracking_id");
+    if tracking_id.is_empty() {
+        return Ok(());
+    };
+    let client = s(certificate, "certificate_type") == "Client";
+    let tracking_table = if client {
+        "client_invoice_tracking"
+    } else {
+        "subcontractor_invoice_tracking"
+    };
+    let invoice_table = if client {
+        "client_invoices"
+    } else {
+        "subcontractor_invoices"
+    };
+    let q = format!("SELECT project_id,contract_id,payload FROM {tracking_table} WHERE id=?");
+    let row = sqlx::query(&q)
+        .bind(&tracking_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Selected invoice register row no longer exists.")?;
+    let project: String = row.try_get("project_id").map_err(|e| e.to_string())?;
+    let contract: Option<String> = row.try_get("contract_id").map_err(|e| e.to_string())?;
+    if project != s(certificate, "project_id")
+        || contract.as_deref() != Some(s(certificate, "contract_id").as_str())
+    {
+        return Err(
+            "Certificate and invoice register must share the same project and contract.".into(),
+        );
+    };
+    let tracking: Value = serde_json::from_str(
+        &row.try_get::<String, _>("payload")
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let number = s(&tracking, "invoice_number");
+    if number.is_empty() {
+        return Err("Selected invoice register has no invoice number.".into());
+    };
+    let (status, payment_status) = if reversed {
+        ("Generated", "Unpaid")
+    } else if payment_date.is_some() {
+        ("Approved", "Paid")
+    } else {
+        ("Approved", "Unpaid")
+    };
+    let tracking_update=format!("UPDATE {tracking_table} SET payload=json_set(payload,'$.status',?,'$.payment_status',?,'$.payment_date',?) WHERE id=?");
+    sqlx::query(&tracking_update)
+        .bind(status)
+        .bind(payment_status)
+        .bind(payment_date)
+        .bind(&tracking_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    let invoice_update=format!("UPDATE {invoice_table} SET payload=json_set(payload,'$.status',?,'$.payment_status',?,'$.payment_date',?) WHERE json_extract(payload,'$.invoice_number')=?");
+    sqlx::query(&invoice_update)
+        .bind(status)
+        .bind(payment_status)
+        .bind(payment_date)
+        .bind(&number)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
-async fn recompute_sov(tx:&mut Transaction<'_,Sqlite>,sov_id:&str)->std::result::Result<(),String>{
- let (scope,mut sov)=scope_doc(tx,"contract_sov_lines",sov_id).await?;
- let direct:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM cost_changes WHERE contract_sov_line_id=? AND json_extract(payload,'$.status')='Approved'").bind(sov_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- // A budget transfer is stored once against its receiving SOV.  Its source
- // is deducted here, so the same approval can never create or destroy budget.
- let transfers_out:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM cost_changes WHERE json_extract(payload,'$.transfer_from_sov_line_id')=? AND json_extract(payload,'$.change_type')='Budget Transfer' AND json_extract(payload,'$.status')='Approved'").bind(sov_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let changes=direct-transfers_out;
- let approved_variations:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.value_impact') AS REAL)),0) AS REAL) FROM variation_lines l JOIN variations v ON json_extract(l.payload,'$.variation_id')=v.id WHERE l.contract_id=? AND l.boq_item_id=? AND json_extract(v.payload,'$.status')='Approved'").bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let revised=money(n(&sov,"original_budget")+changes+approved_variations); let actual=n(&sov,"actual_cost");
- // The persisted value is a governed baseline only.  The UI/reporting control
- // engine combines it with live PO/GRN facts; an explicit override is never
- // allowed to lower the revised SOV budget during a cost-change approval.
- let forecast=revised.max(n(&sov,"forecast_override"));
- let o=sov.as_object_mut().ok_or("Invalid SOV payload.")?;
- o.insert("approved_cost_change_value".into(),json!(money(changes)));o.insert("approved_variation_value".into(),json!(money(approved_variations)));o.insert("revised_budget".into(),json!(revised));o.insert("forecast_at_completion".into(),json!(forecast));o.insert("cost_to_complete".into(),json!(money((forecast-actual).max(0.0))));
- put(tx,"contract_sov_lines",sov_id,&sov).await
+async fn recompute_sov(
+    tx: &mut Transaction<'_, Sqlite>,
+    sov_id: &str,
+) -> std::result::Result<(), String> {
+    let (scope, mut sov) = scope_doc(tx, "contract_sov_lines", sov_id).await?;
+    let direct:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM cost_changes WHERE contract_sov_line_id=? AND json_extract(payload,'$.status')='Approved'").bind(sov_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    // A budget transfer is stored once against its receiving SOV.  Its source
+    // is deducted here, so the same approval can never create or destroy budget.
+    let transfers_out:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM cost_changes WHERE json_extract(payload,'$.transfer_from_sov_line_id')=? AND json_extract(payload,'$.change_type')='Budget Transfer' AND json_extract(payload,'$.status')='Approved'").bind(sov_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let changes = direct - transfers_out;
+    let approved_variations:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.value_impact') AS REAL)),0) AS REAL) FROM variation_lines l JOIN variations v ON json_extract(l.payload,'$.variation_id')=v.id WHERE l.contract_id=? AND l.boq_item_id=? AND json_extract(v.payload,'$.status')='Approved'").bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let revised = money(n(&sov, "original_budget") + changes + approved_variations);
+    let actual = n(&sov, "actual_cost");
+    // The persisted value is a governed baseline only.  The UI/reporting control
+    // engine combines it with live PO/GRN facts; an explicit override is never
+    // allowed to lower the revised SOV budget during a cost-change approval.
+    let forecast = revised.max(n(&sov, "forecast_override"));
+    let o = sov.as_object_mut().ok_or("Invalid SOV payload.")?;
+    o.insert("approved_cost_change_value".into(), json!(money(changes)));
+    o.insert(
+        "approved_variation_value".into(),
+        json!(money(approved_variations)),
+    );
+    o.insert("revised_budget".into(), json!(revised));
+    o.insert("forecast_at_completion".into(), json!(forecast));
+    o.insert(
+        "cost_to_complete".into(),
+        json!(money((forecast - actual).max(0.0))),
+    );
+    put(tx, "contract_sov_lines", sov_id, &sov).await
 }
 /// Availability is the financial floor that must remain on an SOV source
 /// after a transfer: posted actual cost plus the unreceived portion of every
 /// governed purchase order.  Receipt actuals consume their own PO commitment,
 /// so the same amount cannot reduce available budget twice.
-async fn sov_consumed(tx:&mut Transaction<'_,Sqlite>,sov_id:&str)->std::result::Result<f64,String>{
- let(scope,_)=scope_doc(tx,"contract_sov_lines",sov_id).await?;
- let actual:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(COALESCE(json_extract(payload,'$.amount'),0) AS REAL)),0) AS REAL) FROM cost_entries WHERE project_id=? AND contract_id=? AND COALESCE(boq_item_id,'')=COALESCE(?, '')").bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let open:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(max(0, CAST(COALESCE(json_extract(p.payload,'$.total_cost'), CAST(COALESCE(json_extract(p.payload,'$.quantity'),0) AS REAL)*CAST(COALESCE(json_extract(p.payload,'$.unit_cost'),0) AS REAL)) AS REAL)-COALESCE((SELECT sum(CAST(COALESCE(json_extract(r.payload,'$.accepted_quantity'),0) AS REAL)*CAST(COALESCE(json_extract(r.payload,'$.unit_cost'),0) AS REAL)) FROM procurement_receipts r WHERE json_extract(r.payload,'$.procurement_id')=p.id AND json_extract(r.payload,'$.status')='Accepted'),0))),0) AS REAL) FROM procurement p WHERE p.project_id=? AND p.contract_id=? AND COALESCE(p.boq_item_id,'')=COALESCE(?, '') AND json_extract(p.payload,'$.status') IN ('Ordered','Partially Delivered','Delivered','Closed')").bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- Ok(money(actual+open))
+async fn sov_consumed(
+    tx: &mut Transaction<'_, Sqlite>,
+    sov_id: &str,
+) -> std::result::Result<f64, String> {
+    let (scope, _) = scope_doc(tx, "contract_sov_lines", sov_id).await?;
+    let actual:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(COALESCE(json_extract(payload,'$.amount'),0) AS REAL)),0) AS REAL) FROM cost_entries WHERE project_id=? AND contract_id=? AND COALESCE(boq_item_id,'')=COALESCE(?, '')").bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let open:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(max(0, CAST(COALESCE(json_extract(p.payload,'$.total_cost'), CAST(COALESCE(json_extract(p.payload,'$.quantity'),0) AS REAL)*CAST(COALESCE(json_extract(p.payload,'$.unit_cost'),0) AS REAL)) AS REAL)-COALESCE((SELECT sum(CAST(COALESCE(json_extract(r.payload,'$.accepted_quantity'),0) AS REAL)*CAST(COALESCE(json_extract(r.payload,'$.unit_cost'),0) AS REAL)) FROM procurement_receipts r WHERE json_extract(r.payload,'$.procurement_id')=p.id AND json_extract(r.payload,'$.status')='Accepted'),0))),0) AS REAL) FROM procurement p WHERE p.project_id=? AND p.contract_id=? AND COALESCE(p.boq_item_id,'')=COALESCE(?, '') AND json_extract(p.payload,'$.status') IN ('Ordered','Partially Delivered','Delivered','Closed')").bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_item_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    Ok(money(actual + open))
 }
-async fn recompute_contract_time_impact(tx:&mut Transaction<'_,Sqlite>,contract_id:&str)->std::result::Result<(),String>{
- let total:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.time_impact_days') AS REAL)),0) AS REAL) FROM variations WHERE contract_id=? AND json_extract(payload,'$.status')='Approved'").bind(contract_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let payload:Option<String>=sqlx::query_scalar("SELECT payload FROM contracts WHERE id=?").bind(contract_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;let mut contract:Value=serde_json::from_str(&payload.ok_or("Variation contract was not found.")?).map_err(|e|e.to_string())?;let end=s(&contract,"end_date");
- let revised:Option<String>=if end.is_empty(){None}else{sqlx::query_scalar("SELECT date(?, printf('%+d days', ?))").bind(&end).bind(total.round() as i64).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?};
- let o=contract.as_object_mut().ok_or("Invalid contract payload.")?;o.insert("approved_time_impact_days".into(),json!(total));o.insert("revised_end_date".into(),revised.map(Value::String).unwrap_or(Value::Null));sqlx::query("UPDATE contracts SET payload=? WHERE id=?").bind(contract.to_string()).bind(contract_id).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())
+async fn recompute_contract_time_impact(
+    tx: &mut Transaction<'_, Sqlite>,
+    contract_id: &str,
+) -> std::result::Result<(), String> {
+    let total:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.time_impact_days') AS REAL)),0) AS REAL) FROM variations WHERE contract_id=? AND json_extract(payload,'$.status')='Approved'").bind(contract_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let payload: Option<String> = sqlx::query_scalar("SELECT payload FROM contracts WHERE id=?")
+        .bind(contract_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut contract: Value =
+        serde_json::from_str(&payload.ok_or("Variation contract was not found.")?)
+            .map_err(|e| e.to_string())?;
+    let end = s(&contract, "end_date");
+    let revised: Option<String> = if end.is_empty() {
+        None
+    } else {
+        sqlx::query_scalar("SELECT date(?, printf('%+d days', ?))")
+            .bind(&end)
+            .bind(total.round() as i64)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    let o = contract
+        .as_object_mut()
+        .ok_or("Invalid contract payload.")?;
+    o.insert("approved_time_impact_days".into(), json!(total));
+    o.insert(
+        "revised_end_date".into(),
+        revised.map(Value::String).unwrap_or(Value::Null),
+    );
+    sqlx::query("UPDATE contracts SET payload=? WHERE id=?")
+        .bind(contract.to_string())
+        .bind(contract_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 // BOQ scope created by an approved variation is a financial posting, not a UI
 // convenience.  Keep the generated IDs deterministic so a retry can never
 // duplicate scope, and make every write part of the approving transaction.
-async fn materialize_variation_boq(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,variation_id:&str,variation:&Value,effective_date:&str)->std::result::Result<Vec<String>,String>{
- let rows=sqlx::query("SELECT id,boq_item_id,payload FROM variation_lines WHERE json_extract(payload,'$.variation_id')=?").bind(variation_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
- let mut affected=Vec::new(); let reference=s(variation,"variation_number"); let reference=if reference.is_empty(){variation_id.to_string()}else{reference};
- for row in rows { let line_id:String=row.try_get("id").map_err(|e|e.to_string())?; let mut line:Value=serde_json::from_str(&row.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-  let change=s(&line,"change_type"); let existing:Option<String>=row.try_get("boq_item_id").map_err(|e|e.to_string())?;
-  if !matches!(change.as_str(),"New Item"|"Quantity Change"|"Rate Change"|"Quantity & Rate Change") { if let Some(id)=existing{affected.push(id)}; continue }
-  if s(&line,"applied_at").is_empty()==false { if let Some(id)=existing{affected.push(id)}; continue }
-  if change=="New Item" {
-   let header=s(&line,"boq_header_id"); let code=s(&line,"item_code"); if header.is_empty()||code.is_empty(){return Err("New variation item requires BOQ header and item code.".into())}
-   let item_id=format!("boq:variation:{variation_id}:{line_id}");
-   let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM boq_items WHERE boq_header_id=? AND json_extract(payload,'$.item_code')=? LIMIT 1").bind(&header).bind(&code).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;
-   if let Some(id)=duplicate {if id!=item_id{return Err(format!("BOQ item code {code} already exists in the target BOQ."))}}
-   let qty=n(&line,"revised_quantity");let rate=n(&line,"revised_rate"); let payload=json!({"id":item_id,"project_id":scope.project_id,"item_code":code,"item_name":s(&line,"description"),"description":s(&line,"description"),"category":"Variation","unit":s(&line,"unit"),"quantity":qty,"unit_rate":rate,"amount":money(qty*rate),"boq_header_id":header,"main_boq_item_id":line.get("main_boq_item_id").cloned().unwrap_or(Value::Null),"item_code_locked":false,"notes":format!("Created by approved variation {reference} effective {effective_date}.")});
-   sqlx::query("INSERT OR IGNORE INTO boq_items(id,created_at,project_id,boq_header_id,payload) VALUES (?,?,?,?,?)").bind(&item_id).bind(stamp()).bind(&scope.project_id).bind(&header).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
-   let sov_id=format!("sov:variation:{variation_id}:{line_id}"); let sov=json!({"id":sov_id,"project_id":scope.project_id,"contract_id":scope.contract_id,"boq_header_id":header,"boq_item_id":item_id,"sov_line_code":format!("SOV-VO-{reference}-{code}"),"description":s(&line,"description"),"original_budget":0.0,"status":"Active","notes":format!("Generated from approved variation {reference}.")});
-   sqlx::query("INSERT OR IGNORE INTO contract_sov_lines(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&sov_id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&header).bind(&item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(sov.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
-   line.as_object_mut().ok_or("Invalid variation-line payload.")?.insert("boq_item_id".into(),json!(item_id)); affected.push(item_id);
-  } else {
-   let source=existing.ok_or("Existing variation item requires a BOQ item.")?; let source_row=sqlx::query("SELECT project_id,boq_header_id,payload FROM boq_items WHERE id=?").bind(&source).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Variation line BOQ item was not found.")?;
-   let project:String=source_row.try_get("project_id").map_err(|e|e.to_string())?;let header:String=source_row.try_get("boq_header_id").map_err(|e|e.to_string())?;let item:Value=serde_json::from_str(&source_row.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let source_code=s(&item,"item_code");
-   let mut additions:Vec<(&str,f64,f64,&str)>=Vec::new(); if change=="Quantity Change"{additions.push(("QTY",n(&line,"quantity_change"),n(&item,"unit_rate"),"Quantity adjustment"))} if change=="Rate Change"{additions.push(("RATE",n(&item,"quantity"),n(&line,"revised_rate")-n(&item,"unit_rate"),"Rate adjustment"))} if change=="Quantity & Rate Change"{if s(&line,"pricing_scope")=="Changed Quantity Only"{additions.push(("QTY-RATE",n(&line,"quantity_change"),n(&line,"revised_rate"),"Additional quantity at revised rate"))}else{additions.push(("RATE",n(&item,"quantity"),n(&line,"revised_rate")-n(&item,"unit_rate"),"Rate adjustment on original quantity"));additions.push(("QTY-RATE",n(&line,"quantity_change"),n(&line,"revised_rate"),"Additional quantity at revised rate"))}}
-   for (suffix,qty,rate,label) in additions.into_iter().filter(|(_,q,r,_)|q.abs()>0.000001&&r.abs()>0.000001){let item_id=format!("boq:variation:{variation_id}:{line_id}:{suffix}");let code=format!("{source_code}-VO-{reference}-{suffix}");let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM boq_items WHERE boq_header_id=? AND json_extract(payload,'$.item_code')=? LIMIT 1").bind(&header).bind(&code).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;if let Some(id)=duplicate{if id!=item_id{return Err(format!("The variation BOQ item {code} already exists."))}}let payload=json!({"id":item_id,"project_id":project,"item_code":code,"source_item_code":source_code,"parent_boq_item_id":source,"variation_id":variation_id,"variation_number":reference,"item_name":format!("{} — {label}",s(&item,"item_name")),"description":format!("Source item {source_code}; {label}; approved variation {reference}. {}",s(&line,"description")).trim(),"category":"Variation","unit":s(&item,"unit"),"quantity":qty,"unit_rate":rate,"amount":money(qty*rate),"boq_header_id":header,"main_boq_item_id":item.get("main_boq_item_id").cloned().unwrap_or(Value::Null),"item_code_locked":false,"notes":format!("Variation supplement effective {effective_date}.")});sqlx::query("INSERT OR IGNORE INTO boq_items(id,created_at,project_id,boq_header_id,payload) VALUES (?,?,?,?,?)").bind(&item_id).bind(stamp()).bind(&project).bind(&header).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;} affected.push(source);
-  }
-  let obj=line.as_object_mut().ok_or("Invalid variation-line payload.")?;obj.insert("effective_date".into(),json!(effective_date));obj.insert("applied_at".into(),json!(stamp())); let boq=line.get("boq_item_id").and_then(Value::as_str).map(str::to_string);sqlx::query("UPDATE variation_lines SET boq_item_id=?,payload=? WHERE id=?").bind(boq).bind(line.to_string()).bind(&line_id).execute(&mut **tx).await.map_err(|e|e.to_string())?;
- }
- Ok(affected)
+async fn materialize_variation_boq(
+    tx: &mut Transaction<'_, Sqlite>,
+    scope: &Scope,
+    variation_id: &str,
+    variation: &Value,
+    effective_date: &str,
+) -> std::result::Result<Vec<String>, String> {
+    let rows=sqlx::query("SELECT id,boq_item_id,payload FROM variation_lines WHERE json_extract(payload,'$.variation_id')=?").bind(variation_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
+    let mut affected = Vec::new();
+    let reference = s(variation, "variation_number");
+    let reference = if reference.is_empty() {
+        variation_id.to_string()
+    } else {
+        reference
+    };
+    for row in rows {
+        let line_id: String = row.try_get("id").map_err(|e| e.to_string())?;
+        let mut line: Value = serde_json::from_str(
+            &row.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        let change = s(&line, "change_type");
+        let existing: Option<String> = row.try_get("boq_item_id").map_err(|e| e.to_string())?;
+        if !matches!(
+            change.as_str(),
+            "New Item" | "Quantity Change" | "Rate Change" | "Quantity & Rate Change"
+        ) {
+            if let Some(id) = existing {
+                affected.push(id)
+            };
+            continue;
+        }
+        if s(&line, "applied_at").is_empty() == false {
+            if let Some(id) = existing {
+                affected.push(id)
+            };
+            continue;
+        }
+        if change == "New Item" {
+            let header = s(&line, "boq_header_id");
+            let code = s(&line, "item_code");
+            if header.is_empty() || code.is_empty() {
+                return Err("New variation item requires BOQ header and item code.".into());
+            }
+            let item_id = format!("boq:variation:{variation_id}:{line_id}");
+            let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM boq_items WHERE boq_header_id=? AND json_extract(payload,'$.item_code')=? LIMIT 1").bind(&header).bind(&code).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;
+            if let Some(id) = duplicate {
+                if id != item_id {
+                    return Err(format!(
+                        "BOQ item code {code} already exists in the target BOQ."
+                    ));
+                }
+            }
+            let qty = n(&line, "revised_quantity");
+            let rate = n(&line, "revised_rate");
+            let payload = json!({"id":item_id,"project_id":scope.project_id,"item_code":code,"item_name":s(&line,"description"),"description":s(&line,"description"),"category":"Variation","unit":s(&line,"unit"),"quantity":qty,"unit_rate":rate,"amount":money(qty*rate),"boq_header_id":header,"main_boq_item_id":line.get("main_boq_item_id").cloned().unwrap_or(Value::Null),"item_code_locked":false,"notes":format!("Created by approved variation {reference} effective {effective_date}.")});
+            sqlx::query("INSERT OR IGNORE INTO boq_items(id,created_at,project_id,boq_header_id,payload) VALUES (?,?,?,?,?)").bind(&item_id).bind(stamp()).bind(&scope.project_id).bind(&header).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+            let sov_id = format!("sov:variation:{variation_id}:{line_id}");
+            let sov = json!({"id":sov_id,"project_id":scope.project_id,"contract_id":scope.contract_id,"boq_header_id":header,"boq_item_id":item_id,"sov_line_code":format!("SOV-VO-{reference}-{code}"),"description":s(&line,"description"),"original_budget":0.0,"status":"Active","notes":format!("Generated from approved variation {reference}.")});
+            sqlx::query("INSERT OR IGNORE INTO contract_sov_lines(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&sov_id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&header).bind(&item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(sov.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+            line.as_object_mut()
+                .ok_or("Invalid variation-line payload.")?
+                .insert("boq_item_id".into(), json!(item_id));
+            affected.push(item_id);
+        } else {
+            let source = existing.ok_or("Existing variation item requires a BOQ item.")?;
+            let source_row =
+                sqlx::query("SELECT project_id,boq_header_id,payload FROM boq_items WHERE id=?")
+                    .bind(&source)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or("Variation line BOQ item was not found.")?;
+            let project: String = source_row
+                .try_get("project_id")
+                .map_err(|e| e.to_string())?;
+            let header: String = source_row
+                .try_get("boq_header_id")
+                .map_err(|e| e.to_string())?;
+            let item: Value = serde_json::from_str(
+                &source_row
+                    .try_get::<String, _>("payload")
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            let source_code = s(&item, "item_code");
+            let mut additions: Vec<(&str, f64, f64, &str)> = Vec::new();
+            if change == "Quantity Change" {
+                additions.push((
+                    "QTY",
+                    n(&line, "quantity_change"),
+                    n(&item, "unit_rate"),
+                    "Quantity adjustment",
+                ))
+            }
+            if change == "Rate Change" {
+                additions.push((
+                    "RATE",
+                    n(&item, "quantity"),
+                    n(&line, "revised_rate") - n(&item, "unit_rate"),
+                    "Rate adjustment",
+                ))
+            }
+            if change == "Quantity & Rate Change" {
+                if s(&line, "pricing_scope") == "Changed Quantity Only" {
+                    additions.push((
+                        "QTY-RATE",
+                        n(&line, "quantity_change"),
+                        n(&line, "revised_rate"),
+                        "Additional quantity at revised rate",
+                    ))
+                } else {
+                    additions.push((
+                        "RATE",
+                        n(&item, "quantity"),
+                        n(&line, "revised_rate") - n(&item, "unit_rate"),
+                        "Rate adjustment on original quantity",
+                    ));
+                    additions.push((
+                        "QTY-RATE",
+                        n(&line, "quantity_change"),
+                        n(&line, "revised_rate"),
+                        "Additional quantity at revised rate",
+                    ))
+                }
+            }
+            for (suffix, qty, rate, label) in additions
+                .into_iter()
+                .filter(|(_, q, r, _)| q.abs() > 0.000001 && r.abs() > 0.000001)
+            {
+                let item_id = format!("boq:variation:{variation_id}:{line_id}:{suffix}");
+                let code = format!("{source_code}-VO-{reference}-{suffix}");
+                let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM boq_items WHERE boq_header_id=? AND json_extract(payload,'$.item_code')=? LIMIT 1").bind(&header).bind(&code).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;
+                if let Some(id) = duplicate {
+                    if id != item_id {
+                        return Err(format!("The variation BOQ item {code} already exists."));
+                    }
+                }
+                let payload = json!({"id":item_id,"project_id":project,"item_code":code,"source_item_code":source_code,"parent_boq_item_id":source,"variation_id":variation_id,"variation_number":reference,"item_name":format!("{} — {label}",s(&item,"item_name")),"description":format!("Source item {source_code}; {label}; approved variation {reference}. {}",s(&line,"description")).trim(),"category":"Variation","unit":s(&item,"unit"),"quantity":qty,"unit_rate":rate,"amount":money(qty*rate),"boq_header_id":header,"main_boq_item_id":item.get("main_boq_item_id").cloned().unwrap_or(Value::Null),"item_code_locked":false,"notes":format!("Variation supplement effective {effective_date}.")});
+                sqlx::query("INSERT OR IGNORE INTO boq_items(id,created_at,project_id,boq_header_id,payload) VALUES (?,?,?,?,?)").bind(&item_id).bind(stamp()).bind(&project).bind(&header).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+            }
+            affected.push(source);
+        }
+        let obj = line
+            .as_object_mut()
+            .ok_or("Invalid variation-line payload.")?;
+        obj.insert("effective_date".into(), json!(effective_date));
+        obj.insert("applied_at".into(), json!(stamp()));
+        let boq = line
+            .get("boq_item_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        sqlx::query("UPDATE variation_lines SET boq_item_id=?,payload=? WHERE id=?")
+            .bind(boq)
+            .bind(line.to_string())
+            .bind(&line_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(affected)
 }
-async fn certificate_balances(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,certificate_id:&str,certificate:&Value)->std::result::Result<(f64,f64),String>{
- let contract_id=scope.contract_id.as_deref().ok_or("Payment certificate requires a contract.")?;
- let contract_payload:Option<String>=sqlx::query_scalar("SELECT payload FROM contracts WHERE id=?").bind(contract_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?;
- let contract:Value=serde_json::from_str(&contract_payload.ok_or("Certificate contract was not found.")?).map_err(|e|e.to_string())?;
- let certificate_type=s(certificate,"certificate_type");
- let latest_date:Option<String>=sqlx::query_scalar("SELECT max(json_extract(payload,'$.certificate_date')) FROM payment_certificates WHERE contract_id=? AND id<>? AND json_extract(payload,'$.certificate_type')=? AND json_extract(payload,'$.status') IN ('Approved','Paid')").bind(contract_id).bind(certificate_id).bind(&certificate_type).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let certificate_date=s(certificate,"certificate_date");if let Some(latest)=latest_date{if !certificate_date.is_empty()&&certificate_date<latest{return Err("Certificate date cannot precede an already approved certificate in the same contract and type.".into())}}
- let prior:(f64,f64)=sqlx::query_as("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.advance_recovery') AS REAL)),0) AS REAL), CAST(COALESCE(sum(CAST(json_extract(payload,'$.retention_amount') AS REAL)),0) AS REAL) FROM payment_certificates WHERE contract_id=? AND id<>? AND json_extract(payload,'$.certificate_type')=? AND json_extract(payload,'$.status') IN ('Approved','Paid')").bind(contract_id).bind(certificate_id).bind(&certificate_type).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
- let advance_limit=n(&contract,"advance_amount");let recovered=money(prior.0+n(certificate,"advance_recovery"));if recovered>advance_limit+0.000001{return Err("Advance recovery exceeds the unrecovered contractual advance.".into())}
- let retention=money(n(certificate,"gross_certified_value")*n(certificate,"retention_rate")/100.0);let cumulative_retention=money(prior.1+retention);let retention_cap=n(&contract,"retention_cap_amount");if retention_cap>0.0&&cumulative_retention>retention_cap+0.000001{return Err("Cumulative retention exceeds the contractual retention cap.".into())}
- Ok((cumulative_retention,money((advance_limit-recovered).max(0.0))))
+async fn certificate_balances(
+    tx: &mut Transaction<'_, Sqlite>,
+    scope: &Scope,
+    certificate_id: &str,
+    certificate: &Value,
+) -> std::result::Result<(f64, f64), String> {
+    let contract_id = scope
+        .contract_id
+        .as_deref()
+        .ok_or("Payment certificate requires a contract.")?;
+    let contract_payload: Option<String> =
+        sqlx::query_scalar("SELECT payload FROM contracts WHERE id=?")
+            .bind(contract_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let contract: Value =
+        serde_json::from_str(&contract_payload.ok_or("Certificate contract was not found.")?)
+            .map_err(|e| e.to_string())?;
+    let certificate_type = s(certificate, "certificate_type");
+    let latest_date:Option<String>=sqlx::query_scalar("SELECT max(json_extract(payload,'$.certificate_date')) FROM payment_certificates WHERE contract_id=? AND id<>? AND json_extract(payload,'$.certificate_type')=? AND json_extract(payload,'$.status') IN ('Approved','Paid')").bind(contract_id).bind(certificate_id).bind(&certificate_type).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let certificate_date = s(certificate, "certificate_date");
+    if let Some(latest) = latest_date {
+        if !certificate_date.is_empty() && certificate_date < latest {
+            return Err("Certificate date cannot precede an already approved certificate in the same contract and type.".into());
+        }
+    }
+    let prior:(f64,f64)=sqlx::query_as("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.advance_recovery') AS REAL)),0) AS REAL), CAST(COALESCE(sum(CAST(json_extract(payload,'$.retention_amount') AS REAL)),0) AS REAL) FROM payment_certificates WHERE contract_id=? AND id<>? AND json_extract(payload,'$.certificate_type')=? AND json_extract(payload,'$.status') IN ('Approved','Paid')").bind(contract_id).bind(certificate_id).bind(&certificate_type).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    let advance_limit = n(&contract, "advance_amount");
+    let recovered = money(prior.0 + n(certificate, "advance_recovery"));
+    if recovered > advance_limit + 0.000001 {
+        return Err("Advance recovery exceeds the unrecovered contractual advance.".into());
+    }
+    let retention =
+        money(n(certificate, "gross_certified_value") * n(certificate, "retention_rate") / 100.0);
+    let cumulative_retention = money(prior.1 + retention);
+    let retention_cap = n(&contract, "retention_cap_amount");
+    if retention_cap > 0.0 && cumulative_retention > retention_cap + 0.000001 {
+        return Err("Cumulative retention exceeds the contractual retention cap.".into());
+    }
+    Ok((
+        cumulative_retention,
+        money((advance_limit - recovered).max(0.0)),
+    ))
 }
-pub async fn approve_cost_change(path:&Path,r:ApprovalRequest)->std::result::Result<Result,String>{if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.approved_at.trim().is_empty(){return Err("Cost-change approval requires operation ID, actor and date.".into())}let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;let outcome=async{let(change_scope,mut v)=scope_doc(&mut tx,"cost_changes",&r.source_id).await?;if s(&v,"status")!="Submitted"{return Err("Only a submitted cost change can be approved.".into())}let sov=s(&v,"contract_sov_line_id");if sov.is_empty(){return Err("Cost-change approval requires exactly one Contract SOV line.".into())}let row:Option<(String,String)>=sqlx::query_as("SELECT project_id,contract_id FROM contract_sov_lines WHERE id=?").bind(&sov).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;let (project,contract)=row.ok_or("Selected Contract SOV line was not found.")?;if project!=change_scope.project_id||change_scope.contract_id.as_deref()!=Some(contract.as_str()){return Err("Cost change and selected SOV line must share the same project and contract.".into())}let transfer_from=s(&v,"transfer_from_sov_line_id");if s(&v,"change_type")=="Budget Transfer"{if transfer_from.is_empty()||transfer_from==sov||n(&v,"amount")<=0.0{return Err("A budget transfer needs different source and target SOV lines and a positive amount.".into())}let source:Option<(String,String)>=sqlx::query_as("SELECT project_id,contract_id FROM contract_sov_lines WHERE id=?").bind(&transfer_from).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;let(source_project,source_contract)=source.ok_or("Budget-transfer source SOV line was not found.")?;if source_project!=project||source_contract!=contract{return Err("Budget-transfer source and target must belong to the same project and contract.".into())}recompute_sov(&mut tx,&transfer_from).await?;let source_doc=scope_doc(&mut tx,"contract_sov_lines",&transfer_from).await?.1;let consumed=sov_consumed(&mut tx,&transfer_from).await?;if n(&source_doc,"revised_budget")-consumed+0.000001<n(&v,"amount"){return Err("Budget transfer exceeds the source SOV available budget after actual cost and open commitments.".into())}}let o=v.as_object_mut().ok_or("Invalid cost-change payload.")?;o.insert("status".into(),json!("Approved"));o.insert("approved_by".into(),json!(r.actor));o.insert("approved_date".into(),json!(r.approved_at));put(&mut tx,"cost_changes",&r.source_id,&v).await?;recompute_sov(&mut tx,&sov).await?;if !transfer_from.is_empty(){recompute_sov(&mut tx,&transfer_from).await?};post(&mut tx,&r.operation_id,"cost_changes",&r.source_id,"CostChangeApproval",&r.actor,&r.approved_at,"Approved cost change",&v).await}.await;match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
+pub async fn approve_cost_change(
+    path: &Path,
+    r: ApprovalRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty()
+        || r.actor.trim().is_empty()
+        || r.approved_at.trim().is_empty()
+    {
+        return Err("Cost-change approval requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome=async{let(change_scope,mut v)=scope_doc(&mut tx,"cost_changes",&r.source_id).await?;if s(&v,"status")!="Submitted"{return Err("Only a submitted cost change can be approved.".into())}let sov=s(&v,"contract_sov_line_id");if sov.is_empty(){return Err("Cost-change approval requires exactly one Contract SOV line.".into())}let row:Option<(String,String)>=sqlx::query_as("SELECT project_id,contract_id FROM contract_sov_lines WHERE id=?").bind(&sov).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;let (project,contract)=row.ok_or("Selected Contract SOV line was not found.")?;if project!=change_scope.project_id||change_scope.contract_id.as_deref()!=Some(contract.as_str()){return Err("Cost change and selected SOV line must share the same project and contract.".into())}let transfer_from=s(&v,"transfer_from_sov_line_id");if s(&v,"change_type")=="Budget Transfer"{if transfer_from.is_empty()||transfer_from==sov||n(&v,"amount")<=0.0{return Err("A budget transfer needs different source and target SOV lines and a positive amount.".into())}let source:Option<(String,String)>=sqlx::query_as("SELECT project_id,contract_id FROM contract_sov_lines WHERE id=?").bind(&transfer_from).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;let(source_project,source_contract)=source.ok_or("Budget-transfer source SOV line was not found.")?;if source_project!=project||source_contract!=contract{return Err("Budget-transfer source and target must belong to the same project and contract.".into())}recompute_sov(&mut tx,&transfer_from).await?;let source_doc=scope_doc(&mut tx,"contract_sov_lines",&transfer_from).await?.1;let consumed=sov_consumed(&mut tx,&transfer_from).await?;if n(&source_doc,"revised_budget")-consumed+0.000001<n(&v,"amount"){return Err("Budget transfer exceeds the source SOV available budget after actual cost and open commitments.".into())}}let o=v.as_object_mut().ok_or("Invalid cost-change payload.")?;o.insert("status".into(),json!("Approved"));o.insert("approved_by".into(),json!(r.actor));o.insert("approved_date".into(),json!(r.approved_at));put(&mut tx,"cost_changes",&r.source_id,&v).await?;recompute_sov(&mut tx,&sov).await?;if !transfer_from.is_empty(){recompute_sov(&mut tx,&transfer_from).await?};post(&mut tx,&r.operation_id,"cost_changes",&r.source_id,"CostChangeApproval",&r.actor,&r.approved_at,"Approved cost change",&v).await}.await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
 #[allow(dead_code)]
-pub async fn approve_variation(path:&Path,r:ApprovalRequest)->std::result::Result<Result,String>{
- if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.approved_at.trim().is_empty(){return Err("Variation approval requires operation ID, actor and date.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;
- let outcome=async{let(scope,mut variation)=scope_doc(&mut tx,"variations",&r.source_id).await?;if s(&variation,"status")!="Submitted"{return Err("Only a submitted variation can be approved.".into())}let contract_id=scope.contract_id.as_deref().ok_or("Variation requires a contract.")?;let parent:Option<String>=sqlx::query_scalar("SELECT parent_main_contract_id FROM contracts WHERE id=?").bind(contract_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Variation contract was not found.")?;let lines=sqlx::query("SELECT boq_item_id,payload FROM variation_lines WHERE json_extract(payload,'$.variation_id')=?").bind(&r.source_id).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;if lines.is_empty(){return Err("A variation requires at least one line before approval.".into())}let mut total=0.0;let mut affected=Vec::new();for line in lines{let payload:Value=serde_json::from_str(&line.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;total+=n(&payload,"value_impact");if let Some(id)=line.try_get::<Option<String>,_>("boq_item_id").map_err(|e|e.to_string())?{affected.push(id)}}total=money(total);let snapshot=variation.clone();let o=variation.as_object_mut().ok_or("Invalid variation payload.")?;o.insert("status".into(),json!("Approved"));o.insert("cost_impact".into(),json!(total));o.insert("approved_by".into(),json!(r.actor));o.insert("approved_date".into(),json!(r.approved_at));put(&mut tx,"variations",&r.source_id,&variation).await?;let cash_id=format!("variation_cash_forecast:{}",r.source_id);sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')='variation_cash_forecast' AND json_extract(payload,'$.source_id')=?").bind(&r.source_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;if total.abs()>0.000001{let subcontract=parent.is_some();let payload=json!({"id":cash_id,"date":r.approved_at,"description":format!("Approved variation forecast: {}",s(&variation,"variation_number")),"category":"Commercial Variation","inflow":if subcontract{0.0}else{money(total.max(0.0))},"outflow":if subcontract{money(total.max(0.0))}else{0.0},"net":if subcontract{money(-total)}else{money(total)},"cumulative_balance":0,"movement_type":"Forecast","status":"Open","source_type":"variation_cash_forecast","source_id":r.source_id});sqlx::query("INSERT INTO cash_flow(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&cash_id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut *tx).await.map_err(|e|e.to_string())?;}for boq in affected{let ids=sqlx::query("SELECT id FROM contract_sov_lines WHERE contract_id=? AND boq_item_id=?").bind(contract_id).bind(&boq).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for row in ids{recompute_sov(&mut tx,&row.try_get::<String,_>("id").map_err(|e|e.to_string())?).await?}}post(&mut tx,&r.operation_id,"variations",&r.source_id,"VariationApproval",&r.actor,&r.approved_at,"Approved variation",&snapshot).await}.await;
- match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+pub async fn approve_variation(
+    path: &Path,
+    r: ApprovalRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty()
+        || r.actor.trim().is_empty()
+        || r.approved_at.trim().is_empty()
+    {
+        return Err("Variation approval requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome=async{let(scope,mut variation)=scope_doc(&mut tx,"variations",&r.source_id).await?;if s(&variation,"status")!="Submitted"{return Err("Only a submitted variation can be approved.".into())}let contract_id=scope.contract_id.as_deref().ok_or("Variation requires a contract.")?;let parent:Option<String>=sqlx::query_scalar("SELECT parent_main_contract_id FROM contracts WHERE id=?").bind(contract_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Variation contract was not found.")?;let lines=sqlx::query("SELECT boq_item_id,payload FROM variation_lines WHERE json_extract(payload,'$.variation_id')=?").bind(&r.source_id).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;if lines.is_empty(){return Err("A variation requires at least one line before approval.".into())}let mut total=0.0;let mut affected=Vec::new();for line in lines{let payload:Value=serde_json::from_str(&line.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;total+=n(&payload,"value_impact");if let Some(id)=line.try_get::<Option<String>,_>("boq_item_id").map_err(|e|e.to_string())?{affected.push(id)}}total=money(total);let snapshot=variation.clone();let o=variation.as_object_mut().ok_or("Invalid variation payload.")?;o.insert("status".into(),json!("Approved"));o.insert("cost_impact".into(),json!(total));o.insert("approved_by".into(),json!(r.actor));o.insert("approved_date".into(),json!(r.approved_at));put(&mut tx,"variations",&r.source_id,&variation).await?;let cash_id=format!("variation_cash_forecast:{}",r.source_id);sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')='variation_cash_forecast' AND json_extract(payload,'$.source_id')=?").bind(&r.source_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;if total.abs()>0.000001{let subcontract=parent.is_some();let payload=json!({"id":cash_id,"date":r.approved_at,"description":format!("Approved variation forecast: {}",s(&variation,"variation_number")),"category":"Commercial Variation","inflow":if subcontract{0.0}else{money(total.max(0.0))},"outflow":if subcontract{money(total.max(0.0))}else{0.0},"net":if subcontract{money(-total)}else{money(total)},"cumulative_balance":0,"movement_type":"Forecast","status":"Open","source_type":"variation_cash_forecast","source_id":r.source_id});sqlx::query("INSERT INTO cash_flow(id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&cash_id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut *tx).await.map_err(|e|e.to_string())?;}for boq in affected{let ids=sqlx::query("SELECT id FROM contract_sov_lines WHERE contract_id=? AND boq_item_id=?").bind(contract_id).bind(&boq).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for row in ids{recompute_sov(&mut tx,&row.try_get::<String,_>("id").map_err(|e|e.to_string())?).await?}}post(&mut tx,&r.operation_id,"variations",&r.source_id,"VariationApproval",&r.actor,&r.approved_at,"Approved variation",&snapshot).await}.await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
 // New governed entry point.  Kept separate from the legacy entry point above
 // until existing desktop databases have received the immutable-line migration.
-pub async fn approve_variation_with_boq(path:&Path,r:ApprovalRequest)->std::result::Result<Result,String>{
- if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.approved_at.trim().is_empty(){return Err("Variation approval requires operation ID, actor and date.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;
- let outcome=async{
+pub async fn approve_variation_with_boq(
+    path: &Path,
+    r: ApprovalRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty()
+        || r.actor.trim().is_empty()
+        || r.approved_at.trim().is_empty()
+    {
+        return Err("Variation approval requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome=async{
   let(scope,mut variation)=scope_doc(&mut tx,"variations",&r.source_id).await?;
   if s(&variation,"status")!="Submitted"{return Err("Only a submitted variation can be approved.".into())}
   let contract_id=scope.contract_id.as_deref().ok_or("Variation requires a contract.")?;
@@ -163,34 +647,274 @@ pub async fn approve_variation_with_boq(path:&Path,r:ApprovalRequest)->std::resu
   for boq in affected{let ids=sqlx::query("SELECT id FROM contract_sov_lines WHERE contract_id=? AND boq_item_id=?").bind(contract_id).bind(&boq).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for row in ids{recompute_sov(&mut tx,&row.try_get::<String,_>("id").map_err(|e|e.to_string())?).await?}}
   post(&mut tx,&r.operation_id,"variations",&r.source_id,"VariationApproval",&r.actor,&r.approved_at,"Approved variation",&snapshot).await
  }.await;
- match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
-pub async fn approve_payment_certificate(path:&Path,r:ApprovalRequest)->std::result::Result<Result,String>{
- if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.approved_at.trim().is_empty(){return Err("Certificate approval requires operation ID, actor and date.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;
- let outcome=async{
-  let(scope,mut v)=scope_doc(&mut tx,"payment_certificates",&r.source_id).await?;
-  if s(&v,"status")!="Submitted"{return Err("Only a submitted payment certificate can be approved.".into())}
-  if !matches!(s(&v,"certificate_type").as_str(),"Client"|"Subcontractor"){return Err("Certificate type must be Client or Subcontractor.".into())}
-  if n(&v,"gross_certified_value")<=0.0{return Err("Payment certificate gross value must be greater than zero.".into())}
-  let gross=n(&v,"gross_certified_value");let retention=money(gross*n(&v,"retention_rate")/100.0);let taxable=money(gross-retention-n(&v,"advance_recovery")-n(&v,"deductions"));
-  if taxable < -0.000001{return Err("Retention, advance recovery and deductions cannot exceed gross certified value.".into())}
-  let(cumulative_retention,remaining_advance)=certificate_balances(&mut tx,&scope,&r.source_id,&v).await?;
-  let tax=money(taxable.max(0.0)*n(&v,"tax_rate")/100.0);let net=money(taxable+tax);let day=if s(&v,"certificate_date").is_empty(){r.approved_at.clone()}else{s(&v,"certificate_date")};let client=s(&v,"certificate_type")=="Client";
-  let o=v.as_object_mut().ok_or("Invalid certificate payload.")?;
-  for(k,value)in[("retention_amount",retention),("cumulative_retention_amount",cumulative_retention),("remaining_advance_balance",remaining_advance),("taxable_amount",taxable),("tax_amount",tax),("net_certified_value",net)]{o.insert(k.into(),json!(value));}
-  o.insert("status".into(),json!("Approved"));o.insert("approved_by".into(),json!(r.actor));o.insert("approved_date".into(),json!(r.approved_at));
-  put(&mut tx,"payment_certificates",&r.source_id,&v).await?;synchronize_invoice_tracking(&mut tx,&v,None,false).await?;cash(&mut tx,&scope,&r.source_id,&day,&s(&v,"certificate_number"),"Forecast","Open",net,client).await?;post(&mut tx,&r.operation_id,"payment_certificates",&r.source_id,"PaymentCertificateApproval",&r.actor,&r.approved_at,"Approved payment certificate",&v).await
- }.await;
- match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+pub async fn approve_payment_certificate(
+    path: &Path,
+    r: ApprovalRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty()
+        || r.actor.trim().is_empty()
+        || r.approved_at.trim().is_empty()
+    {
+        return Err("Certificate approval requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome = async {
+        let (scope, mut v) = scope_doc(&mut tx, "payment_certificates", &r.source_id).await?;
+        if s(&v, "status") != "Submitted" {
+            return Err("Only a submitted payment certificate can be approved.".into());
+        }
+        if !matches!(
+            s(&v, "certificate_type").as_str(),
+            "Client" | "Subcontractor"
+        ) {
+            return Err("Certificate type must be Client or Subcontractor.".into());
+        }
+        if n(&v, "gross_certified_value") <= 0.0 {
+            return Err("Payment certificate gross value must be greater than zero.".into());
+        }
+        let gross = n(&v, "gross_certified_value");
+        let retention = money(gross * n(&v, "retention_rate") / 100.0);
+        let taxable = money(gross - retention - n(&v, "advance_recovery") - n(&v, "deductions"));
+        if taxable < -0.000001 {
+            return Err(
+                "Retention, advance recovery and deductions cannot exceed gross certified value."
+                    .into(),
+            );
+        }
+        let (cumulative_retention, remaining_advance) =
+            certificate_balances(&mut tx, &scope, &r.source_id, &v).await?;
+        let tax = money(taxable.max(0.0) * n(&v, "tax_rate") / 100.0);
+        let net = money(taxable + tax);
+        let day = if s(&v, "certificate_date").is_empty() {
+            r.approved_at.clone()
+        } else {
+            s(&v, "certificate_date")
+        };
+        let client = s(&v, "certificate_type") == "Client";
+        let o = v.as_object_mut().ok_or("Invalid certificate payload.")?;
+        for (k, value) in [
+            ("retention_amount", retention),
+            ("cumulative_retention_amount", cumulative_retention),
+            ("remaining_advance_balance", remaining_advance),
+            ("taxable_amount", taxable),
+            ("tax_amount", tax),
+            ("net_certified_value", net),
+        ] {
+            o.insert(k.into(), json!(value));
+        }
+        o.insert("status".into(), json!("Approved"));
+        o.insert("approved_by".into(), json!(r.actor));
+        o.insert("approved_date".into(), json!(r.approved_at));
+        put(&mut tx, "payment_certificates", &r.source_id, &v).await?;
+        synchronize_invoice_tracking(&mut tx, &v, None, false).await?;
+        cash(
+            &mut tx,
+            &scope,
+            &r.source_id,
+            &day,
+            &s(&v, "certificate_number"),
+            "Forecast",
+            "Open",
+            net,
+            client,
+        )
+        .await?;
+        post(
+            &mut tx,
+            &r.operation_id,
+            "payment_certificates",
+            &r.source_id,
+            "PaymentCertificateApproval",
+            &r.actor,
+            &r.approved_at,
+            "Approved payment certificate",
+            &v,
+        )
+        .await
+    }
+    .await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
-pub async fn settle_payment_certificate(path:&Path,r:CertificateSettlementRequest)->std::result::Result<Result,String>{if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.paid_at.trim().is_empty(){return Err("Certificate settlement requires operation ID, actor and payment date.".into())}let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;let outcome=async{let(scope,mut v)=scope_doc(&mut tx,"payment_certificates",&r.certificate_id).await?;if s(&v,"status")!="Approved"{return Err("Only an approved payment certificate can be settled.".into())}let net=n(&v,"net_certified_value");if net<=0.0{return Err("Approved certificate has no governed net value.".into())}let client=s(&v,"certificate_type")=="Client";let o=v.as_object_mut().ok_or("Invalid certificate payload.")?;o.insert("status".into(),json!("Paid"));o.insert("payment_date".into(),json!(r.paid_at));o.insert("paid_by".into(),json!(r.actor));put(&mut tx,"payment_certificates",&r.certificate_id,&v).await?;synchronize_invoice_tracking(&mut tx,&v,Some(&r.paid_at),false).await?;cash(&mut tx,&scope,&r.certificate_id,&r.paid_at,&s(&v,"certificate_number"),"Actual","Settled",net,client).await?;post(&mut tx,&r.operation_id,"payment_certificates",&r.certificate_id,"PaymentCertificateSettlement",&r.actor,&r.paid_at,"Settled payment certificate",&v).await}.await;match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
-pub async fn reverse_commercial_posting(path:&Path,r:ReversalRequest)->std::result::Result<Result,String>{if !matches!(r.source_table.as_str(),"cost_changes"|"payment_certificates")||r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.reason.trim().is_empty(){return Err("Commercial reversal requires source, operation ID, actor and reason.".into())}let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;let outcome=async{let(scope,mut v)=scope_doc(&mut tx,&r.source_table,&r.source_id).await?;if !matches!(s(&v,"status").as_str(),"Approved"|"Paid"){return Err("Only an approved or paid commercial document can be reversed.".into())}let snapshot=v.clone();let sov=s(&v,"contract_sov_line_id");let o=v.as_object_mut().ok_or("Invalid commercial payload.")?;o.insert("status".into(),json!("Reversed"));o.insert("reversed_by".into(),json!(r.actor));o.insert("reversal_reason".into(),json!(r.reason));put(&mut tx,&r.source_table,&r.source_id,&v).await?;if r.source_table=="payment_certificates"{synchronize_invoice_tracking(&mut tx,&v,None,true).await?;cash(&mut tx,&scope,&r.source_id,"",&s(&v,"certificate_number"),"Reversed","Reversed",0.0,false).await?;}else{recompute_sov(&mut tx,&sov).await?;}post(&mut tx,&r.operation_id,&r.source_table,&r.source_id,"CommercialReversal",&r.actor,&stamp(),&r.reason,&snapshot).await}.await;match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
+pub async fn settle_payment_certificate(
+    path: &Path,
+    r: CertificateSettlementRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty() || r.actor.trim().is_empty() || r.paid_at.trim().is_empty()
+    {
+        return Err("Certificate settlement requires operation ID, actor and payment date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome = async {
+        let (scope, mut v) = scope_doc(&mut tx, "payment_certificates", &r.certificate_id).await?;
+        if s(&v, "status") != "Approved" {
+            return Err("Only an approved payment certificate can be settled.".into());
+        }
+        let net = n(&v, "net_certified_value");
+        if net <= 0.0 {
+            return Err("Approved certificate has no governed net value.".into());
+        }
+        let client = s(&v, "certificate_type") == "Client";
+        let o = v.as_object_mut().ok_or("Invalid certificate payload.")?;
+        o.insert("status".into(), json!("Paid"));
+        o.insert("payment_date".into(), json!(r.paid_at));
+        o.insert("paid_by".into(), json!(r.actor));
+        put(&mut tx, "payment_certificates", &r.certificate_id, &v).await?;
+        synchronize_invoice_tracking(&mut tx, &v, Some(&r.paid_at), false).await?;
+        cash(
+            &mut tx,
+            &scope,
+            &r.certificate_id,
+            &r.paid_at,
+            &s(&v, "certificate_number"),
+            "Actual",
+            "Settled",
+            net,
+            client,
+        )
+        .await?;
+        post(
+            &mut tx,
+            &r.operation_id,
+            "payment_certificates",
+            &r.certificate_id,
+            "PaymentCertificateSettlement",
+            &r.actor,
+            &r.paid_at,
+            "Settled payment certificate",
+            &v,
+        )
+        .await
+    }
+    .await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
+pub async fn reverse_commercial_posting(
+    path: &Path,
+    r: ReversalRequest,
+) -> std::result::Result<Result, String> {
+    if !matches!(
+        r.source_table.as_str(),
+        "cost_changes" | "payment_certificates"
+    ) || r.operation_id.trim().is_empty()
+        || r.actor.trim().is_empty()
+        || r.reason.trim().is_empty()
+    {
+        return Err("Commercial reversal requires source, operation ID, actor and reason.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome = async {
+        let (scope, mut v) = scope_doc(&mut tx, &r.source_table, &r.source_id).await?;
+        if !matches!(s(&v, "status").as_str(), "Approved" | "Paid") {
+            return Err("Only an approved or paid commercial document can be reversed.".into());
+        }
+        let snapshot = v.clone();
+        let sov = s(&v, "contract_sov_line_id");
+        let o = v.as_object_mut().ok_or("Invalid commercial payload.")?;
+        o.insert("status".into(), json!("Reversed"));
+        o.insert("reversed_by".into(), json!(r.actor));
+        o.insert("reversal_reason".into(), json!(r.reason));
+        put(&mut tx, &r.source_table, &r.source_id, &v).await?;
+        if r.source_table == "payment_certificates" {
+            synchronize_invoice_tracking(&mut tx, &v, None, true).await?;
+            cash(
+                &mut tx,
+                &scope,
+                &r.source_id,
+                "",
+                &s(&v, "certificate_number"),
+                "Reversed",
+                "Reversed",
+                0.0,
+                false,
+            )
+            .await?;
+        } else {
+            recompute_sov(&mut tx, &sov).await?;
+        }
+        post(
+            &mut tx,
+            &r.operation_id,
+            &r.source_table,
+            &r.source_id,
+            "CommercialReversal",
+            &r.actor,
+            &stamp(),
+            &r.reason,
+            &snapshot,
+        )
+        .await
+    }
+    .await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
 
-pub async fn reverse_variation(path:&Path,r:ReversalRequest)->std::result::Result<Result,String>{
- if r.operation_id.trim().is_empty()||r.actor.trim().is_empty()||r.reason.trim().is_empty(){return Err("Variation reversal requires operation ID, actor and reason.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard(&mut tx,&r.operation_id,true).await?;
- let outcome=async{
+pub async fn reverse_variation(
+    path: &Path,
+    r: ReversalRequest,
+) -> std::result::Result<Result, String> {
+    if r.operation_id.trim().is_empty() || r.actor.trim().is_empty() || r.reason.trim().is_empty() {
+        return Err("Variation reversal requires operation ID, actor and reason.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard(&mut tx, &r.operation_id, true).await?;
+    let outcome=async{
   let(scope,mut variation)=scope_doc(&mut tx,"variations",&r.source_id).await?;if s(&variation,"status")!="Approved"{return Err("Only an approved variation can be reversed.".into())};let contract_id=scope.contract_id.as_deref().ok_or("Variation requires a contract.")?;let snapshot=variation.clone();
   let rows=sqlx::query("SELECT id,boq_item_id,payload FROM variation_lines WHERE json_extract(payload,'$.variation_id')=?").bind(&r.source_id).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;let mut affected=Vec::new();
   for row in rows {let id:String=row.try_get("id").map_err(|e|e.to_string())?;let boq:Option<String>=row.try_get("boq_item_id").map_err(|e|e.to_string())?;let mut line:Value=serde_json::from_str(&row.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;if s(&line,"change_type")!="New Item"{if let Some(ref item)=boq{affected.push(item.clone())}}let obj=line.as_object_mut().ok_or("Invalid variation-line payload.")?;obj.remove("applied_at");obj.remove("effective_date");let target=line.get("boq_item_id").and_then(Value::as_str).map(str::to_string);sqlx::query("UPDATE variation_lines SET boq_item_id=?,payload=? WHERE id=?").bind(target).bind(line.to_string()).bind(&id).execute(&mut *tx).await.map_err(|e|e.to_string())?;}
@@ -199,13 +923,29 @@ pub async fn reverse_variation(path:&Path,r:ReversalRequest)->std::result::Resul
   recompute_contract_time_impact(&mut tx,contract_id).await?;
   for boq in affected{let ids=sqlx::query("SELECT id FROM contract_sov_lines WHERE contract_id=? AND boq_item_id=?").bind(contract_id).bind(&boq).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for row in ids{recompute_sov(&mut tx,&row.try_get::<String,_>("id").map_err(|e|e.to_string())?).await?}}
   post(&mut tx,&r.operation_id,"variations",&r.source_id,"VariationReversal",&r.actor,&stamp(),&r.reason,&snapshot).await
- }.await;match outcome{Ok(())=>{guard(&mut tx,&r.operation_id,false).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(Result{operation_id:r.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+ }.await;
+    match outcome {
+        Ok(()) => {
+            guard(&mut tx, &r.operation_id, false).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(Result {
+                operation_id: r.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
- use super::*;
- async fn setup(path:&Path){let p=db(path).await.unwrap();for q in [
+    use super::*;
+    async fn setup(path: &Path) {
+        let p = db(path).await.unwrap();
+        for q in [
  "CREATE TABLE contract_sov_lines(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE contracts(id TEXT PRIMARY KEY,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE cost_changes(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,contract_sov_line_id TEXT,payload TEXT)",
@@ -223,33 +963,522 @@ mod tests {
   "CREATE TRIGGER cc_guard BEFORE UPDATE ON cost_changes WHEN json_extract(NEW.payload,'$.status') IN ('Approved','Reversed') AND NOT EXISTS(SELECT 1 FROM commercial_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed commercial required'); END",
   "CREATE TRIGGER cert_guard BEFORE UPDATE ON payment_certificates WHEN json_extract(NEW.payload,'$.status') IN ('Approved','Paid','Reversed') AND NOT EXISTS(SELECT 1 FROM commercial_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed commercial required'); END"
  ]{sqlx::query(q).execute(&p).await.unwrap();}
-  sqlx::query("INSERT INTO contracts VALUES('c',NULL,?)").bind(json!({"advance_amount":100,"retention_cap_amount":150}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO contract_sov_lines VALUES('s','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"original_budget":1000,"status":"Active"}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO cost_changes VALUES('cc','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","amount":200,"status":"Submitted","effective_date":"2026-08-01"}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO client_invoice_tracking VALUES('track','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"invoice_number":"INV-1","status":"Generated","payment_status":"Unpaid"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO client_invoices VALUES('inv','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"invoice_number":"INV-1","status":"Generated","payment_status":"Unpaid"}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO payment_certificates VALUES('pc','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"project_id":"p","contract_id":"c","invoice_tracking_id":"track","certificate_number":"PC-1","certificate_type":"Client","certificate_date":"2026-08-02","gross_certified_value":1000,"retention_rate":10,"advance_recovery":50,"deductions":25,"tax_rate":15,"status":"Submitted"}).to_string()).execute(&p).await.unwrap();p.close().await;}
- #[tokio::test]
- async fn commercial_workflow_posts_sov_net_cash_and_reverses_without_duplicates(){let path=std::env::temp_dir().join(format!("buildtrack-commercial-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;
-  approve_cost_change(&path,ApprovalRequest{operation_id:"a1".into(),source_id:"cc".into(),actor:"tester".into(),approved_at:"2026-08-01".into()}).await.unwrap();
-  approve_payment_certificate(&path,ApprovalRequest{operation_id:"a2".into(),source_id:"pc".into(),actor:"tester".into(),approved_at:"2026-08-02".into()}).await.unwrap();let p=db(&path).await.unwrap();let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.inflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'").fetch_one(&p).await.unwrap();assert_eq!((revised,forecast),(1200.0,948.75));p.close().await;
-  settle_payment_certificate(&path,CertificateSettlementRequest{operation_id:"s1".into(),certificate_id:"pc".into(),actor:"tester".into(),paid_at:"2026-08-03".into()}).await.unwrap();let p=db(&path).await.unwrap();let rows:i64=sqlx::query_scalar("SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'").fetch_one(&p).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM payment_certificates WHERE id='pc'").fetch_one(&p).await.unwrap();let paid:String=sqlx::query_scalar("SELECT json_extract(payload,'$.payment_status') FROM client_invoice_tracking WHERE id='track'").fetch_one(&p).await.unwrap();assert_eq!((rows,status,paid),(1,"Paid".into(),"Paid".into()));p.close().await;
-  reverse_commercial_posting(&path,ReversalRequest{operation_id:"r1".into(),source_table:"payment_certificates".into(),source_id:"pc".into(),actor:"tester".into(),reason:"correction".into()}).await.unwrap();let p=db(&path).await.unwrap();let remaining:i64=sqlx::query_scalar("SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'").fetch_one(&p).await.unwrap();let postings:i64=sqlx::query_scalar("SELECT count(*) FROM commercial_workflow_postings").fetch_one(&p).await.unwrap();let reset:String=sqlx::query_scalar("SELECT json_extract(payload,'$.payment_status') FROM client_invoice_tracking WHERE id='track'").fetch_one(&p).await.unwrap();assert_eq!((remaining,postings,reset),(0,4,"Unpaid".into()));p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn budget_transfer_moves_revised_budget_between_two_sov_lines(){let path=std::env::temp_dir().join(format!("buildtrack-transfer-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("INSERT INTO contract_sov_lines VALUES('s2','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"original_budget":300,"status":"Active"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO cost_changes VALUES('transfer','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","transfer_from_sov_line_id":"s2","change_type":"Budget Transfer","amount":200,"status":"Submitted","effective_date":"2026-08-04"}).to_string()).execute(&p).await.unwrap();p.close().await;approve_cost_change(&path,ApprovalRequest{operation_id:"transfer-approve".into(),source_id:"transfer".into(),actor:"tester".into(),approved_at:"2026-08-04".into()}).await.unwrap();let p=db(&path).await.unwrap();let target:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();let source:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s2'").fetch_one(&p).await.unwrap();assert_eq!((target,source),(1200.0,100.0));p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn budget_transfer_cannot_reduce_source_below_actual_and_open_commitment(){let path=std::env::temp_dir().join(format!("buildtrack-transfer-availability-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("INSERT INTO contract_sov_lines VALUES('s2','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"original_budget":300,"status":"Active"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO cost_entries VALUES('cost','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"amount":100}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO procurement VALUES('po','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"total_cost":150,"status":"Ordered"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO cost_changes VALUES('blocked-transfer','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","transfer_from_sov_line_id":"s2","change_type":"Budget Transfer","amount":75,"status":"Submitted","effective_date":"2026-08-04"}).to_string()).execute(&p).await.unwrap();p.close().await;let result=approve_cost_change(&path,ApprovalRequest{operation_id:"transfer-availability".into(),source_id:"blocked-transfer".into(),actor:"tester".into(),approved_at:"2026-08-04".into()}).await;assert!(result.is_err());let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM cost_changes WHERE id='blocked-transfer'").fetch_one(&p).await.unwrap();assert_eq!(status,"Submitted");p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn approved_variation_is_included_once_in_sov_revised_budget(){let path=std::env::temp_dir().join(format!("buildtrack-sov-variation-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("UPDATE contract_sov_lines SET boq_item_id='b' WHERE id='s'").execute(&p).await.unwrap();sqlx::query("INSERT INTO variations VALUES('vo','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"status":"Approved"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variation_lines VALUES('vol','c','b',?)").bind(json!({"variation_id":"vo","value_impact":125}).to_string()).execute(&p).await.unwrap();p.close().await;let mut tx=db(&path).await.unwrap().begin().await.unwrap();recompute_sov(&mut tx,"s").await.unwrap();tx.commit().await.unwrap();let p=db(&path).await.unwrap();let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();assert_eq!(revised,1125.0);p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn governed_variation_approval_posts_cash_and_sov_in_one_transaction(){let path=std::env::temp_dir().join(format!("buildtrack-variation-approval-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("UPDATE contract_sov_lines SET boq_item_id='b' WHERE id='s'").execute(&p).await.unwrap();sqlx::query("INSERT INTO variations VALUES('vo','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"variation_number":"VO-1","status":"Submitted"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variation_lines VALUES('vol','c','b',?)").bind(json!({"variation_id":"vo","value_impact":125}).to_string()).execute(&p).await.unwrap();p.close().await;approve_variation(&path,ApprovalRequest{operation_id:"vo-approve".into(),source_id:"vo".into(),actor:"tester".into(),approved_at:"2026-08-05".into()}).await.unwrap();let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM variations WHERE id='vo'").fetch_one(&p).await.unwrap();let cash:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.inflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_id')='vo'").fetch_one(&p).await.unwrap();let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();assert_eq!((status,cash,revised),("Approved".into(),125.0,1125.0));p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn governed_variation_approval_materializes_new_boq_and_sov_atomically(){let path=std::env::temp_dir().join(format!("buildtrack-variation-new-item-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("INSERT INTO variations VALUES('vo-new','t','p','c','h',NULL,NULL,NULL,?)").bind(json!({"variation_number":"VO-NEW","status":"Submitted"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variation_lines VALUES('vl-new','c',NULL,?)").bind(json!({"variation_id":"vo-new","change_type":"New Item","boq_header_id":"h","item_code":"NEW-01","description":"New approved scope","unit":"m","revised_quantity":4.0,"revised_rate":25.0,"value_impact":100.0}).to_string()).execute(&p).await.unwrap();p.close().await;approve_variation_with_boq(&path,ApprovalRequest{operation_id:"vo-new-approve".into(),source_id:"vo-new".into(),actor:"tester".into(),approved_at:"2026-08-05".into()}).await.unwrap();let p=db(&path).await.unwrap();let generated:i64=sqlx::query_scalar("SELECT count(*) FROM boq_items WHERE id='boq:variation:vo-new:vl-new'").fetch_one(&p).await.unwrap();let line_boq:String=sqlx::query_scalar("SELECT boq_item_id FROM variation_lines WHERE id='vl-new'").fetch_one(&p).await.unwrap();let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='sov:variation:vo-new:vl-new'").fetch_one(&p).await.unwrap();assert_eq!((generated,line_boq,revised),(1,"boq:variation:vo-new:vl-new".into(),100.0));p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn governed_variation_reversal_archives_generated_scope_and_cash(){let path=std::env::temp_dir().join(format!("buildtrack-variation-reversal-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("INSERT INTO variations VALUES('vo-r','t','p','c','h',NULL,NULL,NULL,?)").bind(json!({"variation_number":"VO-R","status":"Submitted"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variation_lines VALUES('vl-r','c',NULL,?)").bind(json!({"variation_id":"vo-r","change_type":"New Item","boq_header_id":"h","item_code":"NEW-R","description":"Reversible scope","unit":"m","revised_quantity":2.0,"revised_rate":25.0,"value_impact":50.0}).to_string()).execute(&p).await.unwrap();p.close().await;approve_variation_with_boq(&path,ApprovalRequest{operation_id:"vo-r-a".into(),source_id:"vo-r".into(),actor:"tester".into(),approved_at:"2026-08-05".into()}).await.unwrap();reverse_variation(&path,ReversalRequest{operation_id:"vo-r-r".into(),source_table:"variations".into(),source_id:"vo-r".into(),actor:"tester".into(),reason:"correction".into()}).await.unwrap();let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM variations WHERE id='vo-r'").fetch_one(&p).await.unwrap();let boq_status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM boq_items WHERE id='boq:variation:vo-r:vl-r'").fetch_one(&p).await.unwrap();let cash_status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM cash_flow WHERE json_extract(payload,'$.source_id')='vo-r'").fetch_one(&p).await.unwrap();let line:String=sqlx::query_scalar("SELECT boq_item_id FROM variation_lines WHERE id='vl-r'").fetch_one(&p).await.unwrap();assert_eq!((status,boq_status,cash_status,line),("Reversed".into(),"Reversed".into(),"Reversed".into(),"boq:variation:vo-r:vl-r".into()));p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn approved_variation_reprojects_and_reversal_restores_contract_finish(){let path=std::env::temp_dir().join(format!("buildtrack-variation-time-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("UPDATE contracts SET payload=? WHERE id='c'").bind(json!({"end_date":"2026-01-31"}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variations VALUES('vo-time','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"variation_number":"VO-T","status":"Submitted","time_impact_days":5}).to_string()).execute(&p).await.unwrap();sqlx::query("INSERT INTO variation_lines VALUES('vl-time','c','b',?)").bind(json!({"variation_id":"vo-time","value_impact":0}).to_string()).execute(&p).await.unwrap();p.close().await;approve_variation_with_boq(&path,ApprovalRequest{operation_id:"vo-time-a".into(),source_id:"vo-time".into(),actor:"tester".into(),approved_at:"2026-08-05".into()}).await.unwrap();let p=db(&path).await.unwrap();let revised:String=sqlx::query_scalar("SELECT json_extract(payload,'$.revised_end_date') FROM contracts WHERE id='c'").fetch_one(&p).await.unwrap();assert_eq!(revised,"2026-02-05");p.close().await;reverse_variation(&path,ReversalRequest{operation_id:"vo-time-r".into(),source_table:"variations".into(),source_id:"vo-time".into(),actor:"tester".into(),reason:"correction".into()}).await.unwrap();let p=db(&path).await.unwrap();let restored:String=sqlx::query_scalar("SELECT json_extract(payload,'$.revised_end_date') FROM contracts WHERE id='c'").fetch_one(&p).await.unwrap();assert_eq!(restored,"2026-01-31");p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn certificate_approval_cannot_overrecover_contract_advance(){let path=std::env::temp_dir().join(format!("buildtrack-certificate-advance-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();sqlx::query("UPDATE payment_certificates SET payload=? WHERE id='pc'").bind(json!({"project_id":"p","contract_id":"c","invoice_tracking_id":"track","certificate_number":"PC-1","certificate_type":"Client","certificate_date":"2026-08-02","gross_certified_value":1000,"retention_rate":10,"advance_recovery":101,"deductions":25,"tax_rate":15,"status":"Submitted"}).to_string()).execute(&p).await.unwrap();p.close().await;assert!(approve_payment_certificate(&path,ApprovalRequest{operation_id:"advance-over".into(),source_id:"pc".into(),actor:"tester".into(),approved_at:"2026-08-02".into()}).await.is_err());let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM payment_certificates WHERE id='pc'").fetch_one(&p).await.unwrap();assert_eq!(status,"Submitted");p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn sql_guard_rejects_direct_commercial_approval(){let path=std::env::temp_dir().join(format!("buildtrack-commercial-guard-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();let result=sqlx::query("UPDATE payment_certificates SET payload=? WHERE id='pc'").bind(json!({"status":"Approved"}).to_string()).execute(&p).await;assert!(result.is_err());p.close().await;let _=std::fs::remove_file(&path);}
+        sqlx::query("INSERT INTO contracts VALUES('c',NULL,?)")
+            .bind(json!({"advance_amount":100,"retention_cap_amount":150}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO contract_sov_lines VALUES('s','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(json!({"original_budget":1000,"status":"Active"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO cost_changes VALUES('cc','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","amount":200,"status":"Submitted","effective_date":"2026-08-01"}).to_string()).execute(&p).await.unwrap();
+        sqlx::query(
+            "INSERT INTO client_invoice_tracking VALUES('track','t','p','c',NULL,NULL,NULL,NULL,?)",
+        )
+        .bind(
+            json!({"invoice_number":"INV-1","status":"Generated","payment_status":"Unpaid"})
+                .to_string(),
+        )
+        .execute(&p)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO client_invoices VALUES('inv','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(
+                json!({"invoice_number":"INV-1","status":"Generated","payment_status":"Unpaid"})
+                    .to_string(),
+            )
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO payment_certificates VALUES('pc','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"project_id":"p","contract_id":"c","invoice_tracking_id":"track","certificate_number":"PC-1","certificate_type":"Client","certificate_date":"2026-08-02","gross_certified_value":1000,"retention_rate":10,"advance_recovery":50,"deductions":25,"tax_rate":15,"status":"Submitted"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+    }
+    #[tokio::test]
+    async fn commercial_workflow_posts_sov_net_cash_and_reverses_without_duplicates() {
+        let path =
+            std::env::temp_dir().join(format!("buildtrack-commercial-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        approve_cost_change(
+            &path,
+            ApprovalRequest {
+                operation_id: "a1".into(),
+                source_id: "cc".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        approve_payment_certificate(
+            &path,
+            ApprovalRequest {
+                operation_id: "a2".into(),
+                source_id: "pc".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-02".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();
+        let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.inflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'").fetch_one(&p).await.unwrap();
+        assert_eq!((revised, forecast), (1200.0, 948.75));
+        p.close().await;
+        settle_payment_certificate(
+            &path,
+            CertificateSettlementRequest {
+                operation_id: "s1".into(),
+                certificate_id: "pc".into(),
+                actor: "tester".into(),
+                paid_at: "2026-08-03".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM payment_certificates WHERE id='pc'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let paid:String=sqlx::query_scalar("SELECT json_extract(payload,'$.payment_status') FROM client_invoice_tracking WHERE id='track'").fetch_one(&p).await.unwrap();
+        assert_eq!((rows, status, paid), (1, "Paid".into(), "Paid".into()));
+        p.close().await;
+        reverse_commercial_posting(
+            &path,
+            ReversalRequest {
+                operation_id: "r1".into(),
+                source_table: "payment_certificates".into(),
+                source_id: "pc".into(),
+                actor: "tester".into(),
+                reason: "correction".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let remaining: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_id')='pc'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let postings: i64 = sqlx::query_scalar("SELECT count(*) FROM commercial_workflow_postings")
+            .fetch_one(&p)
+            .await
+            .unwrap();
+        let reset:String=sqlx::query_scalar("SELECT json_extract(payload,'$.payment_status') FROM client_invoice_tracking WHERE id='track'").fetch_one(&p).await.unwrap();
+        assert_eq!((remaining, postings, reset), (0, 4, "Unpaid".into()));
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn budget_transfer_moves_revised_budget_between_two_sov_lines() {
+        let path =
+            std::env::temp_dir().join(format!("buildtrack-transfer-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query(
+            "INSERT INTO contract_sov_lines VALUES('s2','t','p','c',NULL,NULL,NULL,NULL,?)",
+        )
+        .bind(json!({"original_budget":300,"status":"Active"}).to_string())
+        .execute(&p)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO cost_changes VALUES('transfer','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","transfer_from_sov_line_id":"s2","change_type":"Budget Transfer","amount":200,"status":"Submitted","effective_date":"2026-08-04"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        approve_cost_change(
+            &path,
+            ApprovalRequest {
+                operation_id: "transfer-approve".into(),
+                source_id: "transfer".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-04".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let target:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();
+        let source:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s2'").fetch_one(&p).await.unwrap();
+        assert_eq!((target, source), (1200.0, 100.0));
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn budget_transfer_cannot_reduce_source_below_actual_and_open_commitment() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-transfer-availability-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query(
+            "INSERT INTO contract_sov_lines VALUES('s2','t','p','c',NULL,NULL,NULL,NULL,?)",
+        )
+        .bind(json!({"original_budget":300,"status":"Active"}).to_string())
+        .execute(&p)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO cost_entries VALUES('cost','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(json!({"amount":100}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO procurement VALUES('po','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(json!({"total_cost":150,"status":"Ordered"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO cost_changes VALUES('blocked-transfer','t','p','c',NULL,NULL,NULL,NULL,'s',?)").bind(json!({"contract_sov_line_id":"s","transfer_from_sov_line_id":"s2","change_type":"Budget Transfer","amount":75,"status":"Submitted","effective_date":"2026-08-04"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        let result = approve_cost_change(
+            &path,
+            ApprovalRequest {
+                operation_id: "transfer-availability".into(),
+                source_id: "blocked-transfer".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-04".into(),
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM cost_changes WHERE id='blocked-transfer'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(status, "Submitted");
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn approved_variation_is_included_once_in_sov_revised_budget() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-sov-variation-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("UPDATE contract_sov_lines SET boq_item_id='b' WHERE id='s'")
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variations VALUES('vo','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(json!({"status":"Approved"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variation_lines VALUES('vol','c','b',?)")
+            .bind(json!({"variation_id":"vo","value_impact":125}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        p.close().await;
+        let mut tx = db(&path).await.unwrap().begin().await.unwrap();
+        recompute_sov(&mut tx, "s").await.unwrap();
+        tx.commit().await.unwrap();
+        let p = db(&path).await.unwrap();
+        let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();
+        assert_eq!(revised, 1125.0);
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn governed_variation_approval_posts_cash_and_sov_in_one_transaction() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-variation-approval-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("UPDATE contract_sov_lines SET boq_item_id='b' WHERE id='s'")
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variations VALUES('vo','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(json!({"variation_number":"VO-1","status":"Submitted"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variation_lines VALUES('vol','c','b',?)")
+            .bind(json!({"variation_id":"vo","value_impact":125}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        p.close().await;
+        approve_variation(
+            &path,
+            ApprovalRequest {
+                operation_id: "vo-approve".into(),
+                source_id: "vo".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-05".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM variations WHERE id='vo'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let cash:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.inflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_id')='vo'").fetch_one(&p).await.unwrap();
+        let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='s'").fetch_one(&p).await.unwrap();
+        assert_eq!((status, cash, revised), ("Approved".into(), 125.0, 1125.0));
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn governed_variation_approval_materializes_new_boq_and_sov_atomically() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-variation-new-item-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("INSERT INTO variations VALUES('vo-new','t','p','c','h',NULL,NULL,NULL,?)")
+            .bind(json!({"variation_number":"VO-NEW","status":"Submitted"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variation_lines VALUES('vl-new','c',NULL,?)").bind(json!({"variation_id":"vo-new","change_type":"New Item","boq_header_id":"h","item_code":"NEW-01","description":"New approved scope","unit":"m","revised_quantity":4.0,"revised_rate":25.0,"value_impact":100.0}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        approve_variation_with_boq(
+            &path,
+            ApprovalRequest {
+                operation_id: "vo-new-approve".into(),
+                source_id: "vo-new".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-05".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let generated: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM boq_items WHERE id='boq:variation:vo-new:vl-new'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let line_boq: String =
+            sqlx::query_scalar("SELECT boq_item_id FROM variation_lines WHERE id='vl-new'")
+                .fetch_one(&p)
+                .await
+                .unwrap();
+        let revised:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.revised_budget') AS REAL) FROM contract_sov_lines WHERE id='sov:variation:vo-new:vl-new'").fetch_one(&p).await.unwrap();
+        assert_eq!(
+            (generated, line_boq, revised),
+            (1, "boq:variation:vo-new:vl-new".into(), 100.0)
+        );
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn governed_variation_reversal_archives_generated_scope_and_cash() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-variation-reversal-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("INSERT INTO variations VALUES('vo-r','t','p','c','h',NULL,NULL,NULL,?)")
+            .bind(json!({"variation_number":"VO-R","status":"Submitted"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variation_lines VALUES('vl-r','c',NULL,?)").bind(json!({"variation_id":"vo-r","change_type":"New Item","boq_header_id":"h","item_code":"NEW-R","description":"Reversible scope","unit":"m","revised_quantity":2.0,"revised_rate":25.0,"value_impact":50.0}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        approve_variation_with_boq(
+            &path,
+            ApprovalRequest {
+                operation_id: "vo-r-a".into(),
+                source_id: "vo-r".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-05".into(),
+            },
+        )
+        .await
+        .unwrap();
+        reverse_variation(
+            &path,
+            ReversalRequest {
+                operation_id: "vo-r-r".into(),
+                source_table: "variations".into(),
+                source_id: "vo-r".into(),
+                actor: "tester".into(),
+                reason: "correction".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM variations WHERE id='vo-r'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let boq_status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM boq_items WHERE id='boq:variation:vo-r:vl-r'").fetch_one(&p).await.unwrap();
+        let cash_status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM cash_flow WHERE json_extract(payload,'$.source_id')='vo-r'").fetch_one(&p).await.unwrap();
+        let line: String =
+            sqlx::query_scalar("SELECT boq_item_id FROM variation_lines WHERE id='vl-r'")
+                .fetch_one(&p)
+                .await
+                .unwrap();
+        assert_eq!(
+            (status, boq_status, cash_status, line),
+            (
+                "Reversed".into(),
+                "Reversed".into(),
+                "Reversed".into(),
+                "boq:variation:vo-r:vl-r".into()
+            )
+        );
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn approved_variation_reprojects_and_reversal_restores_contract_finish() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-variation-time-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("UPDATE contracts SET payload=? WHERE id='c'")
+            .bind(json!({"end_date":"2026-01-31"}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variations VALUES('vo-time','t','p','c',NULL,NULL,NULL,NULL,?)")
+            .bind(
+                json!({"variation_number":"VO-T","status":"Submitted","time_impact_days":5})
+                    .to_string(),
+            )
+            .execute(&p)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO variation_lines VALUES('vl-time','c','b',?)")
+            .bind(json!({"variation_id":"vo-time","value_impact":0}).to_string())
+            .execute(&p)
+            .await
+            .unwrap();
+        p.close().await;
+        approve_variation_with_boq(
+            &path,
+            ApprovalRequest {
+                operation_id: "vo-time-a".into(),
+                source_id: "vo-time".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-05".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let revised: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.revised_end_date') FROM contracts WHERE id='c'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(revised, "2026-02-05");
+        p.close().await;
+        reverse_variation(
+            &path,
+            ReversalRequest {
+                operation_id: "vo-time-r".into(),
+                source_table: "variations".into(),
+                source_id: "vo-time".into(),
+                actor: "tester".into(),
+                reason: "correction".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let restored: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.revised_end_date') FROM contracts WHERE id='c'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(restored, "2026-01-31");
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn certificate_approval_cannot_overrecover_contract_advance() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-certificate-advance-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        sqlx::query("UPDATE payment_certificates SET payload=? WHERE id='pc'").bind(json!({"project_id":"p","contract_id":"c","invoice_tracking_id":"track","certificate_number":"PC-1","certificate_type":"Client","certificate_date":"2026-08-02","gross_certified_value":1000,"retention_rate":10,"advance_recovery":101,"deductions":25,"tax_rate":15,"status":"Submitted"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        assert!(approve_payment_certificate(
+            &path,
+            ApprovalRequest {
+                operation_id: "advance-over".into(),
+                source_id: "pc".into(),
+                actor: "tester".into(),
+                approved_at: "2026-08-02".into()
+            }
+        )
+        .await
+        .is_err());
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM payment_certificates WHERE id='pc'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(status, "Submitted");
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn sql_guard_rejects_direct_commercial_approval() {
+        let path = std::env::temp_dir().join(format!(
+            "buildtrack-commercial-guard-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        let result = sqlx::query("UPDATE payment_certificates SET payload=? WHERE id='pc'")
+            .bind(json!({"status":"Approved"}).to_string())
+            .execute(&p)
+            .await;
+        assert!(result.is_err());
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
 }

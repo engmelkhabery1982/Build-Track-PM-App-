@@ -7,135 +7,789 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SupplierApOperationRequest { pub operation_id: String, pub source_table: String, pub source_id: String, pub actor: String, pub reason: String }
+pub struct SupplierApOperationRequest {
+    pub operation_id: String,
+    pub source_table: String,
+    pub source_id: String,
+    pub actor: String,
+    pub reason: String,
+}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SupplierApOperationResult { pub operation_id: String, pub status: String }
+pub struct SupplierApOperationResult {
+    pub operation_id: String,
+    pub status: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SupplierInvoiceApprovalRequest { pub operation_id: String, pub invoice_id: String, pub actor: String, pub approved_at: String }
+pub struct SupplierInvoiceApprovalRequest {
+    pub operation_id: String,
+    pub invoice_id: String,
+    pub actor: String,
+    pub approved_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SupplierPaymentSettlementRequest { pub operation_id: String, pub payment_id: String, pub actor: String, pub settled_at: String }
+pub struct SupplierPaymentSettlementRequest {
+    pub operation_id: String,
+    pub payment_id: String,
+    pub actor: String,
+    pub settled_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurchaseOrderApprovalRequest { pub operation_id: String, pub procurement_id: String, pub actor: String, pub approved_at: String }
+pub struct PurchaseOrderApprovalRequest {
+    pub operation_id: String,
+    pub procurement_id: String,
+    pub actor: String,
+    pub approved_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcurementReceiptAcceptanceRequest { pub operation_id: String, pub receipt_id: String, pub actor: String, pub accepted_at: String }
+pub struct ProcurementReceiptAcceptanceRequest {
+    pub operation_id: String,
+    pub receipt_id: String,
+    pub actor: String,
+    pub accepted_at: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurchaseOrderCancellationRequest { pub operation_id: String, pub procurement_id: String, pub actor: String, pub cancelled_at: String, pub reason: String }
+pub struct PurchaseOrderCancellationRequest {
+    pub operation_id: String,
+    pub procurement_id: String,
+    pub actor: String,
+    pub cancelled_at: String,
+    pub reason: String,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurchaseOrderAmendmentRequest { pub operation_id: String, pub procurement_id: String, pub actor: String, pub amended_at: String, pub reason: String, pub quantity: f64, pub unit_cost: f64, pub total_cost: f64, pub delivery_date: String }
+pub struct PurchaseOrderAmendmentRequest {
+    pub operation_id: String,
+    pub procurement_id: String,
+    pub actor: String,
+    pub amended_at: String,
+    pub reason: String,
+    pub quantity: f64,
+    pub unit_cost: f64,
+    pub total_cost: f64,
+    pub delivery_date: String,
+}
 
 #[derive(Clone)]
-struct Scope { project_id:String, contract_id:Option<String>, boq_header_id:Option<String>, boq_item_id:Option<String>, parent_main_project_id:Option<String>, parent_main_contract_id:Option<String> }
-fn stamp() -> String { use std::time::{SystemTime, UNIX_EPOCH}; format!("{}Z", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()) }
-fn n(v:&Value,k:&str)->f64 { v.get(k).and_then(Value::as_f64).unwrap_or(0.0) }
-fn s(v:&Value,k:&str)->String { v.get(k).and_then(Value::as_str).unwrap_or_default().to_string() }
-fn m(v:f64)->f64 {(v*100.0).round()/100.0}
-fn date(primary:String, fallback:&str)->String {if primary.trim().is_empty(){fallback.to_string()}else{primary}}
-async fn db(path:&Path)->Result<SqlitePool,String>{SqlitePool::connect_with(SqliteConnectOptions::new().filename(path).create_if_missing(true).foreign_keys(true)).await.map_err(|e|e.to_string())}
-async fn invoice(tx:&mut Transaction<'_,Sqlite>, id:&str)->Result<(Scope,Value),String>{
- let r=sqlx::query("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM supplier_invoices WHERE id=?").bind(id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Supplier invoice was not found.")?;
- let scope=Scope{project_id:r.try_get("project_id").map_err(|e|e.to_string())?,contract_id:r.try_get("contract_id").map_err(|e|e.to_string())?,boq_header_id:r.try_get("boq_header_id").map_err(|e|e.to_string())?,boq_item_id:r.try_get("boq_item_id").map_err(|e|e.to_string())?,parent_main_project_id:r.try_get("parent_main_project_id").map_err(|e|e.to_string())?,parent_main_contract_id:r.try_get("parent_main_contract_id").map_err(|e|e.to_string())?};
- Ok((scope,serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?))
+struct Scope {
+    project_id: String,
+    contract_id: Option<String>,
+    boq_header_id: Option<String>,
+    boq_item_id: Option<String>,
+    parent_main_project_id: Option<String>,
+    parent_main_contract_id: Option<String>,
 }
-async fn put_invoice(tx:&mut Transaction<'_,Sqlite>,id:&str,v:&Value)->Result<(),String>{let guard=format!("internal-invoice:{id}");sqlx::query("INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)").bind(&guard).bind(stamp()).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("UPDATE supplier_invoices SET payload=? WHERE id=?").bind(v.to_string()).bind(id).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?").bind(&guard).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
-async fn put_payment(tx:&mut Transaction<'_,Sqlite>,id:&str,v:&Value)->Result<(),String>{let guard=format!("internal-payment:{id}");sqlx::query("INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)").bind(&guard).bind(stamp()).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("UPDATE supplier_invoice_payments SET payload=? WHERE id=?").bind(v.to_string()).bind(id).execute(&mut **tx).await.map_err(|e|e.to_string())?;sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?").bind(&guard).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
-async fn guard_on(tx:&mut Transaction<'_,Sqlite>,operation_id:&str)->Result<(),String>{sqlx::query("INSERT INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)").bind(operation_id).bind(stamp()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
-async fn guard_off(tx:&mut Transaction<'_,Sqlite>,operation_id:&str)->Result<(),String>{sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?").bind(operation_id).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())}
-async fn posting(tx:&mut Transaction<'_,Sqlite>,id:&str,table:&str,source:&str,kind:&str,actor:&str,effective:&str,reason:&str,snapshot:&Value)->Result<(),String>{
-  sqlx::query("INSERT INTO supplier_ap_postings (id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(effective).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
-  
-  let audit_id = format!("audit:{}:{}", table, id);
-  let audit = serde_json::json!({"id":audit_id,"timestamp":effective,"action":kind,"table_name":table,"record_id":source,"actor":actor,"details":reason,"before":null,"after":snapshot});
-  let project_id = snapshot.get("project_id").and_then(|v| v.as_str());
-  let contract_id = snapshot.get("contract_id").and_then(|v| v.as_str());
-  
-  sqlx::query("INSERT INTO audit_log (id, created_at, project_id, contract_id, payload) VALUES (?, ?, ?, ?, ?)")
+fn stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    format!(
+        "{}Z",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    )
+}
+fn n(v: &Value, k: &str) -> f64 {
+    v.get(k).and_then(Value::as_f64).unwrap_or(0.0)
+}
+fn s(v: &Value, k: &str) -> String {
+    v.get(k)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+fn m(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+fn date(primary: String, fallback: &str) -> String {
+    if primary.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        primary
+    }
+}
+async fn db(path: &Path) -> Result<SqlitePool, String> {
+    SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .foreign_keys(true),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+async fn invoice(tx: &mut Transaction<'_, Sqlite>, id: &str) -> Result<(Scope, Value), String> {
+    let r=sqlx::query("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM supplier_invoices WHERE id=?").bind(id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Supplier invoice was not found.")?;
+    let scope = Scope {
+        project_id: r.try_get("project_id").map_err(|e| e.to_string())?,
+        contract_id: r.try_get("contract_id").map_err(|e| e.to_string())?,
+        boq_header_id: r.try_get("boq_header_id").map_err(|e| e.to_string())?,
+        boq_item_id: r.try_get("boq_item_id").map_err(|e| e.to_string())?,
+        parent_main_project_id: r
+            .try_get("parent_main_project_id")
+            .map_err(|e| e.to_string())?,
+        parent_main_contract_id: r
+            .try_get("parent_main_contract_id")
+            .map_err(|e| e.to_string())?,
+    };
+    Ok((
+        scope,
+        serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?,
+    ))
+}
+async fn put_invoice(tx: &mut Transaction<'_, Sqlite>, id: &str, v: &Value) -> Result<(), String> {
+    let guard = format!("internal-invoice:{id}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)",
+    )
+    .bind(&guard)
+    .bind(stamp())
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE supplier_invoices SET payload=? WHERE id=?")
+        .bind(v.to_string())
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?")
+        .bind(&guard)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+async fn put_payment(tx: &mut Transaction<'_, Sqlite>, id: &str, v: &Value) -> Result<(), String> {
+    let guard = format!("internal-payment:{id}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)",
+    )
+    .bind(&guard)
+    .bind(stamp())
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE supplier_invoice_payments SET payload=? WHERE id=?")
+        .bind(v.to_string())
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?")
+        .bind(&guard)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+async fn guard_on(tx: &mut Transaction<'_, Sqlite>, operation_id: &str) -> Result<(), String> {
+    sqlx::query("INSERT INTO supplier_ap_mutation_guard (operation_id,created_at) VALUES (?,?)")
+        .bind(operation_id)
+        .bind(stamp())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+async fn guard_off(tx: &mut Transaction<'_, Sqlite>, operation_id: &str) -> Result<(), String> {
+    sqlx::query("DELETE FROM supplier_ap_mutation_guard WHERE operation_id=?")
+        .bind(operation_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+async fn posting(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+    table: &str,
+    source: &str,
+    kind: &str,
+    actor: &str,
+    effective: &str,
+    reason: &str,
+    snapshot: &Value,
+) -> Result<(), String> {
+    sqlx::query("INSERT INTO supplier_ap_postings (id,created_at,source_table,source_id,posting_type,status,actor,effective_date,reason,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id).bind(stamp()).bind(table).bind(source).bind(kind).bind("Posted").bind(actor).bind(effective).bind(reason).bind(snapshot.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+
+    let audit_id = format!("audit:{}:{}", table, id);
+    let audit = serde_json::json!({"id":audit_id,"timestamp":effective,"action":kind,"table_name":table,"record_id":source,"actor":actor,"details":reason,"before":null,"after":snapshot});
+    let project_id = snapshot.get("project_id").and_then(|v| v.as_str());
+    let contract_id = snapshot.get("contract_id").and_then(|v| v.as_str());
+
+    sqlx::query("INSERT INTO audit_log (id, created_at, project_id, contract_id, payload) VALUES (?, ?, ?, ?, ?)")
    .bind(audit_id).bind(stamp()).bind(project_id).bind(contract_id).bind(audit.to_string())
    .execute(&mut **tx).await.map_err(|e|e.to_string())?;
-   
-  Ok(())
+
+    Ok(())
 }
-async fn cash(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,kind:&str,source:&str,day:&str,description:String,category:&str,movement:&str,status:&str,inflow:f64,outflow:f64)->Result<(),String>{
- sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')=? AND json_extract(payload,'$.source_id')=?").bind(kind).bind(source).execute(&mut **tx).await.map_err(|e|e.to_string())?;
- if inflow.abs()<0.000001 && outflow.abs()<0.000001{return Ok(())};let id=format!("{}:{}",kind,source);let payload=json!({"id":id,"date":day,"description":description,"category":category,"inflow":m(inflow),"outflow":m(outflow),"net":m(inflow-outflow),"cumulative_balance":0,"movement_type":movement,"status":status,"source_type":kind,"source_id":source});
- sqlx::query("INSERT INTO cash_flow (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(format!("{}:{}",kind,source)).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())
+async fn cash(
+    tx: &mut Transaction<'_, Sqlite>,
+    scope: &Scope,
+    kind: &str,
+    source: &str,
+    day: &str,
+    description: String,
+    category: &str,
+    movement: &str,
+    status: &str,
+    inflow: f64,
+    outflow: f64,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')=? AND json_extract(payload,'$.source_id')=?").bind(kind).bind(source).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    if inflow.abs() < 0.000001 && outflow.abs() < 0.000001 {
+        return Ok(());
+    };
+    let id = format!("{}:{}", kind, source);
+    let payload = json!({"id":id,"date":day,"description":description,"category":category,"inflow":m(inflow),"outflow":m(outflow),"net":m(inflow-outflow),"cumulative_balance":0,"movement_type":movement,"status":status,"source_type":kind,"source_id":source});
+    sqlx::query("INSERT INTO cash_flow (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(format!("{}:{}",kind,source)).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    Ok(())
 }
-async fn po_forecast(tx:&mut Transaction<'_,Sqlite>,po_id:&str)->Result<(),String>{
- let r=sqlx::query("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM procurement WHERE id=?").bind(po_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Linked purchase order was not found.")?;let scope=Scope{project_id:r.try_get("project_id").map_err(|e|e.to_string())?,contract_id:r.try_get("contract_id").map_err(|e|e.to_string())?,boq_header_id:r.try_get("boq_header_id").map_err(|e|e.to_string())?,boq_item_id:r.try_get("boq_item_id").map_err(|e|e.to_string())?,parent_main_project_id:r.try_get("parent_main_project_id").map_err(|e|e.to_string())?,parent_main_contract_id:r.try_get("parent_main_contract_id").map_err(|e|e.to_string())?};let po:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let total=if n(&po,"total_cost")>0.0{n(&po,"total_cost")}else{n(&po,"quantity")*n(&po,"unit_cost")};let invoiced:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.goods_amount') AS REAL)),0) AS REAL) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_id')=? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(po_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;cash(tx,&scope,"procurement_forecast",po_id,&date(s(&po,"delivery_date"),&s(&po,"order_date")),format!("Supplier payment forecast (open PO): {}",s(&po,"purchase_order_number")),"Procurement Commitment","Forecast","Open",0.0,m((total-invoiced).max(0.0))).await
+async fn po_forecast(tx: &mut Transaction<'_, Sqlite>, po_id: &str) -> Result<(), String> {
+    let r=sqlx::query("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM procurement WHERE id=?").bind(po_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Linked purchase order was not found.")?;
+    let scope = Scope {
+        project_id: r.try_get("project_id").map_err(|e| e.to_string())?,
+        contract_id: r.try_get("contract_id").map_err(|e| e.to_string())?,
+        boq_header_id: r.try_get("boq_header_id").map_err(|e| e.to_string())?,
+        boq_item_id: r.try_get("boq_item_id").map_err(|e| e.to_string())?,
+        parent_main_project_id: r
+            .try_get("parent_main_project_id")
+            .map_err(|e| e.to_string())?,
+        parent_main_contract_id: r
+            .try_get("parent_main_contract_id")
+            .map_err(|e| e.to_string())?,
+    };
+    let po: Value = serde_json::from_str(
+        &r.try_get::<String, _>("payload")
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let total = if n(&po, "total_cost") > 0.0 {
+        n(&po, "total_cost")
+    } else {
+        n(&po, "quantity") * n(&po, "unit_cost")
+    };
+    let invoiced:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.goods_amount') AS REAL)),0) AS REAL) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_id')=? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(po_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    cash(
+        tx,
+        &scope,
+        "procurement_forecast",
+        po_id,
+        &date(s(&po, "delivery_date"), &s(&po, "order_date")),
+        format!(
+            "Supplier payment forecast (open PO): {}",
+            s(&po, "purchase_order_number")
+        ),
+        "Procurement Commitment",
+        "Forecast",
+        "Open",
+        0.0,
+        m((total - invoiced).max(0.0)),
+    )
+    .await
 }
-async fn receipt_actual_cost(tx:&mut Transaction<'_,Sqlite>,scope:&Scope,po:&Value,receipt:&Value,receipt_id:&str)->Result<(),String>{
- let amount=m(n(receipt,"accepted_quantity")*n(receipt,"unit_cost"));if amount<=0.0{return Err("An accepted GRN requires a positive accepted amount.".into())}
- let source_id=receipt_id;let id=format!("procurement-receipt-cost:{source_id}");
- sqlx::query("DELETE FROM cost_entries WHERE json_extract(payload,'$.source_type')='procurement_receipt' AND json_extract(payload,'$.source_id')=? AND id<>?").bind(source_id).bind(&id).execute(&mut **tx).await.map_err(|e|e.to_string())?;
- let payload=json!({"id":id,"project_id":scope.project_id,"contract_id":scope.contract_id,"main_contract_id":scope.contract_id,"boq_header_id":scope.boq_header_id,"boq_item_id":scope.boq_item_id,"date":date(s(receipt,"receipt_date"),&s(receipt,"accepted_date")),"cost_type":"Materials","invoice_number":s(receipt,"receipt_number"),"payment_order_number":s(po,"purchase_order_number"),"amount":amount,"source_type":"procurement_receipt","source_id":source_id});
- sqlx::query("INSERT OR REPLACE INTO cost_entries (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;Ok(())
+async fn receipt_actual_cost(
+    tx: &mut Transaction<'_, Sqlite>,
+    scope: &Scope,
+    po: &Value,
+    receipt: &Value,
+    receipt_id: &str,
+) -> Result<(), String> {
+    let amount = m(n(receipt, "accepted_quantity") * n(receipt, "unit_cost"));
+    if amount <= 0.0 {
+        return Err("An accepted GRN requires a positive accepted amount.".into());
+    }
+    let source_id = receipt_id;
+    let id = format!("procurement-receipt-cost:{source_id}");
+    sqlx::query("DELETE FROM cost_entries WHERE json_extract(payload,'$.source_type')='procurement_receipt' AND json_extract(payload,'$.source_id')=? AND id<>?").bind(source_id).bind(&id).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    let payload = json!({"id":id,"project_id":scope.project_id,"contract_id":scope.contract_id,"main_contract_id":scope.contract_id,"boq_header_id":scope.boq_header_id,"boq_item_id":scope.boq_item_id,"date":date(s(receipt,"receipt_date"),&s(receipt,"accepted_date")),"cost_type":"Materials","invoice_number":s(receipt,"receipt_number"),"payment_order_number":s(po,"purchase_order_number"),"amount":amount,"source_type":"procurement_receipt","source_id":source_id});
+    sqlx::query("INSERT OR REPLACE INTO cost_entries (id,created_at,project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload) VALUES (?,?,?,?,?,?,?,?,?)").bind(&id).bind(stamp()).bind(&scope.project_id).bind(&scope.contract_id).bind(&scope.boq_header_id).bind(&scope.boq_item_id).bind(&scope.parent_main_project_id).bind(&scope.parent_main_contract_id).bind(payload.to_string()).execute(&mut **tx).await.map_err(|e|e.to_string())?;
+    Ok(())
 }
 /// Purchase-order approval and GRN acceptance are governed independently of
 /// supplier AP.  Their cash forecast is nevertheless owned by this same
 /// transaction layer, so the UI can never create a competing PO forecast.
-pub async fn approve_purchase_order(path:&Path,request:PurchaseOrderApprovalRequest)->Result<SupplierApOperationResult,String>{
- if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.approved_at.trim().is_empty(){return Err("Purchase-order approval requires operation ID, actor and date.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;
- let result=async{let r=sqlx::query("SELECT payload FROM procurement WHERE id=?").bind(&request.procurement_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Purchase order was not found.")?;let mut po:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-  if !matches!(s(&po,"status").as_str(),"Draft"|"Requested"|"Approved"){return Err("Only a draft, requested, or approved PO can be ordered.".into())}
-  let total=if n(&po,"total_cost")>0.0{n(&po,"total_cost")}else{n(&po,"quantity")*n(&po,"unit_cost")};if total<=0.0{return Err("A purchase order requires a positive quantity and value before approval.".into())}
-  let snapshot=po.clone();let o=po.as_object_mut().ok_or("Stored purchase-order payload is invalid.")?;o.insert("status".into(),json!("Ordered"));o.insert("approved_by".into(),json!(request.actor));o.insert("approved_date".into(),json!(request.approved_at));
-  sqlx::query("UPDATE procurement SET payload=? WHERE id=?").bind(po.to_string()).bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;po_forecast(&mut tx,&request.procurement_id).await?;posting(&mut tx,&request.operation_id,"procurement",&request.procurement_id,"PurchaseOrderApproval",&request.actor,&request.approved_at,"Approved purchase order",&snapshot).await}.await;
- match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+pub async fn approve_purchase_order(
+    path: &Path,
+    request: PurchaseOrderApprovalRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.approved_at.trim().is_empty()
+    {
+        return Err("Purchase-order approval requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result = async {
+        let r = sqlx::query("SELECT payload FROM procurement WHERE id=?")
+            .bind(&request.procurement_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Purchase order was not found.")?;
+        let mut po: Value = serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        if !matches!(
+            s(&po, "status").as_str(),
+            "Draft" | "Requested" | "Approved"
+        ) {
+            return Err("Only a draft, requested, or approved PO can be ordered.".into());
+        }
+        let total = if n(&po, "total_cost") > 0.0 {
+            n(&po, "total_cost")
+        } else {
+            n(&po, "quantity") * n(&po, "unit_cost")
+        };
+        if total <= 0.0 {
+            return Err(
+                "A purchase order requires a positive quantity and value before approval.".into(),
+            );
+        }
+        let snapshot = po.clone();
+        let o = po
+            .as_object_mut()
+            .ok_or("Stored purchase-order payload is invalid.")?;
+        o.insert("status".into(), json!("Ordered"));
+        o.insert("approved_by".into(), json!(request.actor));
+        o.insert("approved_date".into(), json!(request.approved_at));
+        sqlx::query("UPDATE procurement SET payload=? WHERE id=?")
+            .bind(po.to_string())
+            .bind(&request.procurement_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        po_forecast(&mut tx, &request.procurement_id).await?;
+        posting(
+            &mut tx,
+            &request.operation_id,
+            "procurement",
+            &request.procurement_id,
+            "PurchaseOrderApproval",
+            &request.actor,
+            &request.approved_at,
+            "Approved purchase order",
+            &snapshot,
+        )
+        .await
+    }
+    .await;
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
-pub async fn accept_procurement_receipt(path:&Path,request:ProcurementReceiptAcceptanceRequest)->Result<SupplierApOperationResult,String>{
- if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.accepted_at.trim().is_empty(){return Err("GRN acceptance requires operation ID, actor and date.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;
- let result=async{let r=sqlx::query("SELECT payload FROM procurement_receipts WHERE id=?").bind(&request.receipt_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Goods receipt was not found.")?;let mut receipt:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+pub async fn accept_procurement_receipt(
+    path: &Path,
+    request: ProcurementReceiptAcceptanceRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.accepted_at.trim().is_empty()
+    {
+        return Err("GRN acceptance requires operation ID, actor and date.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result=async{let r=sqlx::query("SELECT payload FROM procurement_receipts WHERE id=?").bind(&request.receipt_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Goods receipt was not found.")?;let mut receipt:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
   if !matches!(s(&receipt,"status").as_str(),"Draft"|"Received"|"Pending Inspection"){return Err("Only a draft, received, or pending-inspection GRN can be accepted.".into())};let po_id=s(&receipt,"procurement_id");if po_id.is_empty(){return Err("An accepted GRN must reference a purchase order.".into())}
   let po_row=sqlx::query("SELECT project_id,contract_id,boq_header_id,boq_item_id,parent_main_project_id,parent_main_contract_id,payload FROM procurement WHERE id=?").bind(&po_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Linked purchase order was not found.")?;let scope=Scope{project_id:po_row.try_get("project_id").map_err(|e|e.to_string())?,contract_id:po_row.try_get("contract_id").map_err(|e|e.to_string())?,boq_header_id:po_row.try_get("boq_header_id").map_err(|e|e.to_string())?,boq_item_id:po_row.try_get("boq_item_id").map_err(|e|e.to_string())?,parent_main_project_id:po_row.try_get("parent_main_project_id").map_err(|e|e.to_string())?,parent_main_contract_id:po_row.try_get("parent_main_contract_id").map_err(|e|e.to_string())?};let po:Value=serde_json::from_str(&po_row.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;if !matches!(s(&po,"status").as_str(),"Ordered"|"Partially Delivered"|"Delivered"|"Closed"){return Err("A GRN can be accepted only against an ordered purchase order.".into())}
   let qty=n(&receipt,"accepted_quantity");if qty<=0.0{return Err("An accepted GRN requires a positive accepted quantity.".into())};let existing:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.accepted_quantity') AS REAL)),0) AS REAL) FROM procurement_receipts WHERE json_extract(payload,'$.procurement_id')=? AND id<>? AND json_extract(payload,'$.status')='Accepted'").bind(&po_id).bind(&request.receipt_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if existing+qty>n(&po,"quantity")+0.000001{return Err("Accepted GRN quantity would exceed the purchase-order quantity.".into())}
   let snapshot=receipt.clone();let amount=m(qty*n(&receipt,"unit_cost"));let o=receipt.as_object_mut().ok_or("Stored goods-receipt payload is invalid.")?;o.insert("status".into(),json!("Accepted"));o.insert("accepted_by".into(),json!(request.actor));o.insert("accepted_date".into(),json!(request.accepted_at));o.insert("accepted_amount".into(),json!(amount));sqlx::query("UPDATE procurement_receipts SET payload=? WHERE id=?").bind(receipt.to_string()).bind(&request.receipt_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;receipt_actual_cost(&mut tx,&scope,&po,&receipt,&request.receipt_id).await?;posting(&mut tx,&request.operation_id,"procurement_receipts",&request.receipt_id,"GoodsReceiptAcceptance",&request.actor,&request.accepted_at,"Accepted goods receipt",&snapshot).await}.await;
- match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
 /// Cancelling a committed PO is allowed only before any accepted GRN or
 /// governed supplier invoice exists. It removes only the forecast projection;
 /// history remains in the supplier-ap posting ledger.
-pub async fn cancel_purchase_order(path:&Path,request:PurchaseOrderCancellationRequest)->Result<SupplierApOperationResult,String>{
- if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.cancelled_at.trim().is_empty()||request.reason.trim().is_empty(){return Err("PO cancellation requires operation ID, actor, date and reason.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;
- let result=async{let raw:String=sqlx::query_scalar("SELECT payload FROM procurement WHERE id=?").bind(&request.procurement_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Purchase order was not found.")?;let mut po:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;if !matches!(s(&po,"status").as_str(),"Ordered"|"Partially Delivered"|"Delivered"|"Closed"){return Err("Only a governed purchase order can be cancelled.".into())}let accepted:i64=sqlx::query_scalar("SELECT count(*) FROM procurement_receipts WHERE json_extract(payload,'$.procurement_id')=? AND json_extract(payload,'$.status')='Accepted'").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;let invoiced:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_id')=? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if accepted>0||invoiced>0{return Err("A PO with accepted GRNs or approved AP cannot be cancelled; use a controlled amendment/reversal.".into())}let snapshot=po.clone();let o=po.as_object_mut().ok_or("Stored purchase-order payload is invalid.")?;o.insert("status".into(),json!("Cancelled"));o.insert("cancelled_by".into(),json!(request.actor));o.insert("cancelled_date".into(),json!(request.cancelled_at));o.insert("cancellation_reason".into(),json!(request.reason));sqlx::query("UPDATE procurement SET payload=? WHERE id=?").bind(po.to_string()).bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast' AND json_extract(payload,'$.source_id')=?").bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;posting(&mut tx,&request.operation_id,"procurement",&request.procurement_id,"PurchaseOrderCancellation",&request.actor,&request.cancelled_at,&request.reason,&snapshot).await}.await;
- match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+pub async fn cancel_purchase_order(
+    path: &Path,
+    request: PurchaseOrderCancellationRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.cancelled_at.trim().is_empty()
+        || request.reason.trim().is_empty()
+    {
+        return Err("PO cancellation requires operation ID, actor, date and reason.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result=async{let raw:String=sqlx::query_scalar("SELECT payload FROM procurement WHERE id=?").bind(&request.procurement_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Purchase order was not found.")?;let mut po:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;if !matches!(s(&po,"status").as_str(),"Ordered"|"Partially Delivered"|"Delivered"|"Closed"){return Err("Only a governed purchase order can be cancelled.".into())}let accepted:i64=sqlx::query_scalar("SELECT count(*) FROM procurement_receipts WHERE json_extract(payload,'$.procurement_id')=? AND json_extract(payload,'$.status')='Accepted'").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;let invoiced:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_id')=? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if accepted>0||invoiced>0{return Err("A PO with accepted GRNs or approved AP cannot be cancelled; use a controlled amendment/reversal.".into())}let snapshot=po.clone();let o=po.as_object_mut().ok_or("Stored purchase-order payload is invalid.")?;o.insert("status".into(),json!("Cancelled"));o.insert("cancelled_by".into(),json!(request.actor));o.insert("cancelled_date".into(),json!(request.cancelled_at));o.insert("cancellation_reason".into(),json!(request.reason));sqlx::query("UPDATE procurement SET payload=? WHERE id=?").bind(po.to_string()).bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;sqlx::query("DELETE FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast' AND json_extract(payload,'$.source_id')=?").bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;posting(&mut tx,&request.operation_id,"procurement",&request.procurement_id,"PurchaseOrderCancellation",&request.actor,&request.cancelled_at,&request.reason,&snapshot).await}.await;
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
 /// A committed PO may be amended only before an accepted receipt or approved
 /// AP invoice exists. The revised commercial amount and its forecast move in
 /// the same SQLite transaction and retain the prior state in the posting log.
-pub async fn amend_purchase_order(path:&Path,request:PurchaseOrderAmendmentRequest)->Result<SupplierApOperationResult,String>{
- if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.amended_at.trim().is_empty()||request.reason.trim().is_empty(){return Err("PO amendment requires operation ID, actor, date and reason.".into())}
- if request.quantity<=0.0||request.unit_cost<0.0||request.total_cost<=0.0{return Err("PO amendment requires a positive quantity and total value, with a non-negative unit cost.".into())}
- let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;
- let result=async{let raw:String=sqlx::query_scalar("SELECT payload FROM procurement WHERE id=?").bind(&request.procurement_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Purchase order was not found.")?;let mut po:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
+pub async fn amend_purchase_order(
+    path: &Path,
+    request: PurchaseOrderAmendmentRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.amended_at.trim().is_empty()
+        || request.reason.trim().is_empty()
+    {
+        return Err("PO amendment requires operation ID, actor, date and reason.".into());
+    }
+    if request.quantity <= 0.0 || request.unit_cost < 0.0 || request.total_cost <= 0.0 {
+        return Err("PO amendment requires a positive quantity and total value, with a non-negative unit cost.".into());
+    }
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result=async{let raw:String=sqlx::query_scalar("SELECT payload FROM procurement WHERE id=?").bind(&request.procurement_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Purchase order was not found.")?;let mut po:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
   if s(&po,"status")!="Ordered"{return Err("Only an ordered PO without receipt history can be amended.".into())}
   let accepted:i64=sqlx::query_scalar("SELECT count(*) FROM procurement_receipts WHERE json_extract(payload,'$.procurement_id')=? AND json_extract(payload,'$.status')='Accepted'").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;let invoiced:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_id')=? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(&request.procurement_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if accepted>0||invoiced>0{return Err("A PO with accepted GRNs or approved AP cannot be amended; use a controlled reversal or replacement PO.".into())}
   let snapshot=po.clone();let revision=n(&po,"amendment_revision") as i64+1;let o=po.as_object_mut().ok_or("Stored purchase-order payload is invalid.")?;o.insert("quantity".into(),json!(m(request.quantity)));o.insert("unit_cost".into(),json!(m(request.unit_cost)));o.insert("total_cost".into(),json!(m(request.total_cost)));o.insert("delivery_date".into(),json!(request.delivery_date));o.insert("amendment_revision".into(),json!(revision));o.insert("amended_by".into(),json!(request.actor));o.insert("amended_date".into(),json!(request.amended_at));o.insert("amendment_reason".into(),json!(request.reason));sqlx::query("UPDATE procurement SET payload=? WHERE id=?").bind(po.to_string()).bind(&request.procurement_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;po_forecast(&mut tx,&request.procurement_id).await?;posting(&mut tx,&request.operation_id,"procurement",&request.procurement_id,"PurchaseOrderAmendment",&request.actor,&request.amended_at,&request.reason,&snapshot).await}.await;
- match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
 }
-async fn validate_lines(tx:&mut Transaction<'_,Sqlite>,invoice_id:&str)->Result<(),String>{
- let rows=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(invoice_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;if rows.is_empty(){return Err("Supplier invoice approval requires at least one matched GRN line.".into())};let mut po="".to_string();for r in rows{let l:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let grn=s(&l,"procurement_receipt_id");let current=s(&l,"procurement_id");if grn.is_empty()||current.is_empty(){return Err("Every approved AP line must reference an accepted GRN and PO.".into())}if !po.is_empty()&&po!=current{return Err("A supplier invoice may cover only one PO in this governed workflow.".into())}po=current;let raw:String=sqlx::query_scalar("SELECT payload FROM procurement_receipts WHERE id=?").bind(&grn).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Matched GRN was not found.")?;let receipt:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;if s(&receipt,"status")!="Accepted"||s(&receipt,"procurement_id")!=po{return Err("AP lines must match an accepted GRN from their PO.".into())};let billed:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.quantity') AS REAL)),0) AS REAL) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_receipt_id')=? AND json_extract(l.payload,'$.supplier_invoice_id')<>? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(&grn).bind(invoice_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;if billed+n(&l,"quantity")>n(&receipt,"accepted_quantity")+0.000001{return Err("Approved AP quantity would exceed its accepted GRN quantity.".into())}}
- Ok(())
+async fn validate_lines(tx: &mut Transaction<'_, Sqlite>, invoice_id: &str) -> Result<(), String> {
+    let rows=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(invoice_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
+    if rows.is_empty() {
+        return Err("Supplier invoice approval requires at least one matched GRN line.".into());
+    };
+    let mut po = "".to_string();
+    for r in rows {
+        let l: Value = serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        let grn = s(&l, "procurement_receipt_id");
+        let current = s(&l, "procurement_id");
+        if grn.is_empty() || current.is_empty() {
+            return Err("Every approved AP line must reference an accepted GRN and PO.".into());
+        }
+        if !po.is_empty() && po != current {
+            return Err(
+                "A supplier invoice may cover only one PO in this governed workflow.".into(),
+            );
+        }
+        po = current;
+        let raw: String = sqlx::query_scalar("SELECT payload FROM procurement_receipts WHERE id=?")
+            .bind(&grn)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Matched GRN was not found.")?;
+        let receipt: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if s(&receipt, "status") != "Accepted" || s(&receipt, "procurement_id") != po {
+            return Err("AP lines must match an accepted GRN from their PO.".into());
+        };
+        let billed:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(l.payload,'$.quantity') AS REAL)),0) AS REAL) FROM supplier_invoice_lines l JOIN supplier_invoices i ON json_extract(l.payload,'$.supplier_invoice_id')=i.id WHERE json_extract(l.payload,'$.procurement_receipt_id')=? AND json_extract(l.payload,'$.supplier_invoice_id')<>? AND json_extract(i.payload,'$.status') IN ('Approved','Partially Paid','Paid')").bind(&grn).bind(invoice_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+        if billed + n(&l, "quantity") > n(&receipt, "accepted_quantity") + 0.000001 {
+            return Err("Approved AP quantity would exceed its accepted GRN quantity.".into());
+        }
+    }
+    Ok(())
 }
-async fn recompute(tx:&mut Transaction<'_,Sqlite>,invoice_id:&str)->Result<(),String>{
- let(scope,mut inv)=invoice(tx,invoice_id).await?;let state=s(&inv,"status");let rows=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(invoice_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;let(mut goods,mut taxes)=(0.0,0.0);let mut pos=Vec::new();for r in rows{let l:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;goods+=if n(&l,"goods_amount")>0.0{n(&l,"goods_amount")}else{n(&l,"quantity")*n(&l,"unit_cost")};taxes+=n(&l,"tax_amount");let p=s(&l,"procurement_id");if !p.is_empty()&&!pos.contains(&p){pos.push(p)}}let payable=m(goods+taxes+n(&inv,"tax_amount")-n(&inv,"deductions_amount"));let paid:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM supplier_invoice_payments WHERE json_extract(payload,'$.supplier_invoice_id')=? AND json_extract(payload,'$.status')='Settled'").bind(invoice_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;if paid>payable+0.000001{return Err("Settled supplier payments exceed the approved payable.".into())};let active=matches!(state.as_str(),"Approved"|"Partially Paid"|"Paid");let open=if active{m((payable-paid).max(0.0))}else{0.0};let next=if state=="Reversed"{"Reversed"}else if active&&payable>0.0&&paid+0.000001>=payable{"Paid"}else if active&&paid>0.0{"Partially Paid"}else{&state};let o=inv.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("goods_amount".into(),json!(m(goods)));o.insert("net_payable_amount".into(),json!(payable));o.insert("paid_amount".into(),json!(m(paid)));o.insert("open_payable_amount".into(),json!(open));o.insert("status".into(),json!(next));put_invoice(tx,invoice_id,&inv).await?;cash(tx,&scope,"supplier_invoice_forecast",invoice_id,&date(s(&inv,"due_date"),&s(&inv,"invoice_date")),format!("Supplier invoice payable forecast: {}",s(&inv,"invoice_number")),"Supplier Payable","Forecast","Open",0.0,open).await?;for p in pos{po_forecast(tx,&p).await?};Ok(())
+async fn recompute(tx: &mut Transaction<'_, Sqlite>, invoice_id: &str) -> Result<(), String> {
+    let (scope, mut inv) = invoice(tx, invoice_id).await?;
+    let state = s(&inv, "status");
+    let rows=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(invoice_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
+    let (mut goods, mut taxes) = (0.0, 0.0);
+    let mut pos = Vec::new();
+    for r in rows {
+        let l: Value = serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        goods += if n(&l, "goods_amount") > 0.0 {
+            n(&l, "goods_amount")
+        } else {
+            n(&l, "quantity") * n(&l, "unit_cost")
+        };
+        taxes += n(&l, "tax_amount");
+        let p = s(&l, "procurement_id");
+        if !p.is_empty() && !pos.contains(&p) {
+            pos.push(p)
+        }
+    }
+    let payable = m(goods + taxes + n(&inv, "tax_amount") - n(&inv, "deductions_amount"));
+    let paid:f64=sqlx::query_scalar("SELECT CAST(COALESCE(sum(CAST(json_extract(payload,'$.amount') AS REAL)),0) AS REAL) FROM supplier_invoice_payments WHERE json_extract(payload,'$.supplier_invoice_id')=? AND json_extract(payload,'$.status')='Settled'").bind(invoice_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    if paid > payable + 0.000001 {
+        return Err("Settled supplier payments exceed the approved payable.".into());
+    };
+    let active = matches!(state.as_str(), "Approved" | "Partially Paid" | "Paid");
+    let open = if active {
+        m((payable - paid).max(0.0))
+    } else {
+        0.0
+    };
+    let next = if state == "Reversed" {
+        "Reversed"
+    } else if active && payable > 0.0 && paid + 0.000001 >= payable {
+        "Paid"
+    } else if active && paid > 0.0 {
+        "Partially Paid"
+    } else {
+        &state
+    };
+    let o = inv.as_object_mut().ok_or("Stored AP payload is invalid.")?;
+    o.insert("goods_amount".into(), json!(m(goods)));
+    o.insert("net_payable_amount".into(), json!(payable));
+    o.insert("paid_amount".into(), json!(m(paid)));
+    o.insert("open_payable_amount".into(), json!(open));
+    o.insert("status".into(), json!(next));
+    put_invoice(tx, invoice_id, &inv).await?;
+    cash(
+        tx,
+        &scope,
+        "supplier_invoice_forecast",
+        invoice_id,
+        &date(s(&inv, "due_date"), &s(&inv, "invoice_date")),
+        format!(
+            "Supplier invoice payable forecast: {}",
+            s(&inv, "invoice_number")
+        ),
+        "Supplier Payable",
+        "Forecast",
+        "Open",
+        0.0,
+        open,
+    )
+    .await?;
+    for p in pos {
+        po_forecast(tx, &p).await?
+    }
+    Ok(())
 }
-pub async fn approve_supplier_invoice(path:&Path,request:SupplierInvoiceApprovalRequest)->Result<SupplierApOperationResult,String>{if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.approved_at.trim().is_empty(){return Err("Invoice approval requires operation ID, actor and date.".into())};let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;let result=async{let(_,mut v)=invoice(&mut tx,&request.invoice_id).await?;if !matches!(s(&v,"status").as_str(),"Submitted"|"Matched"){return Err("Only a submitted or matched supplier invoice can be approved.".into())}validate_lines(&mut tx,&request.invoice_id).await?;let o=v.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Approved"));o.insert("approved_by".into(),json!(request.actor));o.insert("approved_date".into(),json!(request.approved_at));put_invoice(&mut tx,&request.invoice_id,&v).await?;recompute(&mut tx,&request.invoice_id).await?;posting(&mut tx,&request.operation_id,"supplier_invoices",&request.invoice_id,"InvoiceApproval",&s(&v,"approved_by"),&s(&v,"approved_date"),"Approved supplier invoice",&v).await}.await;match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
-pub async fn settle_supplier_invoice_payment(path:&Path,request:SupplierPaymentSettlementRequest)->Result<SupplierApOperationResult,String>{if request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.settled_at.trim().is_empty(){return Err("Payment settlement requires operation ID, actor and date.".into())};let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;guard_on(&mut tx,&request.operation_id).await?;let result=async{let r=sqlx::query("SELECT payload FROM supplier_invoice_payments WHERE id=?").bind(&request.payment_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Supplier payment was not found.")?;let mut pay:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;if s(&pay,"status")!="Draft"{return Err("Only a draft supplier payment can be settled.".into())}let invoice_id=s(&pay,"supplier_invoice_id");let(scope,inv)=invoice(&mut tx,&invoice_id).await?;if !matches!(s(&inv,"status").as_str(),"Approved"|"Partially Paid"){return Err("Payment requires an approved supplier invoice.".into())}if n(&pay,"amount")<=0.0||n(&pay,"amount")>n(&inv,"open_payable_amount")+0.000001{return Err("Payment amount exceeds the remaining approved payable.".into())}let o=pay.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Settled"));o.insert("settled_by".into(),json!(request.actor));o.insert("settled_date".into(),json!(request.settled_at));put_payment(&mut tx,&request.payment_id,&pay).await?;cash(&mut tx,&scope,"supplier_invoice_payment",&request.payment_id,&date(s(&pay,"payment_date"),&request.settled_at),format!("Supplier payment: {}",s(&inv,"invoice_number")),"Supplier Payment","Actual","Settled",0.0,n(&pay,"amount")).await?;recompute(&mut tx,&invoice_id).await?;posting(&mut tx,&request.operation_id,"supplier_invoice_payments",&request.payment_id,"PaymentSettlement",&s(&pay,"settled_by"),&s(&pay,"settled_date"),"Settled supplier payment",&pay).await}.await;match result{Ok(())=>{guard_off(&mut tx,&request.operation_id).await?;tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
-pub async fn reverse_supplier_ap_posting(path:&Path,request:SupplierApOperationRequest)->Result<SupplierApOperationResult,String>{if !matches!(request.source_table.as_str(),"supplier_invoices"|"supplier_invoice_payments")||request.operation_id.trim().is_empty()||request.actor.trim().is_empty()||request.reason.trim().is_empty(){return Err("Governed reversal requires source, operation ID, actor and reason.".into())};let mut tx=db(path).await?.begin().await.map_err(|e|e.to_string())?;let result=async{let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM supplier_ap_postings WHERE source_table=? AND source_id=? AND posting_type LIKE '%Reversal' AND status='Posted'").bind(&request.source_table).bind(&request.source_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;if duplicate.is_some(){return Err("This AP document already has an active reversal.".into())}if request.source_table=="supplier_invoices"{let(scope,mut inv)=invoice(&mut tx,&request.source_id).await?;if !matches!(s(&inv,"status").as_str(),"Approved"|"Partially Paid"|"Paid"){return Err("Only an approved supplier invoice can be reversed.".into())}let count:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_invoice_payments WHERE json_extract(payload,'$.supplier_invoice_id')=? AND json_extract(payload,'$.status')='Settled'").bind(&request.source_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if count>0{return Err("Reverse all settled payments before reversing the supplier invoice.".into())}let snapshot=inv.clone();let o=inv.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Reversed"));o.insert("reversal_reason".into(),json!(request.reason));o.insert("reversed_by".into(),json!(request.actor));put_invoice(&mut tx,&request.source_id,&inv).await?;cash(&mut tx,&scope,"supplier_invoice_forecast",&request.source_id,"",String::new(),"Supplier Payable","Forecast","Reversed",0.0,0.0).await?;let lines=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(&request.source_id).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for r in lines{let l:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let p=s(&l,"procurement_id");if !p.is_empty(){po_forecast(&mut tx,&p).await?}}posting(&mut tx,&request.operation_id,"supplier_invoices",&request.source_id,"InvoiceReversal",&request.actor,&stamp(),&request.reason,&snapshot).await?}else{let r=sqlx::query("SELECT payload FROM supplier_invoice_payments WHERE id=?").bind(&request.source_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Supplier payment was not found.")?;let mut pay:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;if s(&pay,"status")!="Settled"{return Err("Only a settled supplier payment can be reversed.".into())}let invoice_id=s(&pay,"supplier_invoice_id");let(scope,inv)=invoice(&mut tx,&invoice_id).await?;let snapshot=pay.clone();let o=pay.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Reversed"));o.insert("reversal_reason".into(),json!(request.reason));o.insert("reversed_by".into(),json!(request.actor));put_payment(&mut tx,&request.source_id,&pay).await?;cash(&mut tx,&scope,"supplier_invoice_payment",&request.source_id,"",String::new(),"Supplier Payment","Actual","Reversed",0.0,0.0).await?;cash(&mut tx,&scope,"supplier_invoice_payment_reversal",&request.operation_id,&s(&pay,"payment_date"),format!("Reversal of supplier payment: {}",s(&inv,"invoice_number")),"Supplier Payment Reversal","Actual","Reversed",n(&snapshot,"amount"),0.0).await?;recompute(&mut tx,&invoice_id).await?;posting(&mut tx,&request.operation_id,"supplier_invoice_payments",&request.source_id,"PaymentReversal",&request.actor,&stamp(),&request.reason,&snapshot).await?};Ok::<(),String>(())}.await;match result{Ok(())=>{tx.commit().await.map_err(|e|e.to_string())?;Ok(SupplierApOperationResult{operation_id:request.operation_id,status:"Posted".into()})},Err(e)=>{tx.rollback().await.map_err(|x|x.to_string())?;Err(e)}}}
+pub async fn approve_supplier_invoice(
+    path: &Path,
+    request: SupplierInvoiceApprovalRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.approved_at.trim().is_empty()
+    {
+        return Err("Invoice approval requires operation ID, actor and date.".into());
+    };
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result = async {
+        let (_, mut v) = invoice(&mut tx, &request.invoice_id).await?;
+        if !matches!(s(&v, "status").as_str(), "Submitted" | "Matched") {
+            return Err("Only a submitted or matched supplier invoice can be approved.".into());
+        }
+        validate_lines(&mut tx, &request.invoice_id).await?;
+        let o = v.as_object_mut().ok_or("Stored AP payload is invalid.")?;
+        o.insert("status".into(), json!("Approved"));
+        o.insert("approved_by".into(), json!(request.actor));
+        o.insert("approved_date".into(), json!(request.approved_at));
+        put_invoice(&mut tx, &request.invoice_id, &v).await?;
+        recompute(&mut tx, &request.invoice_id).await?;
+        posting(
+            &mut tx,
+            &request.operation_id,
+            "supplier_invoices",
+            &request.invoice_id,
+            "InvoiceApproval",
+            &s(&v, "approved_by"),
+            &s(&v, "approved_date"),
+            "Approved supplier invoice",
+            &v,
+        )
+        .await
+    }
+    .await;
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
+pub async fn settle_supplier_invoice_payment(
+    path: &Path,
+    request: SupplierPaymentSettlementRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.settled_at.trim().is_empty()
+    {
+        return Err("Payment settlement requires operation ID, actor and date.".into());
+    };
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    guard_on(&mut tx, &request.operation_id).await?;
+    let result = async {
+        let r = sqlx::query("SELECT payload FROM supplier_invoice_payments WHERE id=?")
+            .bind(&request.payment_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Supplier payment was not found.")?;
+        let mut pay: Value = serde_json::from_str(
+            &r.try_get::<String, _>("payload")
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        if s(&pay, "status") != "Draft" {
+            return Err("Only a draft supplier payment can be settled.".into());
+        }
+        let invoice_id = s(&pay, "supplier_invoice_id");
+        let (scope, inv) = invoice(&mut tx, &invoice_id).await?;
+        if !matches!(s(&inv, "status").as_str(), "Approved" | "Partially Paid") {
+            return Err("Payment requires an approved supplier invoice.".into());
+        }
+        if n(&pay, "amount") <= 0.0 || n(&pay, "amount") > n(&inv, "open_payable_amount") + 0.000001
+        {
+            return Err("Payment amount exceeds the remaining approved payable.".into());
+        }
+        let o = pay.as_object_mut().ok_or("Stored AP payload is invalid.")?;
+        o.insert("status".into(), json!("Settled"));
+        o.insert("settled_by".into(), json!(request.actor));
+        o.insert("settled_date".into(), json!(request.settled_at));
+        put_payment(&mut tx, &request.payment_id, &pay).await?;
+        cash(
+            &mut tx,
+            &scope,
+            "supplier_invoice_payment",
+            &request.payment_id,
+            &date(s(&pay, "payment_date"), &request.settled_at),
+            format!("Supplier payment: {}", s(&inv, "invoice_number")),
+            "Supplier Payment",
+            "Actual",
+            "Settled",
+            0.0,
+            n(&pay, "amount"),
+        )
+        .await?;
+        recompute(&mut tx, &invoice_id).await?;
+        posting(
+            &mut tx,
+            &request.operation_id,
+            "supplier_invoice_payments",
+            &request.payment_id,
+            "PaymentSettlement",
+            &s(&pay, "settled_by"),
+            &s(&pay, "settled_date"),
+            "Settled supplier payment",
+            &pay,
+        )
+        .await
+    }
+    .await;
+    match result {
+        Ok(()) => {
+            guard_off(&mut tx, &request.operation_id).await?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
+pub async fn reverse_supplier_ap_posting(
+    path: &Path,
+    request: SupplierApOperationRequest,
+) -> Result<SupplierApOperationResult, String> {
+    if !matches!(
+        request.source_table.as_str(),
+        "supplier_invoices" | "supplier_invoice_payments"
+    ) || request.operation_id.trim().is_empty()
+        || request.actor.trim().is_empty()
+        || request.reason.trim().is_empty()
+    {
+        return Err("Governed reversal requires source, operation ID, actor and reason.".into());
+    };
+    let mut tx = db(path).await?.begin().await.map_err(|e| e.to_string())?;
+    let result=async{let duplicate:Option<String>=sqlx::query_scalar("SELECT id FROM supplier_ap_postings WHERE source_table=? AND source_id=? AND posting_type LIKE '%Reversal' AND status='Posted'").bind(&request.source_table).bind(&request.source_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?;if duplicate.is_some(){return Err("This AP document already has an active reversal.".into())}if request.source_table=="supplier_invoices"{let(scope,mut inv)=invoice(&mut tx,&request.source_id).await?;if !matches!(s(&inv,"status").as_str(),"Approved"|"Partially Paid"|"Paid"){return Err("Only an approved supplier invoice can be reversed.".into())}let count:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_invoice_payments WHERE json_extract(payload,'$.supplier_invoice_id')=? AND json_extract(payload,'$.status')='Settled'").bind(&request.source_id).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;if count>0{return Err("Reverse all settled payments before reversing the supplier invoice.".into())}let snapshot=inv.clone();let o=inv.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Reversed"));o.insert("reversal_reason".into(),json!(request.reason));o.insert("reversed_by".into(),json!(request.actor));put_invoice(&mut tx,&request.source_id,&inv).await?;cash(&mut tx,&scope,"supplier_invoice_forecast",&request.source_id,"",String::new(),"Supplier Payable","Forecast","Reversed",0.0,0.0).await?;let lines=sqlx::query("SELECT payload FROM supplier_invoice_lines WHERE json_extract(payload,'$.supplier_invoice_id')=?").bind(&request.source_id).fetch_all(&mut *tx).await.map_err(|e|e.to_string())?;for r in lines{let l:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let p=s(&l,"procurement_id");if !p.is_empty(){po_forecast(&mut tx,&p).await?}}posting(&mut tx,&request.operation_id,"supplier_invoices",&request.source_id,"InvoiceReversal",&request.actor,&stamp(),&request.reason,&snapshot).await?}else{let r=sqlx::query("SELECT payload FROM supplier_invoice_payments WHERE id=?").bind(&request.source_id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.ok_or("Supplier payment was not found.")?;let mut pay:Value=serde_json::from_str(&r.try_get::<String,_>("payload").map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;if s(&pay,"status")!="Settled"{return Err("Only a settled supplier payment can be reversed.".into())}let invoice_id=s(&pay,"supplier_invoice_id");let(scope,inv)=invoice(&mut tx,&invoice_id).await?;let snapshot=pay.clone();let o=pay.as_object_mut().ok_or("Stored AP payload is invalid.")?;o.insert("status".into(),json!("Reversed"));o.insert("reversal_reason".into(),json!(request.reason));o.insert("reversed_by".into(),json!(request.actor));put_payment(&mut tx,&request.source_id,&pay).await?;cash(&mut tx,&scope,"supplier_invoice_payment",&request.source_id,"",String::new(),"Supplier Payment","Actual","Reversed",0.0,0.0).await?;cash(&mut tx,&scope,"supplier_invoice_payment_reversal",&request.operation_id,&s(&pay,"payment_date"),format!("Reversal of supplier payment: {}",s(&inv,"invoice_number")),"Supplier Payment Reversal","Actual","Reversed",n(&snapshot,"amount"),0.0).await?;recompute(&mut tx,&invoice_id).await?;posting(&mut tx,&request.operation_id,"supplier_invoice_payments",&request.source_id,"PaymentReversal",&request.actor,&stamp(),&request.reason,&snapshot).await?};Ok::<(),String>(())}.await;
+    match result {
+        Ok(()) => {
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(SupplierApOperationResult {
+                operation_id: request.operation_id,
+                status: "Posted".into(),
+            })
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(|x| x.to_string())?;
+            Err(e)
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
- use super::*;
- async fn setup(path:&Path){let p=db(path).await.unwrap();for sql in [
+    use super::*;
+    async fn setup(path: &Path) {
+        let p = db(path).await.unwrap();
+        for sql in [
   "CREATE TABLE procurement(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE procurement_receipts(id TEXT PRIMARY KEY,payload TEXT)",
   "CREATE TABLE supplier_invoices(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
@@ -147,31 +801,387 @@ mod tests {
   "CREATE TRIGGER grn_guard BEFORE UPDATE ON procurement_receipts WHEN json_extract(NEW.payload,'$.status')='Accepted' AND NOT EXISTS (SELECT 1 FROM supplier_ap_mutation_guard) BEGIN SELECT RAISE(ABORT,'governed GRN required'); END",
   "CREATE TABLE cash_flow(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)","CREATE TABLE cost_entries(id TEXT PRIMARY KEY,created_at TEXT,project_id TEXT,contract_id TEXT,boq_header_id TEXT,boq_item_id TEXT,parent_main_project_id TEXT,parent_main_contract_id TEXT,payload TEXT)",
   "CREATE TABLE supplier_ap_postings(id TEXT PRIMARY KEY,created_at TEXT,source_table TEXT,source_id TEXT,posting_type TEXT,status TEXT,actor TEXT,effective_date TEXT,reason TEXT,snapshot_json TEXT,UNIQUE(source_table,source_id,posting_type))"]{sqlx::query(sql).execute(&p).await.unwrap();}
-  sqlx::query("INSERT INTO procurement VALUES ('po','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"purchase_order_number":"PO-1","quantity":100,"unit_cost":20,"total_cost":2000,"order_date":"2026-01-01","status":"Draft"}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO procurement_receipts VALUES ('grn',?)").bind(json!({"procurement_id":"po","status":"Received","accepted_quantity":60,"unit_cost":20}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO supplier_invoices VALUES ('inv','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"invoice_number":"SUP-1","invoice_date":"2026-01-10","due_date":"2026-01-30","status":"Submitted","tax_amount":0,"deductions_amount":0}).to_string()).execute(&p).await.unwrap();
-  sqlx::query("INSERT INTO supplier_invoice_lines VALUES ('line',?)").bind(json!({"supplier_invoice_id":"inv","procurement_receipt_id":"grn","procurement_id":"po","quantity":40,"unit_cost":20,"goods_amount":800,"tax_amount":0}).to_string()).execute(&p).await.unwrap();p.close().await;}
- #[tokio::test]
- async fn governed_supplier_ap_posts_once_reconciles_and_reverses_without_deleting_history(){let path=std::env::temp_dir().join(format!("buildtrack-ap-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;approve_purchase_order(&path,PurchaseOrderApprovalRequest{operation_id:"po1".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();accept_procurement_receipt(&path,ProcurementReceiptAcceptanceRequest{operation_id:"grn1".into(),receipt_id:"grn".into(),actor:"tester".into(),accepted_at:"2026-01-02".into()}).await.unwrap();
-  approve_supplier_invoice(&path,SupplierInvoiceApprovalRequest{operation_id:"a1".into(),invoice_id:"inv".into(),actor:"tester".into(),approved_at:"2026-01-11".into()}).await.unwrap();let p=db(&path).await.unwrap();let open:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='supplier_invoice_forecast'").fetch_one(&p).await.unwrap();let po:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();assert_eq!((open,po),(800.0,1200.0));sqlx::query("INSERT INTO supplier_invoice_payments VALUES ('pay1',?)").bind(json!({"supplier_invoice_id":"inv","payment_number":"PAY-1","payment_date":"2026-01-15","amount":300,"status":"Draft"}).to_string()).execute(&p).await.unwrap();p.close().await;
-  settle_supplier_invoice_payment(&path,SupplierPaymentSettlementRequest{operation_id:"s1".into(),payment_id:"pay1".into(),actor:"tester".into(),settled_at:"2026-01-15".into()}).await.unwrap();let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM supplier_invoices WHERE id='inv'").fetch_one(&p).await.unwrap();let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='supplier_invoice_forecast'").fetch_one(&p).await.unwrap();assert_eq!((status,forecast),("Partially Paid".into(),500.0));sqlx::query("INSERT INTO supplier_invoice_payments VALUES ('bad',?)").bind(json!({"supplier_invoice_id":"inv","payment_number":"PAY-2","payment_date":"2026-01-16","amount":600,"status":"Draft"}).to_string()).execute(&p).await.unwrap();p.close().await;
-  assert!(settle_supplier_invoice_payment(&path,SupplierPaymentSettlementRequest{operation_id:"s2".into(),payment_id:"bad".into(),actor:"tester".into(),settled_at:"2026-01-16".into()}).await.is_err());let p=db(&path).await.unwrap();let bad:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM supplier_invoice_payments WHERE id='bad'").fetch_one(&p).await.unwrap();assert_eq!(bad,"Draft");p.close().await;
-  reverse_supplier_ap_posting(&path,SupplierApOperationRequest{operation_id:"r1".into(),source_table:"supplier_invoice_payments".into(),source_id:"pay1".into(),actor:"tester".into(),reason:"bank recall".into()}).await.unwrap();reverse_supplier_ap_posting(&path,SupplierApOperationRequest{operation_id:"r2".into(),source_table:"supplier_invoices".into(),source_id:"inv".into(),actor:"tester".into(),reason:"invoice void".into()}).await.unwrap();let p=db(&path).await.unwrap();let restored:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();let posts:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_ap_postings").fetch_one(&p).await.unwrap();assert_eq!(restored,2000.0);assert_eq!(posts,6);p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn po_and_grn_governance_prevents_direct_or_over_received_commitments(){let path=std::env::temp_dir().join(format!("buildtrack-po-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();assert!(sqlx::query("UPDATE procurement SET payload=? WHERE id='po'").bind(json!({"status":"Ordered"}).to_string()).execute(&p).await.is_err());p.close().await;approve_purchase_order(&path,PurchaseOrderApprovalRequest{operation_id:"po1".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();accept_procurement_receipt(&path,ProcurementReceiptAcceptanceRequest{operation_id:"grn1".into(),receipt_id:"grn".into(),actor:"tester".into(),accepted_at:"2026-01-02".into()}).await.unwrap();let p=db(&path).await.unwrap();let actual:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.amount') AS REAL) FROM cost_entries WHERE json_extract(payload,'$.source_id')='grn'").fetch_one(&p).await.unwrap();assert_eq!(actual,1200.0);sqlx::query("INSERT INTO procurement_receipts VALUES ('too-much',?)").bind(json!({"procurement_id":"po","status":"Received","accepted_quantity":41,"unit_cost":20}).to_string()).execute(&p).await.unwrap();p.close().await;assert!(accept_procurement_receipt(&path,ProcurementReceiptAcceptanceRequest{operation_id:"grn2".into(),receipt_id:"too-much".into(),actor:"tester".into(),accepted_at:"2026-01-03".into()}).await.is_err());let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM procurement_receipts WHERE id='too-much'").fetch_one(&p).await.unwrap();assert_eq!(status,"Received");p.close().await;let _=std::fs::remove_file(&path);}
- #[tokio::test]
- async fn governed_po_cancellation_removes_forecast_and_rejects_received_po(){
-  let path=std::env::temp_dir().join(format!("buildtrack-po-cancel-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;
-  approve_purchase_order(&path,PurchaseOrderApprovalRequest{operation_id:"po-cancel-approve".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();
-  cancel_purchase_order(&path,PurchaseOrderCancellationRequest{operation_id:"po-cancel".into(),procurement_id:"po".into(),actor:"tester".into(),cancelled_at:"2026-01-02".into(),reason:"supplier withdrawal".into()}).await.unwrap();
-  let p=db(&path).await.unwrap();let status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();let forecasts:i64=sqlx::query_scalar("SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast' AND json_extract(payload,'$.source_id')='po'").fetch_one(&p).await.unwrap();let posts:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_ap_postings WHERE posting_type='PurchaseOrderCancellation'").fetch_one(&p).await.unwrap();assert_eq!((status,forecasts,posts),("Cancelled".into(),0,1));p.close().await;
-  let blocked=std::env::temp_dir().join(format!("buildtrack-po-cancel-blocked-{}.db",std::process::id()));let _=std::fs::remove_file(&blocked);setup(&blocked).await;
-  approve_purchase_order(&blocked,PurchaseOrderApprovalRequest{operation_id:"po-block-approve".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();accept_procurement_receipt(&blocked,ProcurementReceiptAcceptanceRequest{operation_id:"po-block-grn".into(),receipt_id:"grn".into(),actor:"tester".into(),accepted_at:"2026-01-02".into()}).await.unwrap();
-  assert!(cancel_purchase_order(&blocked,PurchaseOrderCancellationRequest{operation_id:"po-block-cancel".into(),procurement_id:"po".into(),actor:"tester".into(),cancelled_at:"2026-01-03".into(),reason:"too late".into()}).await.is_err());
-  let p=db(&blocked).await.unwrap();let blocked_status:String=sqlx::query_scalar("SELECT json_extract(payload,'$.status') FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();assert_eq!(blocked_status,"Ordered");p.close().await;let _=std::fs::remove_file(&path);let _=std::fs::remove_file(&blocked);
- }
- #[tokio::test]
- async fn governed_po_amendment_revises_forecast_and_rejects_received_po(){let path=std::env::temp_dir().join(format!("buildtrack-po-amend-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;approve_purchase_order(&path,PurchaseOrderApprovalRequest{operation_id:"po-amend-approve".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();amend_purchase_order(&path,PurchaseOrderAmendmentRequest{operation_id:"po-amend".into(),procurement_id:"po".into(),actor:"tester".into(),amended_at:"2026-01-02".into(),reason:"scope alignment".into(),quantity:125.0,unit_cost:20.0,total_cost:2500.0,delivery_date:"2026-01-10".into()}).await.unwrap();let p=db(&path).await.unwrap();let total:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.total_cost') AS REAL) FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();let revision:i64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.amendment_revision') AS INTEGER) FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();assert_eq!((total,revision,forecast),(2500.0,1,2500.0));p.close().await;let blocked=std::env::temp_dir().join(format!("buildtrack-po-amend-blocked-{}.db",std::process::id()));let _=std::fs::remove_file(&blocked);setup(&blocked).await;approve_purchase_order(&blocked,PurchaseOrderApprovalRequest{operation_id:"po-amend-block-approve".into(),procurement_id:"po".into(),actor:"tester".into(),approved_at:"2026-01-01".into()}).await.unwrap();accept_procurement_receipt(&blocked,ProcurementReceiptAcceptanceRequest{operation_id:"po-amend-block-grn".into(),receipt_id:"grn".into(),actor:"tester".into(),accepted_at:"2026-01-02".into()}).await.unwrap();assert!(amend_purchase_order(&blocked,PurchaseOrderAmendmentRequest{operation_id:"po-amend-block".into(),procurement_id:"po".into(),actor:"tester".into(),amended_at:"2026-01-03".into(),reason:"late change".into(),quantity:125.0,unit_cost:20.0,total_cost:2500.0,delivery_date:"2026-01-10".into()}).await.is_err());let _=std::fs::remove_file(&path);let _=std::fs::remove_file(&blocked);}
- #[tokio::test]
- async fn sql_guard_rejects_direct_approved_status_mutation(){let path=std::env::temp_dir().join(format!("buildtrack-ap-guard-{}.db",std::process::id()));let _=std::fs::remove_file(&path);setup(&path).await;let p=db(&path).await.unwrap();let result=sqlx::query("UPDATE supplier_invoices SET payload=? WHERE id='inv'").bind(json!({"status":"Approved"}).to_string()).execute(&p).await;assert!(result.is_err());p.close().await;let _=std::fs::remove_file(&path);}
+        sqlx::query("INSERT INTO procurement VALUES ('po','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"purchase_order_number":"PO-1","quantity":100,"unit_cost":20,"total_cost":2000,"order_date":"2026-01-01","status":"Draft"}).to_string()).execute(&p).await.unwrap();
+        sqlx::query("INSERT INTO procurement_receipts VALUES ('grn',?)").bind(json!({"procurement_id":"po","status":"Received","accepted_quantity":60,"unit_cost":20}).to_string()).execute(&p).await.unwrap();
+        sqlx::query("INSERT INTO supplier_invoices VALUES ('inv','t','p','c',NULL,NULL,NULL,NULL,?)").bind(json!({"invoice_number":"SUP-1","invoice_date":"2026-01-10","due_date":"2026-01-30","status":"Submitted","tax_amount":0,"deductions_amount":0}).to_string()).execute(&p).await.unwrap();
+        sqlx::query("INSERT INTO supplier_invoice_lines VALUES ('line',?)").bind(json!({"supplier_invoice_id":"inv","procurement_receipt_id":"grn","procurement_id":"po","quantity":40,"unit_cost":20,"goods_amount":800,"tax_amount":0}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+    }
+    #[tokio::test]
+    async fn governed_supplier_ap_posts_once_reconciles_and_reverses_without_deleting_history() {
+        let path = std::env::temp_dir().join(format!("buildtrack-ap-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        approve_purchase_order(
+            &path,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po1".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        accept_procurement_receipt(
+            &path,
+            ProcurementReceiptAcceptanceRequest {
+                operation_id: "grn1".into(),
+                receipt_id: "grn".into(),
+                actor: "tester".into(),
+                accepted_at: "2026-01-02".into(),
+            },
+        )
+        .await
+        .unwrap();
+        approve_supplier_invoice(
+            &path,
+            SupplierInvoiceApprovalRequest {
+                operation_id: "a1".into(),
+                invoice_id: "inv".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-11".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let open:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='supplier_invoice_forecast'").fetch_one(&p).await.unwrap();
+        let po:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();
+        assert_eq!((open, po), (800.0, 1200.0));
+        sqlx::query("INSERT INTO supplier_invoice_payments VALUES ('pay1',?)").bind(json!({"supplier_invoice_id":"inv","payment_number":"PAY-1","payment_date":"2026-01-15","amount":300,"status":"Draft"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        settle_supplier_invoice_payment(
+            &path,
+            SupplierPaymentSettlementRequest {
+                operation_id: "s1".into(),
+                payment_id: "pay1".into(),
+                actor: "tester".into(),
+                settled_at: "2026-01-15".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM supplier_invoices WHERE id='inv'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='supplier_invoice_forecast'").fetch_one(&p).await.unwrap();
+        assert_eq!((status, forecast), ("Partially Paid".into(), 500.0));
+        sqlx::query("INSERT INTO supplier_invoice_payments VALUES ('bad',?)").bind(json!({"supplier_invoice_id":"inv","payment_number":"PAY-2","payment_date":"2026-01-16","amount":600,"status":"Draft"}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        assert!(settle_supplier_invoice_payment(
+            &path,
+            SupplierPaymentSettlementRequest {
+                operation_id: "s2".into(),
+                payment_id: "bad".into(),
+                actor: "tester".into(),
+                settled_at: "2026-01-16".into()
+            }
+        )
+        .await
+        .is_err());
+        let p = db(&path).await.unwrap();
+        let bad: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM supplier_invoice_payments WHERE id='bad'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(bad, "Draft");
+        p.close().await;
+        reverse_supplier_ap_posting(
+            &path,
+            SupplierApOperationRequest {
+                operation_id: "r1".into(),
+                source_table: "supplier_invoice_payments".into(),
+                source_id: "pay1".into(),
+                actor: "tester".into(),
+                reason: "bank recall".into(),
+            },
+        )
+        .await
+        .unwrap();
+        reverse_supplier_ap_posting(
+            &path,
+            SupplierApOperationRequest {
+                operation_id: "r2".into(),
+                source_table: "supplier_invoices".into(),
+                source_id: "inv".into(),
+                actor: "tester".into(),
+                reason: "invoice void".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let restored:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();
+        let posts: i64 = sqlx::query_scalar("SELECT count(*) FROM supplier_ap_postings")
+            .fetch_one(&p)
+            .await
+            .unwrap();
+        assert_eq!(restored, 2000.0);
+        assert_eq!(posts, 6);
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn po_and_grn_governance_prevents_direct_or_over_received_commitments() {
+        let path = std::env::temp_dir().join(format!("buildtrack-po-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        assert!(
+            sqlx::query("UPDATE procurement SET payload=? WHERE id='po'")
+                .bind(json!({"status":"Ordered"}).to_string())
+                .execute(&p)
+                .await
+                .is_err()
+        );
+        p.close().await;
+        approve_purchase_order(
+            &path,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po1".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        accept_procurement_receipt(
+            &path,
+            ProcurementReceiptAcceptanceRequest {
+                operation_id: "grn1".into(),
+                receipt_id: "grn".into(),
+                actor: "tester".into(),
+                accepted_at: "2026-01-02".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let actual:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.amount') AS REAL) FROM cost_entries WHERE json_extract(payload,'$.source_id')='grn'").fetch_one(&p).await.unwrap();
+        assert_eq!(actual, 1200.0);
+        sqlx::query("INSERT INTO procurement_receipts VALUES ('too-much',?)").bind(json!({"procurement_id":"po","status":"Received","accepted_quantity":41,"unit_cost":20}).to_string()).execute(&p).await.unwrap();
+        p.close().await;
+        assert!(accept_procurement_receipt(
+            &path,
+            ProcurementReceiptAcceptanceRequest {
+                operation_id: "grn2".into(),
+                receipt_id: "too-much".into(),
+                actor: "tester".into(),
+                accepted_at: "2026-01-03".into()
+            }
+        )
+        .await
+        .is_err());
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM procurement_receipts WHERE id='too-much'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(status, "Received");
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn governed_po_cancellation_removes_forecast_and_rejects_received_po() {
+        let path =
+            std::env::temp_dir().join(format!("buildtrack-po-cancel-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        approve_purchase_order(
+            &path,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po-cancel-approve".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        cancel_purchase_order(
+            &path,
+            PurchaseOrderCancellationRequest {
+                operation_id: "po-cancel".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                cancelled_at: "2026-01-02".into(),
+                reason: "supplier withdrawal".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM procurement WHERE id='po'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        let forecasts:i64=sqlx::query_scalar("SELECT count(*) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast' AND json_extract(payload,'$.source_id')='po'").fetch_one(&p).await.unwrap();
+        let posts:i64=sqlx::query_scalar("SELECT count(*) FROM supplier_ap_postings WHERE posting_type='PurchaseOrderCancellation'").fetch_one(&p).await.unwrap();
+        assert_eq!((status, forecasts, posts), ("Cancelled".into(), 0, 1));
+        p.close().await;
+        let blocked = std::env::temp_dir().join(format!(
+            "buildtrack-po-cancel-blocked-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&blocked);
+        setup(&blocked).await;
+        approve_purchase_order(
+            &blocked,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po-block-approve".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        accept_procurement_receipt(
+            &blocked,
+            ProcurementReceiptAcceptanceRequest {
+                operation_id: "po-block-grn".into(),
+                receipt_id: "grn".into(),
+                actor: "tester".into(),
+                accepted_at: "2026-01-02".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(cancel_purchase_order(
+            &blocked,
+            PurchaseOrderCancellationRequest {
+                operation_id: "po-block-cancel".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                cancelled_at: "2026-01-03".into(),
+                reason: "too late".into()
+            }
+        )
+        .await
+        .is_err());
+        let p = db(&blocked).await.unwrap();
+        let blocked_status: String = sqlx::query_scalar(
+            "SELECT json_extract(payload,'$.status') FROM procurement WHERE id='po'",
+        )
+        .fetch_one(&p)
+        .await
+        .unwrap();
+        assert_eq!(blocked_status, "Ordered");
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&blocked);
+    }
+    #[tokio::test]
+    async fn governed_po_amendment_revises_forecast_and_rejects_received_po() {
+        let path =
+            std::env::temp_dir().join(format!("buildtrack-po-amend-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        approve_purchase_order(
+            &path,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po-amend-approve".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        amend_purchase_order(
+            &path,
+            PurchaseOrderAmendmentRequest {
+                operation_id: "po-amend".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                amended_at: "2026-01-02".into(),
+                reason: "scope alignment".into(),
+                quantity: 125.0,
+                unit_cost: 20.0,
+                total_cost: 2500.0,
+                delivery_date: "2026-01-10".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let p = db(&path).await.unwrap();
+        let total:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.total_cost') AS REAL) FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();
+        let revision:i64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.amendment_revision') AS INTEGER) FROM procurement WHERE id='po'").fetch_one(&p).await.unwrap();
+        let forecast:f64=sqlx::query_scalar("SELECT CAST(json_extract(payload,'$.outflow') AS REAL) FROM cash_flow WHERE json_extract(payload,'$.source_type')='procurement_forecast'").fetch_one(&p).await.unwrap();
+        assert_eq!((total, revision, forecast), (2500.0, 1, 2500.0));
+        p.close().await;
+        let blocked = std::env::temp_dir().join(format!(
+            "buildtrack-po-amend-blocked-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&blocked);
+        setup(&blocked).await;
+        approve_purchase_order(
+            &blocked,
+            PurchaseOrderApprovalRequest {
+                operation_id: "po-amend-block-approve".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                approved_at: "2026-01-01".into(),
+            },
+        )
+        .await
+        .unwrap();
+        accept_procurement_receipt(
+            &blocked,
+            ProcurementReceiptAcceptanceRequest {
+                operation_id: "po-amend-block-grn".into(),
+                receipt_id: "grn".into(),
+                actor: "tester".into(),
+                accepted_at: "2026-01-02".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(amend_purchase_order(
+            &blocked,
+            PurchaseOrderAmendmentRequest {
+                operation_id: "po-amend-block".into(),
+                procurement_id: "po".into(),
+                actor: "tester".into(),
+                amended_at: "2026-01-03".into(),
+                reason: "late change".into(),
+                quantity: 125.0,
+                unit_cost: 20.0,
+                total_cost: 2500.0,
+                delivery_date: "2026-01-10".into()
+            }
+        )
+        .await
+        .is_err());
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&blocked);
+    }
+    #[tokio::test]
+    async fn sql_guard_rejects_direct_approved_status_mutation() {
+        let path =
+            std::env::temp_dir().join(format!("buildtrack-ap-guard-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        let p = db(&path).await.unwrap();
+        let result = sqlx::query("UPDATE supplier_invoices SET payload=? WHERE id='inv'")
+            .bind(json!({"status":"Approved"}).to_string())
+            .execute(&p)
+            .await;
+        assert!(result.is_err());
+        p.close().await;
+        let _ = std::fs::remove_file(&path);
+    }
 }

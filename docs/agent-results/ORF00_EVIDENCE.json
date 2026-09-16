@@ -1,0 +1,50 @@
+{
+  "feature": "ORF00",
+  "date": "2026-09-16",
+  "owner": "Codex",
+  "decision": "CLOSED — 8/10 (ORF00 scope)",
+  "globalReleaseGate": "RED — ORF01 required",
+  "startHead": "c5e3c9ee545b8322ee5c9f5247028e3706053d20",
+  "originalLocalHead": "9851cce615d6fd199d92a660bc04d0e860d7c7e1",
+  "recovery": {
+    "ref": "refs/codex/recovery/orf00-pre-integration-20260916",
+    "object": "d58377b42acf41f4555101f863bfb938214ffab3",
+    "patch": "F:\\PM App\\Project\\tmp\\orf00-recovery-20260916\\local-seven-rust-files.patch",
+    "patchBytes": 362535,
+    "patchSha256": "24AB64C7873B5B6E54F25140FCBF2B5D3C23115F0330E1784F30C27E015F54E9"
+  },
+  "source": {
+    "tauriCommandCount": 58,
+    "migrationCount": 77,
+    "migrationMaxVersion": 79,
+    "migrationVersionsUnique": true,
+    "migrationVersionsAscending": true,
+    "userDatabaseTouched": false,
+    "secretsTouched": false
+  },
+  "tests": {
+    "node": { "passed": 291, "failed": 0 },
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "commandAndMigrationRegistration": { "passed": 3, "failed": 0 },
+    "keptRustModules": { "passed": 27, "failed": 0 },
+    "fullCargo": {
+      "passed": 72,
+      "failed": 1,
+      "status": "RED",
+      "failure": "claims_workflow::tests::reversal_respects_period_lock_and_preserves_variation_history",
+      "assignedGate": "ORF01"
+    },
+    "diffCheck": "PASS"
+  },
+  "fileSha256": {
+    "src-tauri/src/commercial_workflow.rs": "DCA641CDDEFC71CF77CF9C6E8A2A25187639946236BFF2CCB13390BA13A6EFF5",
+    "src-tauri/src/cost_plan_versioning.rs": "7027A95D29262BE47596C0F17ECE514472536163A46D7996F298264A7DBE4761",
+    "src-tauri/src/estimate_versioning.rs": "ECD54FF7EF0FC64F578F7E3AD3E06FFA6530D6030E76AED702EF13D575596F77",
+    "src-tauri/src/import_batch.rs": "3163ACEB639C08E7A618D94DE38635665CA795FEBCA0E734EEB9BCC5AC530617",
+    "src-tauri/src/lib.rs": "DD1993B46FF62E66AEF6CEC603894DC0629C9606D755B529E790CFCAA4BB9A14",
+    "src-tauri/src/report_versioning.rs": "2509FC4E94EBCD753DDE1A9E7715FB5918F619BD650EE4DB2E067900EF5496C2",
+    "src-tauri/src/supplier_ap.rs": "E7A718A741D20A50C03213A026297F1C26E0A87657DADFB4976FEA61CBD6BF64",
+    "tests/tauri-command-registration.test.mjs": "DB4B6F51EDCE9ABC215C2D2D34B20F5D6CEA12C32ED771EB1182C153588CA197"
+  }
+}

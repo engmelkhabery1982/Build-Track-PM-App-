@@ -23,6 +23,12 @@ test('desktop commands used by the application are registered with Tauri', async
     'approve_cost_change',
     'approve_variation',
     'approve_payment_certificate',
+    'create_payment_certificate_draft',
+    'submit_payment_certificate',
+    'approve_payment_certificate_governed',
+    'record_partial_payment',
+    'reverse_certificate_governed',
+    'get_certificate_partial_payments',
     'settle_payment_certificate',
     'reverse_commercial_posting',
     'reverse_variation',
@@ -30,6 +36,7 @@ test('desktop commands used by the application are registered with Tauri', async
     'approve_cash_forecast_version',
     'reopen_cash_forecast_version',
     'get_cash_forecast_version',
+    'list_cash_forecast_versions',
     'save_health_score_version',
     'approve_health_score_version',
     'reopen_health_score_version',
@@ -44,6 +51,9 @@ test('desktop commands used by the application are registered with Tauri', async
     'approve_equipment_log',
     'post_equipment_log',
     'reverse_equipment_log',
+    'save_claim_draft',
+    'notify_claim',
+    'start_claim_assessment',
     'submit_claim',
     'assess_claim',
     'approve_claim',
@@ -63,6 +73,20 @@ test('desktop commands used by the application are registered with Tauri', async
   for (const command of requiredCommands) {
     assert.match(handler, new RegExp(`\\b${command}\\b`), `${command} is not registered.`);
   }
+});
+
+test('SQLite migration versions are unique and strictly increase in declaration order', async () => {
+  const source = await readFile(libPath, 'utf8');
+  const migrations = source.match(/let migrations = vec!\[([\s\S]*?)\];/m)?.[1];
+
+  assert.ok(migrations, 'BuildTrack must declare its SQLite migration list.');
+
+  const versions = [...migrations.matchAll(/version:\s*(\d+)/g)].map((match) => Number(match[1]));
+  assert.ok(versions.length > 0, 'At least one SQLite migration must be registered.');
+  assert.equal(new Set(versions).size, versions.length, 'SQLite migration versions must be unique.');
+
+  const sorted = [...versions].sort((left, right) => left - right);
+  assert.deepEqual(versions, sorted, 'SQLite migrations must be declared in ascending version order.');
 });
 
 test('a staged restore is applied during desktop startup', async () => {

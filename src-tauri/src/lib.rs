@@ -930,28 +930,6 @@ pub fn run() {
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
         tauri_plugin_sql::Migration {
-            version: 68,
-            description: "add_data_quality_tables",
-            sql: r#"
-      CREATE TABLE IF NOT EXISTS dq_rules (
-        id TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        project_id TEXT,
-        payload TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
-      );
-      
-      CREATE TABLE IF NOT EXISTS dq_execution_logs (
-        id TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        project_id TEXT,
-        payload TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
-      );
-    "#,
-            kind: tauri_plugin_sql::MigrationKind::Up,
-        },
-        tauri_plugin_sql::Migration {
             version: 2,
             description: "sync_local_invoice_tracking",
             sql: r#"
@@ -3847,6 +3825,28 @@ pub fn run() {
                 AND NOT EXISTS (SELECT 1 FROM health_score_mutation_guard WHERE operation_id = ('internal:health_score:' || OLD.id))
               BEGIN SELECT RAISE(ABORT, 'Only Draft health score versions may be deleted.'); END;
             "#,
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 79,
+            description: "add_data_quality_tables",
+            sql: r#"
+      CREATE TABLE IF NOT EXISTS dq_rules (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+
+      CREATE TABLE IF NOT EXISTS dq_execution_logs (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+      );
+    "#,
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
     ];
