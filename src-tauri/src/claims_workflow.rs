@@ -912,40 +912,75 @@ pub async fn start_claim_assessment(
     require_text(&req.started_at, "Assessment start date")?;
     let pool = open_pool(path).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    if let Some(result) = previous_operation(&mut tx, &req.operation_id, &req.claim_id).await? {
+    let previous = match previous_operation(&mut tx, &req.operation_id, &req.claim_id).await {
+        Ok(previous) => previous,
+        Err(error) => {
+            return match tx.rollback().await {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{}; failed to roll back claim assessment transaction: {}",
+                    error, rollback_error
+                )),
+            };
+        }
+    };
+    if let Some(result) = previous {
         tx.rollback().await.ok();
         return Ok(result);
     }
-    enter_mutation_guard(&mut tx, &req.operation_id).await?;
-    let claim = fetch_claim(&mut tx, &req.claim_id).await?;
-    if claim.status != "Submitted" {
-        return Err(format!(
-            "Only a Submitted claim can enter assessment; current status is '{}'.",
-            claim.status
-        ));
+
+    let result: Result<ClaimOperationResult, String> = async {
+        enter_mutation_guard(&mut tx, &req.operation_id).await?;
+        let claim = fetch_claim(&mut tx, &req.claim_id).await?;
+        if claim.status != "Submitted" {
+            return Err(format!(
+                "Only a Submitted claim can enter assessment; current status is '{}'.",
+                claim.status
+            ));
+        }
+        if claim.owner.trim().eq_ignore_ascii_case(req.actor.trim()) {
+            return Err("Maker-checker violation: claim owner cannot start assessment.".into());
+        }
+        sqlx::query("UPDATE claims SET status='Under Assessment',assessment_started_by=?,assessment_started_at=? WHERE id=?")
+            .bind(&req.actor)
+            .bind(&req.started_at)
+            .bind(&req.claim_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        log_claim_audit(
+            &mut tx,
+            &claim,
+            "StartClaimAssessment",
+            &req.actor,
+            json!({"operation_id":req.operation_id,"started_at":req.started_at}),
+        )
+        .await?;
+        let result = ClaimOperationResult {
+            operation_id: req.operation_id.clone(),
+            claim_id: req.claim_id.clone(),
+            status: "Under Assessment".into(),
+            variation_id: None,
+        };
+        record_operation(&mut tx, "StartClaimAssessment", &result).await?;
+        exit_mutation_guard(&mut tx, &req.operation_id).await?;
+        Ok(result)
     }
-    if claim.owner.trim().eq_ignore_ascii_case(req.actor.trim()) {
-        return Err("Maker-checker violation: claim owner cannot start assessment.".into());
+    .await;
+
+    match result {
+        Ok(result) => {
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(result)
+        }
+        Err(error) => match tx.rollback().await {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{}; failed to roll back claim assessment transaction: {}",
+                error, rollback_error
+            )),
+        },
     }
-    sqlx::query("UPDATE claims SET status='Under Assessment',assessment_started_by=?,assessment_started_at=? WHERE id=?").bind(&req.actor).bind(&req.started_at).bind(&req.claim_id).execute(&mut *tx).await.map_err(|e|e.to_string())?;
-    log_claim_audit(
-        &mut tx,
-        &claim,
-        "StartClaimAssessment",
-        &req.actor,
-        json!({"operation_id":req.operation_id,"started_at":req.started_at}),
-    )
-    .await?;
-    let result = ClaimOperationResult {
-        operation_id: req.operation_id.clone(),
-        claim_id: req.claim_id.clone(),
-        status: "Under Assessment".into(),
-        variation_id: None,
-    };
-    record_operation(&mut tx, "StartClaimAssessment", &result).await?;
-    exit_mutation_guard(&mut tx, &req.operation_id).await?;
-    tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(result)
 }
 
 /// Submit Claim
@@ -2341,6 +2376,117 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(guard_count, 0);
+            pool.close().await;
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn start_claim_assessment_rollback_cleans_guard_and_permits_subsequent_write() {
+        let path = test_path("start-assessment-rollback");
+        let _ = std::fs::remove_file(&path);
+        setup(&path).await;
+        save_claim_draft(&path, draft("save")).await.unwrap();
+        notify_claim(
+            &path,
+            NotifyClaimRequest {
+                operation_id: "notify".into(),
+                claim_id: "cl".into(),
+                actor: "maker".into(),
+                notified_at: "2026-01-05".into(),
+            },
+        )
+        .await
+        .unwrap();
+        submit_claim(
+            &path,
+            SubmitClaimRequest {
+                operation_id: "submit".into(),
+                claim_id: "cl".into(),
+                actor: "maker".into(),
+                submitted_at: "2026-01-06".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // 1 & 2 & 3. Attempt start_claim_assessment where actor == owner ("maker")
+        let rejected_req = StartClaimAssessmentRequest {
+            operation_id: "assess-rejected".into(),
+            claim_id: "cl".into(),
+            actor: "maker".into(),
+            started_at: "2026-01-07".into(),
+        };
+
+        // 4. Must be rejected due to maker-checker violation
+        let err = start_claim_assessment(&path, rejected_req).await.unwrap_err();
+        assert!(err.contains("Maker-checker violation"));
+
+        // 5. Immediately after rejection:
+        // - claims_mutation_guard is 0
+        // - claim status is still 'Submitted'
+        // - no workflow operation recorded for the rejected attempt
+        // - no audit log recorded for the rejected attempt
+        {
+            let pool = open_pool(&path).await.unwrap();
+            let guard_count: i64 = sqlx::query_scalar("SELECT count(*) FROM claims_mutation_guard")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(guard_count, 0, "claims_mutation_guard must be 0 after rollback");
+
+            let status: String = sqlx::query_scalar("SELECT status FROM claims WHERE id = 'cl'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(status, "Submitted", "original claim status must be preserved");
+
+            let op_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM claim_workflow_operations WHERE operation_id = 'assess-rejected'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(op_count, 0, "no workflow operation must exist for rejected attempt");
+
+            let audit_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM audit_log WHERE payload LIKE '%assess-rejected%'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(audit_count, 0, "no audit log must exist for rejected attempt");
+
+            // 6. Close pool
+            pool.close().await;
+        }
+
+        // 7, 8 & 9. Open a new connection and execute valid attempt with different actor ("assessor");
+        // must succeed without "database is locked" error
+        let valid_req = StartClaimAssessmentRequest {
+            operation_id: "assess-valid".into(),
+            claim_id: "cl".into(),
+            actor: "assessor".into(),
+            started_at: "2026-01-07".into(),
+        };
+        let result = start_claim_assessment(&path, valid_req).await.unwrap();
+        assert_eq!(result.status, "Under Assessment");
+
+        // 10. Check after success that mutation guard is 0 and status in database is 'Under Assessment'
+        {
+            let pool = open_pool(&path).await.unwrap();
+            let status: String = sqlx::query_scalar("SELECT status FROM claims WHERE id = 'cl'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(status, "Under Assessment");
+
+            let guard_count: i64 = sqlx::query_scalar("SELECT count(*) FROM claims_mutation_guard")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(guard_count, 0, "mutation guard must be 0 after successful operation");
             pool.close().await;
         }
 
