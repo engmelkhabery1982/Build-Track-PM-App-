@@ -1,6 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+function createConfiguredClient() {
+  const url = import.meta.env?.VITE_SUPABASE_URL;
+  const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error('Supabase is not configured for the web app.');
+  }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  return createClient(url, key);
+}
+
+let client: ReturnType<typeof createConfiguredClient> | undefined;
+
+// Only web repository operations need Supabase configuration.
+export function getSupabaseClient() {
+  return client ??= createConfiguredClient();
+}

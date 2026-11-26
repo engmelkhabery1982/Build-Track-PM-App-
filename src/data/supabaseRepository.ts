@@ -1,4 +1,4 @@
-﻿import { supabase } from "@/lib/supabase";
+﻿import { getSupabaseClient } from "@/lib/supabase";
 import type { DataRepository, ListOptions } from "./repository";
 import { DataRepositoryError } from "./repository";
 
@@ -11,7 +11,7 @@ export class SupabaseRepository implements DataRepository {
       const orderBy = options.orderBy ?? "created_at";
       const ascending = options.ascending ?? false;
 
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from(tableName)
         .select("*")
         .order(orderBy, { ascending });
@@ -32,7 +32,7 @@ export class SupabaseRepository implements DataRepository {
     row: T
   ): Promise<T> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from(tableName)
         .insert(row as any)
         .select()
@@ -56,7 +56,7 @@ export class SupabaseRepository implements DataRepository {
     try {
       if (rows.length === 0) return [];
 
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from(tableName)
         .insert(rows as any)
         .select();
@@ -78,7 +78,7 @@ export class SupabaseRepository implements DataRepository {
     patch: Partial<T>
   ): Promise<T> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from(tableName)
         .update(patch as any)
         .eq("id", id)
@@ -101,7 +101,7 @@ export class SupabaseRepository implements DataRepository {
     id: string
   ): Promise<void> {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from(tableName)
         .delete()
         .eq("id", id);
